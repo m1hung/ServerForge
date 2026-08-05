@@ -169,9 +169,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // only <main> scrolls. That is what keeps the dashboard on one screen
   // instead of the whole window scrolling under a sticky header.
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas">
+    <div className="flex h-screen overflow-hidden bg-canvas" data-sf-shell>
       {/* ── Sidebar (desktop) ────────────────────────────────────────── */}
-      <aside className="relative hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
+      <aside
+        className="relative hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex"
+        data-sf-sidebar
+      >
         <div className="flex h-14 items-center gap-2.5 border-b border-line px-4">
           <div className="inset-well flex h-7 w-7 items-center justify-center text-accent">
             <Server className="h-3.5 w-3.5" aria-hidden />
@@ -196,6 +199,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <nav
           className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3 pt-5 scrollbar-thin"
           aria-label="Main"
+          data-sf-nav
         >
           <p className="legend mb-2.5 px-2.5">Workspace</p>
           {nav.map((item) => {
@@ -276,8 +280,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Main column ──────────────────────────────────────────────── */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas/70 px-4 backdrop-blur-xl md:px-6">
+      <div className="flex min-w-0 flex-1 flex-col" data-sf-workspace>
+        <header
+          className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas/70 px-4 backdrop-blur-xl md:px-6"
+          data-sf-topbar
+        >
           <div className="flex items-center gap-2.5 md:hidden">
             <div className="inset-well flex h-8 w-8 items-center justify-center text-accent">
               <Server className="h-4 w-4" aria-hidden />
@@ -340,6 +347,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Only this region scrolls; the header above and sidebar stay put. */}
         <main
           id="main"
+          data-sf-main
           className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-5 scrollbar-thin sm:px-6 md:px-8 md:pb-8 md:pt-6"
         >
           {children}
@@ -350,6 +358,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
         aria-label="Main"
+        data-sf-mobile-nav
       >
         {mobileNav.map((item) => {
           const active =

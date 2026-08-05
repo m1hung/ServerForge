@@ -1,0 +1,533 @@
+/*
+ * theme: Zenless
+ * description: Full New Eridu redesign — cut corners, neon yellow, street motion.
+ *
+ * A complete visual pass (not just colour tokens): angular chrome, comic
+ * borders, animated hollow-grid backdrop, and Proxy-yellow accents.
+ * Scope redesign rules with [data-sf-theme="zenless"] so they unload cleanly.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+/* ── Tokens ─────────────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"],
+html[data-sf-theme="zenless"].dark {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Chakra Petch", "IBM Plex Sans", sans-serif;
+
+  --canvas: 260 18% 5%;
+  --surface: 255 16% 8%;
+  --surface-raised: 250 14% 12%;
+  --line: 250 12% 18%;
+  --line-strong: 48 55% 38%;
+
+  --ink: 48 35% 96%;
+  --ink-muted: 250 12% 72%;
+  --ink-subtle: 250 10% 54%;
+
+  --accent: 48 100% 52%;
+  --accent-soft: 48 50% 12%;
+  --accent-ink: 260 35% 6%;
+
+  --ok: 155 65% 52%;
+  --warn: 38 95% 58%;
+  --danger: 350 90% 60%;
+  --info: 190 100% 58%;
+
+  --focus: 48 100% 52%;
+  --shadow-overlay: 0 20px 60px -16px rgb(0 0 0 / 0.85);
+
+  --zz-yellow: hsl(48 100% 52%);
+  --zz-cyan: hsl(190 100% 58%);
+  --zz-magenta: hsl(320 85% 58%);
+  --zz-cut: 10px;
+}
+
+html[data-sf-theme="zenless"].light {
+  --canvas: 48 45% 96%;
+  --surface: 0 0% 100%;
+  --surface-raised: 48 40% 93%;
+  --line: 250 14% 86%;
+  --line-strong: 48 35% 55%;
+
+  --ink: 260 25% 10%;
+  --ink-muted: 255 12% 36%;
+  --ink-subtle: 250 10% 44%;
+
+  --accent: 45 100% 36%;
+  --accent-soft: 48 85% 90%;
+  --accent-ink: 0 0% 100%;
+
+  --ok: 155 68% 26%;
+  --warn: 32 92% 31%;
+  --danger: 350 72% 43%;
+  --info: 195 90% 30%;
+
+  --focus: 45 100% 36%;
+  --shadow-overlay: 0 16px 48px -12px rgb(40 30 8 / 0.18);
+
+  --zz-yellow: hsl(45 100% 36%);
+  --zz-cyan: hsl(195 90% 30%);
+  --zz-magenta: hsl(320 70% 42%);
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────────── */
+
+@keyframes sf-zz-grid-drift {
+  from {
+    background-position: 0 0, 0 0, 0 0;
+  }
+  to {
+    background-position: 48px 48px, -36px 36px, 0 0;
+  }
+}
+
+@keyframes sf-zz-scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.35;
+  }
+  90% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+@keyframes sf-zz-pulse-edge {
+  0%,
+  100% {
+    box-shadow:
+      inset 3px 0 0 var(--zz-yellow),
+      0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow:
+      inset 3px 0 0 var(--zz-yellow),
+      0 0 24px -4px hsl(48 100% 52% / 0.35);
+  }
+}
+
+@keyframes sf-zz-glitch-skew {
+  0%,
+  92%,
+  100% {
+    transform: translateX(0) skewX(0deg);
+    filter: none;
+  }
+  93% {
+    transform: translateX(-2px) skewX(-0.4deg);
+    filter: hue-rotate(-8deg);
+  }
+  94% {
+    transform: translateX(2px) skewX(0.4deg);
+    filter: hue-rotate(8deg);
+  }
+  95% {
+    transform: translateX(0);
+    filter: none;
+  }
+}
+
+@keyframes sf-zz-bar-in {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes sf-zz-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) skewX(-1deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) skewX(0);
+  }
+}
+
+@keyframes sf-zz-sheen {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes sf-zz-corner-blink {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── Atmosphere ─────────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"] body {
+  font-family: var(--font-sans);
+  background-color: hsl(var(--canvas));
+  position: relative;
+}
+
+html[data-sf-theme="zenless"] body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.45;
+  background-image:
+    linear-gradient(hsl(48 100% 52% / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(190 100% 58% / 0.03) 1px, transparent 1px),
+    radial-gradient(ellipse 80% 50% at 10% -10%, hsl(48 100% 50% / 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(320 80% 50% / 0.08), transparent 50%);
+  background-size:
+    48px 48px,
+    48px 48px,
+    100% 100%,
+    100% 100%;
+  animation: sf-zz-grid-drift 28s linear infinite;
+}
+
+html[data-sf-theme="zenless"] body::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 28%;
+  z-index: 50;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    hsl(190 100% 60% / 0.04),
+    transparent
+  );
+  animation: sf-zz-scan 9s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+
+html[data-sf-theme="zenless"].light body::before {
+  opacity: 0.35;
+  background-image:
+    linear-gradient(hsl(45 100% 36% / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(195 90% 30% / 0.04) 1px, transparent 1px),
+    radial-gradient(ellipse 70% 45% at 0% 0%, hsl(48 100% 50% / 0.1), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 100% 80%, hsl(320 70% 50% / 0.06), transparent 55%);
+}
+
+html[data-sf-theme="zenless"].light body::after {
+  mix-blend-mode: multiply;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    hsl(45 100% 36% / 0.05),
+    transparent
+  );
+}
+
+html[data-sf-theme="zenless"] [data-sf-shell],
+html[data-sf-theme="zenless"] [data-sf-workspace],
+html[data-sf-theme="zenless"] [data-sf-main] {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"] .display,
+html[data-sf-theme="zenless"] .engraved,
+html[data-sf-theme="zenless"] h1,
+html[data-sf-theme="zenless"] h2 {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+html[data-sf-theme="zenless"] .eyebrow,
+html[data-sf-theme="zenless"] .legend {
+  font-family: var(--font-display);
+  letter-spacing: 0.14em;
+}
+
+html[data-sf-theme="zenless"] [data-sf-topbar] .engraved {
+  animation: sf-zz-glitch-skew 7s steps(1) infinite;
+}
+
+/* ── Shell / sidebar ────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"] [data-sf-sidebar] {
+  border-right: 1px solid hsl(var(--line));
+  background:
+    linear-gradient(180deg, hsl(var(--surface-raised) / 0.9), hsl(var(--surface))),
+    hsl(var(--surface));
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
+  animation: sf-zz-pulse-edge 4.5s ease-in-out infinite;
+}
+
+html[data-sf-theme="zenless"] [data-sf-sidebar]::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  background: var(--zz-yellow);
+  box-shadow: 14px 0 0 var(--zz-cyan);
+  animation: sf-zz-corner-blink 2.2s ease-in-out infinite;
+}
+
+html[data-sf-theme="zenless"] [data-sf-topbar] {
+  position: relative;
+  border-bottom: 1px solid hsl(var(--line));
+  background:
+    linear-gradient(90deg, hsl(48 100% 52% / 0.08), transparent 35%),
+    hsl(var(--canvas) / 0.82);
+  backdrop-filter: blur(16px);
+}
+
+html[data-sf-theme="zenless"] [data-sf-topbar]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--zz-yellow),
+    var(--zz-cyan),
+    var(--zz-magenta),
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: sf-zz-sheen 5s linear infinite;
+}
+
+@media (max-width: 767px) {
+  html[data-sf-theme="zenless"] [data-sf-topbar]::after {
+    opacity: 0.85;
+  }
+}
+
+html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"] {
+  background: linear-gradient(90deg, hsl(48 100% 52% / 0.18), transparent 80%);
+  color: hsl(var(--ink));
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+
+html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 15%;
+  bottom: 15%;
+  width: 3px;
+  background: var(--zz-yellow);
+  transform-origin: center top;
+  animation: sf-zz-bar-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 0 12px var(--zz-yellow);
+}
+
+html[data-sf-theme="zenless"] [data-sf-nav] a {
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+html[data-sf-theme="zenless"] [data-sf-nav] a:hover {
+  transform: translateX(3px);
+  color: hsl(var(--ink));
+}
+
+html[data-sf-theme="zenless"] [data-sf-mobile-nav] {
+  border-top: 2px solid var(--zz-yellow);
+  background: hsl(var(--surface) / 0.96);
+}
+
+html[data-sf-theme="zenless"] [data-sf-main] > * {
+  animation: sf-zz-rise 0.45s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+/* ── Cards / panels ─────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"] .card,
+html[data-sf-theme="zenless"] .panel {
+  border: 1px solid hsl(var(--line));
+  border-radius: 0;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--zz-cut)) 0,
+    100% var(--zz-cut),
+    100% 100%,
+    var(--zz-cut) 100%,
+    0 calc(100% - var(--zz-cut))
+  );
+  background:
+    linear-gradient(135deg, hsl(48 100% 52% / 0.05), transparent 40%),
+    hsl(var(--surface));
+  box-shadow:
+    0 0 0 1px hsl(48 100% 52% / 0.06),
+    4px 4px 0 hsl(48 100% 52% / 0.12);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+html[data-sf-theme="zenless"] .card:hover,
+html[data-sf-theme="zenless"] .panel:hover {
+  border-color: hsl(48 100% 52% / 0.45);
+  box-shadow:
+    0 0 0 1px hsl(48 100% 52% / 0.15),
+    6px 6px 0 hsl(48 100% 52% / 0.2);
+  transform: translate(-1px, -1px);
+}
+
+html[data-sf-theme="zenless"] .card::before,
+html[data-sf-theme="zenless"] .panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--zz-cut);
+  height: var(--zz-cut);
+  background: var(--zz-yellow);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+  opacity: 0.9;
+}
+
+html[data-sf-theme="zenless"] .readout,
+html[data-sf-theme="zenless"] .inset-well {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"] [data-sf-control="button"] {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"] {
+  background-image: linear-gradient(
+    110deg,
+    hsl(48 100% 52%) 0%,
+    hsl(48 100% 62%) 40%,
+    hsl(42 100% 48%) 50%,
+    hsl(48 100% 52%) 60%,
+    hsl(48 100% 58%) 100%
+  );
+  background-size: 220% 100%;
+  color: hsl(var(--accent-ink));
+  border: 1px solid hsl(48 100% 70% / 0.5);
+  box-shadow: 0 0 18px -4px hsl(48 100% 52% / 0.55);
+  animation: sf-zz-sheen 3.5s linear infinite;
+}
+
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  transform: translateY(-1px) scale(1.01);
+  filter: brightness(1.05);
+}
+
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="secondary"],
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="outline"] {
+  border-color: hsl(var(--line-strong) / 0.7);
+}
+
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="secondary"]:hover,
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="outline"]:hover {
+  border-color: var(--zz-yellow);
+  color: var(--zz-yellow);
+  box-shadow: 3px 3px 0 hsl(48 100% 52% / 0.25);
+}
+
+html[data-sf-theme="zenless"] input,
+html[data-sf-theme="zenless"] select,
+html[data-sf-theme="zenless"] textarea {
+  border-radius: 0 !important;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+html[data-sf-theme="zenless"] input:focus,
+html[data-sf-theme="zenless"] select:focus,
+html[data-sf-theme="zenless"] textarea:focus {
+  border-color: var(--zz-yellow) !important;
+  box-shadow: 0 0 0 1px var(--zz-yellow), 0 0 16px -6px var(--zz-yellow);
+}
+
+/* ── Status / misc ──────────────────────────────────────────────────────── */
+
+html[data-sf-theme="zenless"] .lamp {
+  box-shadow: 0 0 8px currentColor;
+}
+
+html[data-sf-theme="zenless"] .meter {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%);
+}
+
+html[data-sf-theme="zenless"] ::selection {
+  background: hsl(48 100% 52% / 0.35);
+  color: hsl(var(--ink));
+}
+
+html[data-sf-theme="zenless"] .scrollbar-thin {
+  scrollbar-color: var(--zz-yellow) transparent;
+}
+
+html[data-sf-theme="zenless"] .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--zz-yellow);
+  border-radius: 0;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-theme="zenless"] body::before,
+  html[data-sf-theme="zenless"] body::after,
+  html[data-sf-theme="zenless"] [data-sf-sidebar],
+  html[data-sf-theme="zenless"] [data-sf-topbar]::after,
+  html[data-sf-theme="zenless"] [data-sf-topbar] .engraved,
+  html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"],
+  html[data-sf-theme="zenless"] [data-sf-main] > *,
+  html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before,
+  html[data-sf-theme="zenless"] [data-sf-sidebar]::before {
+    animation: none !important;
+  }
+
+  html[data-sf-theme="zenless"] .card:hover,
+  html[data-sf-theme="zenless"] .panel:hover,
+  html[data-sf-theme="zenless"] [data-sf-nav] a:hover,
+  html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+    transform: none;
+  }
+}

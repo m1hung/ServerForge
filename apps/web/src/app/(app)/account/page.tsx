@@ -170,8 +170,8 @@ function AppearanceCard({ role }: { role: string }) {
       <CardHeader>
         <CardTitle>Appearance</CardTitle>
         <CardDescription>
-          Pick a CSS theme. Drop your own{' '}
-          <code className="text-[12px]">.css</code> files in{' '}
+          Themes can recolour the panel or fully restyle it (fonts, chrome,
+          motion). Drop a <code className="text-[12px]">.css</code> file in{' '}
           <code className="text-[12px]">data/themes/</code> — see{' '}
           <code className="text-[12px]">themes/README.md</code>.
         </CardDescription>

@@ -1,14 +1,15 @@
 /**
- * Custom CSS theme selection (overrides design tokens in globals.css).
+ * Custom CSS themes — token overrides, full visual redesigns, and motion.
  *
  * Persisted in localStorage so the boot script in layout.tsx can attach the
- * stylesheet before paint. The panel default from GET /api/themes is used when
- * nothing is stored yet.
+ * stylesheet and `data-sf-theme` before paint. Themes may restyle any panel
+ * chrome (see themes/README.md); the attribute scopes redesign rules.
  */
 
 export const CSS_THEME_STORAGE_KEY = 'sf-css-theme';
 export const DEFAULT_CSS_THEME = 'default';
 export const THEME_LINK_ID = 'sf-theme-css';
+export const THEME_DATA_ATTR = 'data-sf-theme';
 
 const THEME_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
@@ -29,12 +30,23 @@ export function themeCssUrl(id: string): string {
   return `${themeApiBase()}/api/themes/${encodeURIComponent(id)}`;
 }
 
-/** Attach or remove the custom theme stylesheet on <html>. */
+function syncThemeAttribute(theme: string): void {
+  if (typeof document === 'undefined') return;
+  if (theme === DEFAULT_CSS_THEME) {
+    document.documentElement.removeAttribute(THEME_DATA_ATTR);
+  } else {
+    document.documentElement.setAttribute(THEME_DATA_ATTR, theme);
+  }
+}
+
+/** Attach or remove the custom theme stylesheet and data-sf-theme hook. */
 export function applyCssTheme(id: string | null | undefined): void {
   if (typeof document === 'undefined') return;
 
   const theme = id && isValidCssThemeId(id) ? id : DEFAULT_CSS_THEME;
   const existing = document.getElementById(THEME_LINK_ID) as HTMLLinkElement | null;
+
+  syncThemeAttribute(theme);
 
   if (theme === DEFAULT_CSS_THEME) {
     existing?.remove();

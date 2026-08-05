@@ -197,17 +197,21 @@ API headers. No source file hardcodes the product name in user-visible text.
 
 ## Custom CSS themes
 
-The dashboard is driven by CSS variables in `apps/web/src/app/globals.css`.
-Override them with a `.css` file:
+The dashboard is driven by CSS variables in `apps/web/src/app/globals.css`, and
+themes can go further — fonts, chrome, clip-paths, and CSS animation.
 
 1. Copy an example from `themes/` (or write your own — see `themes/README.md`)
 2. Put it in `data/themes/` (created by bootstrap)
 3. Open **Account → Appearance** and pick it
 
-Built-in themes (`ember`, `forest`, `slate`) ship with the panel. Owners and
-admins can also set the panel-wide default for people who have not chosen one
-yet. Light/dark mode (sidebar sun/moon) still works — themes should define
-tokens for both `:root`/`.dark` and `.light`.
+Built-in themes include simple palettes (`ember`, `forest`, `slate`) and a full
+redesign (`zenless`). Owners and admins can set the panel-wide default.
+Light/dark mode (sidebar sun/moon) still applies; redesign themes should define
+both `html.dark` and `html.light` (or scoped `[data-sf-theme].light`).
+
+The active theme id is exposed as `data-sf-theme` on `<html>`, with stable
+hooks like `[data-sf-sidebar]` and `[data-sf-control="button"]` for deep
+restyles.
 
 ## Documentation
 

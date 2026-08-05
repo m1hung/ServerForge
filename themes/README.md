@@ -1,37 +1,38 @@
 # Custom CSS themes
 
-Drop a `.css` file in this directory (`data/themes/`) to make it available in
-**Account → Appearance**. Built-in examples also ship in the repo `themes/`
-folder.
+Themes are plain `.css` files. They can do as little as recolour the panel, or
+as much as a full visual redesign with custom fonts, layout chrome, and
+animation.
 
-A theme should redefine the design tokens used by the panel. Start from one of
-the examples and keep both dark (`:root, .dark`) and light (`.light`) blocks so
-the sun/moon toggle still works.
+## Where files go
+
+| Location | Purpose |
+| -------- | ------- |
+| `themes/` | Built-in examples shipped with the product |
+| `data/themes/` | Your custom themes (created by bootstrap) |
+
+A custom file with the same id as a built-in **replaces** it. Filename → theme
+id: `zenless.css` → `zenless`. Allowed characters: letters, numbers, `.`, `_`, `-`.
+
+Pick a theme under **Account → Appearance**. The active id is written to
+`data-sf-theme` on `<html>` and the stylesheet is loaded from the API.
+
+## Colour tokens only
+
+Override the design tokens (HSL channels, no `hsl()` wrapper):
 
 ```css
 /*
- * theme: My Theme
- * description: Optional one-line summary shown in the picker.
+ * theme: My Palette
+ * description: Optional summary for the picker.
  */
 
 :root,
 .dark {
   --canvas: 250 12% 9%;
   --surface: 250 10% 12%;
-  --surface-raised: 250 9% 16%;
-  --line: 250 8% 21%;
-  --line-strong: 250 7% 35%;
-  --ink: 250 20% 96%;
-  --ink-muted: 250 9% 75%;
-  --ink-subtle: 250 7% 61%;
   --accent: 250 90% 76%;
-  --accent-soft: 250 45% 20%;
-  --accent-ink: 250 40% 12%;
-  --ok: 155 55% 58%;
-  --warn: 40 92% 65%;
-  --danger: 350 80% 70%;
-  --info: 205 90% 70%;
-  --focus: 250 90% 76%;
+  /* …see apps/web/src/app/globals.css for the full list */
 }
 
 .light {
@@ -39,8 +40,83 @@ the sun/moon toggle still works.
 }
 ```
 
-Values are HSL channels without the `hsl()` wrapper (e.g. `250 90% 76%`),
-matching `apps/web/src/app/globals.css`.
+## Full redesigns + motion
 
-Filename rules: letters, numbers, `.`, `_`, `-` only — e.g. `ember.css`.
-A custom file with the same name as a built-in theme replaces it.
+For a deeper look, **scope every redesign rule** with the theme attribute so
+switching themes unloads cleanly:
+
+```css
+/*
+ * theme: Neon District
+ * description: Cut corners, glow, and a drifting grid.
+ */
+
+html[data-sf-theme="neon-district"],
+html[data-sf-theme="neon-district"].dark {
+  --accent: 48 100% 52%;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+html[data-sf-theme="neon-district"].light {
+  --accent: 45 100% 36%;
+}
+
+@keyframes my-theme-pulse {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+html[data-sf-theme="neon-district"] .card {
+  border-radius: 0;
+  animation: my-theme-pulse 2s ease-in-out infinite alternate;
+}
+```
+
+You may use `@import` for webfonts, `@keyframes`, pseudo-elements, filters,
+`clip-path`, and any selectors that match the panel.
+
+### Stable theme hooks
+
+Prefer these over brittle utility-class selectors:
+
+| Hook | Where |
+| ---- | ----- |
+| `html[data-sf-theme="…"]` | Active theme id |
+| `html.dark` / `html.light` | Light/dark mode |
+| `[data-sf-shell]` | App shell root |
+| `[data-sf-sidebar]` | Desktop sidebar |
+| `[data-sf-nav]` | Sidebar nav |
+| `[data-sf-workspace]` | Main column |
+| `[data-sf-topbar]` | Top header |
+| `[data-sf-main]` | Scrollable content |
+| `[data-sf-mobile-nav]` | Phone bottom nav |
+| `[data-sf-control="button"]` | Buttons |
+| `[data-sf-variant="primary"\|…]` | Button variant |
+| `.card` / `.panel` | Cards |
+| `.display` / `.engraved` / `.legend` / `.eyebrow` | Type styles |
+| `.readout` / `.inset-well` / `.meter` / `.lamp` | Common chrome |
+
+External theme CSS is **unlayered**, so it wins over the panel’s `@layer`
+component styles when specificity is equal.
+
+### Accessibility
+
+Always gate continuous motion:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-theme="neon-district"] .card {
+    animation: none !important;
+  }
+}
+```
+
+The panel also short-circuits animations globally when the OS requests reduced
+motion.
+
+## Examples
+
+- `ember.css`, `forest.css`, `slate.css` — token palettes
+- `zenless.css` — full New Eridu-inspired redesign with animation
+
+See also the **Custom CSS themes** section in the root `README.md`.

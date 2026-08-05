@@ -44,6 +44,7 @@ const themeScript = `
 
     var cssTheme = localStorage.getItem('sf-css-theme');
     if (cssTheme && /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(cssTheme) && cssTheme !== 'default') {
+      document.documentElement.setAttribute('data-sf-theme', cssTheme);
       var configured = ${apiUrlLiteral};
       var port = ${apiPortLiteral};
       var base = (configured && configured !== 'auto')
@@ -54,6 +55,8 @@ const themeScript = `
       link.rel = 'stylesheet';
       link.href = base + '/api/themes/' + encodeURIComponent(cssTheme);
       document.head.appendChild(link);
+    } else {
+      document.documentElement.removeAttribute('data-sf-theme');
     }
   } catch (e) {
     document.documentElement.classList.add('dark');
