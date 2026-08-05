@@ -1,0 +1,53 @@
+/*
+ * theme: Forest
+ * description: Soft green accents on a cool moss-tinted surface.
+ */
+
+:root,
+.dark {
+  --canvas: 150 12% 8%;
+  --surface: 150 10% 11%;
+  --surface-raised: 150 9% 15%;
+  --line: 150 8% 21%;
+  --line-strong: 150 7% 34%;
+
+  --ink: 140 20% 96%;
+  --ink-muted: 145 9% 72%;
+  --ink-subtle: 150 7% 58%;
+
+  --accent: 152 70% 58%;
+  --accent-soft: 152 35% 16%;
+  --accent-ink: 150 40% 8%;
+
+  --ok: 155 55% 58%;
+  --warn: 40 92% 65%;
+  --danger: 350 80% 70%;
+  --info: 195 85% 68%;
+
+  --focus: 152 70% 58%;
+  --shadow-overlay: 0 16px 48px -12px rgb(0 0 0 / 0.7);
+}
+
+.light {
+  --canvas: 140 28% 97%;
+  --surface: 0 0% 100%;
+  --surface-raised: 140 22% 95%;
+  --line: 145 14% 88%;
+  --line-strong: 145 10% 70%;
+
+  --ink: 150 25% 12%;
+  --ink-muted: 150 8% 38%;
+  --ink-subtle: 150 7% 42%;
+
+  --accent: 152 62% 32%;
+  --accent-soft: 152 45% 93%;
+  --accent-ink: 0 0% 100%;
+
+  --ok: 155 68% 26%;
+  --warn: 32 92% 31%;
+  --danger: 350 72% 43%;
+  --info: 205 88% 34%;
+
+  --focus: 152 62% 32%;
+  --shadow-overlay: 0 16px 48px -12px rgb(20 40 30 / 0.14);
+}

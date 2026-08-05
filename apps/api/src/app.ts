@@ -133,6 +133,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(modpackStagingRoutes);
   await app.register(adminRoutes);
   await app.register(setupRoutes);
+  const { themeRoutes } = await import('./routes/themes.js');
+  await app.register(themeRoutes);
   await app.register(websocketRoutes);
 
   return app;

@@ -111,6 +111,7 @@ async function preflight(): Promise<void> {
     ['DATA_ROOT', config.dataRoot],
     ['BACKUP_ROOT', config.backupRoot],
     ['CACHE_ROOT', config.cacheRoot],
+    ['THEMES_ROOT', config.themesRoot],
   ] as const) {
     try {
       await fs.mkdir(dir, { recursive: true });

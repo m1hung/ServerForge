@@ -7,6 +7,11 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { copyToClipboard, inkOn, timeAgo } from '@/lib/utils';
 import {
+  DEFAULT_CSS_THEME,
+  readStoredCssTheme,
+  storeCssTheme,
+} from '@/lib/theme-css';
+import {
   Badge,
   Button,
   Card,
@@ -18,6 +23,7 @@ import {
   Field,
   Input,
   Modal,
+  Select,
   Skeleton,
   useToast,
 } from '@/components/ui';
@@ -97,11 +103,138 @@ export default function AccountPage() {
       </div>
 
       <ProfileCard user={user} onSaved={() => queryClient.invalidateQueries({ queryKey: ['me'] })} />
+      <AppearanceCard role={user.role} />
       <PasswordCard />
       <ApiKeysCard />
 
       <p className="text-[12px] text-ink-subtle">Account created {timeAgo(user.createdAt)}.</p>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────── appearance ──
+
+interface ThemeOption {
+  id: string;
+  name: string;
+  description: string | null;
+  source: 'builtin' | 'custom';
+}
+
+function AppearanceCard({ role }: { role: string }) {
+  const toast = useToast();
+  const canSetDefault = role === 'owner' || role === 'admin';
+  const catalogue = useQuery({
+    queryKey: ['themes'],
+    queryFn: () =>
+      api.get<{ themes: ThemeOption[]; active: string }>('/api/themes'),
+  });
+
+  const [selected, setSelected] = useState(DEFAULT_CSS_THEME);
+  const [asDefault, setAsDefault] = useState(false);
+
+  useEffect(() => {
+    const stored = readStoredCssTheme();
+    if (stored) {
+      setSelected(stored);
+      return;
+    }
+    if (catalogue.data?.active) setSelected(catalogue.data.active);
+  }, [catalogue.data?.active]);
+
+  const saveDefault = useMutation({
+    mutationFn: (theme: string) => api.put('/api/themes/active', { theme }),
+    onSuccess: () => {
+      void catalogue.refetch();
+      toast.push({ tone: 'ok', message: 'Panel default theme updated.' });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError) {
+        toast.push({ tone: 'danger', message: err.body.message, hint: err.body.hint });
+      }
+    },
+  });
+
+  const apply = (id: string) => {
+    setSelected(id);
+    storeCssTheme(id);
+    toast.push({
+      tone: 'ok',
+      message: id === DEFAULT_CSS_THEME ? 'Using the default theme.' : `Theme “${id}” applied.`,
+    });
+    if (asDefault && canSetDefault) saveDefault.mutate(id);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Appearance</CardTitle>
+        <CardDescription>
+          Pick a CSS theme. Drop your own{' '}
+          <code className="text-[12px]">.css</code> files in{' '}
+          <code className="text-[12px]">data/themes/</code> — see{' '}
+          <code className="text-[12px]">themes/README.md</code>.
+        </CardDescription>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        {catalogue.isLoading ? (
+          <Skeleton className="h-9 w-full" />
+        ) : (
+          <Field label="Colour theme">
+            <Select
+              value={selected}
+              onChange={(e) => apply(e.target.value)}
+              aria-label="Colour theme"
+            >
+              {(catalogue.data?.themes ?? []).map((theme) => (
+                <option key={theme.id} value={theme.id}>
+                  {theme.name}
+                  {theme.source === 'custom' ? ' (custom)' : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
+        {catalogue.data?.themes.find((t) => t.id === selected)?.description && (
+          <p className="text-[13px] text-ink-muted">
+            {catalogue.data.themes.find((t) => t.id === selected)?.description}
+          </p>
+        )}
+
+        {canSetDefault && (
+          <label className="flex items-start gap-2.5 text-[13px] text-ink-muted">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={asDefault}
+              onChange={(e) => setAsDefault(e.target.checked)}
+            />
+            <span>
+              Also set this as the panel default for people who have not chosen a
+              theme yet.
+            </span>
+          </label>
+        )}
+
+        {canSetDefault && asDefault && selected !== catalogue.data?.active && (
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              loading={saveDefault.isPending}
+              onClick={() => saveDefault.mutate(selected)}
+            >
+              Save panel default
+            </Button>
+          </div>
+        )}
+
+        <p className="text-[12px] text-ink-subtle">
+          Light and dark mode still use the sun/moon control in the sidebar —
+          themes redefine colours for both.
+        </p>
+      </CardBody>
+    </Card>
   );
 }
 

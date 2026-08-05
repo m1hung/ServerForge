@@ -255,7 +255,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { key } = request.params as { key: string };
     const body = request.body as { value?: unknown };
 
-    const allowed = ['registration.mode', 'defaults.limits', 'panel.title'];
+    const allowed = ['registration.mode', 'defaults.limits', 'panel.title', 'panel.theme'];
     if (!allowed.includes(key)) throw badRequest('That setting cannot be changed here.');
 
     await prisma.setting.upsert({

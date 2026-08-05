@@ -1,0 +1,56 @@
+/*
+ * theme: Ember
+ * description: Warm amber accents on a charcoal canvas.
+ *
+ * Overrides ServerForge design tokens. Define both :root/.dark and .light so
+ * the existing light/dark toggle keeps working.
+ */
+
+:root,
+.dark {
+  --canvas: 20 10% 8%;
+  --surface: 20 9% 11%;
+  --surface-raised: 20 8% 15%;
+  --line: 20 7% 22%;
+  --line-strong: 20 6% 36%;
+
+  --ink: 30 25% 96%;
+  --ink-muted: 25 10% 72%;
+  --ink-subtle: 20 8% 58%;
+
+  --accent: 28 95% 62%;
+  --accent-soft: 28 40% 18%;
+  --accent-ink: 20 40% 10%;
+
+  --ok: 155 55% 58%;
+  --warn: 40 92% 65%;
+  --danger: 350 80% 70%;
+  --info: 205 90% 70%;
+
+  --focus: 28 95% 62%;
+  --shadow-overlay: 0 16px 48px -12px rgb(0 0 0 / 0.72);
+}
+
+.light {
+  --canvas: 30 35% 97%;
+  --surface: 0 0% 100%;
+  --surface-raised: 30 30% 95%;
+  --line: 25 16% 88%;
+  --line-strong: 25 10% 70%;
+
+  --ink: 20 25% 12%;
+  --ink-muted: 20 8% 38%;
+  --ink-subtle: 20 7% 42%;
+
+  --accent: 24 90% 42%;
+  --accent-soft: 28 70% 94%;
+  --accent-ink: 0 0% 100%;
+
+  --ok: 155 68% 26%;
+  --warn: 32 92% 31%;
+  --danger: 350 72% 43%;
+  --info: 205 88% 34%;
+
+  --focus: 24 90% 42%;
+  --shadow-overlay: 0 16px 48px -12px rgb(40 25 10 / 0.14);
+}

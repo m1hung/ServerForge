@@ -71,6 +71,8 @@ const schema = z.object({
   DATA_ROOT: z.string().default('./data/servers'),
   BACKUP_ROOT: z.string().default('./data/backups'),
   CACHE_ROOT: z.string().default('./data/cache'),
+  /** Operator CSS themes (`*.css`). Defaults to `<parent of DATA_ROOT>/themes`. */
+  THEMES_ROOT: z.string().optional(),
   /**
    * Host-side counterparts of DATA_ROOT / BACKUP_ROOT.
    *
@@ -134,6 +136,7 @@ export type Config = z.infer<typeof schema> & {
   dataRoot: string;
   backupRoot: string;
   cacheRoot: string;
+  themesRoot: string;
   HOST_DATA_ROOT: string;
   HOST_BACKUP_ROOT: string;
   upnpEnabled: boolean;
@@ -157,6 +160,9 @@ function load(): Config {
   const dataRoot = path.resolve(env.DATA_ROOT);
   const backupRoot = path.resolve(env.BACKUP_ROOT);
   const isProduction = env.NODE_ENV === 'production';
+  const themesRoot = path.resolve(
+    optional(env.THEMES_ROOT) ?? path.join(path.dirname(dataRoot), 'themes'),
+  );
 
   return {
     ...env,
@@ -171,6 +177,7 @@ function load(): Config {
     dataRoot,
     backupRoot,
     cacheRoot: path.resolve(env.CACHE_ROOT),
+    themesRoot,
     // A blank HOST_* falls back to the local root, which is right for
     // host-native runs and is what the container overrides. Blank must not
     // reach path.resolve(): that would quietly yield the current directory.

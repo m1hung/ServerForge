@@ -41,6 +41,8 @@ COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/
 COPY --from=build /app/package.json ./
+# Built-in CSS themes (operators add more under THEMES_ROOT / data/themes).
+COPY themes ./themes
 
 # Runs as root because it needs the Docker socket. The socket is the trust
 # boundary here — see docs/security.md.

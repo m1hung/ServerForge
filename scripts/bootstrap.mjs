@@ -116,6 +116,11 @@ async function main() {
     "HOST_BACKUP_ROOT",
     path.resolve(root, readValue(contents, "BACKUP_ROOT") ?? "data/backups"),
   );
+  contents = fillIfEmpty(
+    contents,
+    "HOST_THEMES_ROOT",
+    path.resolve(root, "data/themes"),
+  );
 
   if (contents !== before) console.log(`${c.green("✓")} generated secrets`);
 
@@ -130,8 +135,10 @@ async function main() {
     "DATA_ROOT",
     "BACKUP_ROOT",
     "CACHE_ROOT",
+    "THEMES_ROOT",
     "HOST_DATA_ROOT",
     "HOST_BACKUP_ROOT",
+    "HOST_THEMES_ROOT",
   ]) {
     contents = absolutise(contents, key);
   }
@@ -142,10 +149,19 @@ async function main() {
   await fs.writeFile(envPath, contents, { mode: 0o600 });
 
   // Directories the API refuses to start without.
-  for (const dir of ["data/servers", "data/backups", "data/cache"]) {
+  for (const dir of ["data/servers", "data/backups", "data/cache", "data/themes"]) {
     await fs.mkdir(path.join(root, dir), { recursive: true });
   }
   console.log(`${c.green("✓")} created data directories`);
+
+  // Point operators at where custom CSS themes go (gitignored under data/).
+  const themesReadme = path.join(root, "data/themes/README.md");
+  if (!(await exists(themesReadme))) {
+    await fs.copyFile(
+      path.join(root, "themes/README.md"),
+      themesReadme,
+    ).catch(() => undefined);
+  }
 
   // Warn about the one value people forget to change before exposing a panel.
   if (/POSTGRES_PASSWORD=["']?change-me-in-production/.test(contents)) {

@@ -42,6 +42,8 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
   deleting, or upload your own
 - **Multi-user** — roles, per-server sub-users with granular permissions,
   scoped API keys, audit log
+- **Custom CSS themes** — drop a `.css` file in `data/themes/` and pick it under
+  Account → Appearance (see `themes/README.md`)
 - **Crash handling** — auto-restart with a crash-loop guard, OOM detection,
   and an explanation instead of a stack trace
 
@@ -138,6 +140,7 @@ packages/
   core/         Branding, contracts, settings-schema DSL, path safety
   db/           Prisma schema, client, seed
   adapters/     Game adapters (Minecraft family, Palworld)
+themes/         Built-in CSS colour themes (drop more in data/themes/)
 docker/         Compose stack and Dockerfiles
 docs/           Setup, architecture, security, operations
 scripts/        bootstrap, dev runner, compose wrapper
@@ -191,6 +194,20 @@ BRAND_ACCENT="#7c3aed"
 
 That covers the UI, page titles, container name prefixes, Docker labels and
 API headers. No source file hardcodes the product name in user-visible text.
+
+## Custom CSS themes
+
+The dashboard is driven by CSS variables in `apps/web/src/app/globals.css`.
+Override them with a `.css` file:
+
+1. Copy an example from `themes/` (or write your own — see `themes/README.md`)
+2. Put it in `data/themes/` (created by bootstrap)
+3. Open **Account → Appearance** and pick it
+
+Built-in themes (`ember`, `forest`, `slate`) ship with the panel. Owners and
+admins can also set the panel-wide default for people who have not chosen one
+yet. Light/dark mode (sidebar sun/moon) still works — themes should define
+tokens for both `:root`/`.dark` and `.light`.
 
 ## Documentation
 

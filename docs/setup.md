@@ -133,8 +133,10 @@ Everything lives in `.env`. The values worth knowing:
 | `CORS_ORIGINS`         | `http://localhost:3000`  | Exact origins, comma separated         |
 | `DATA_ROOT`            | `./data/servers`         | Where game files live                  |
 | `BACKUP_ROOT`          | `./data/backups`         |                                        |
+| `THEMES_ROOT`          | `./data/themes`          | Custom CSS themes                      |
 | `HOST_DATA_ROOT`       | absolute `DATA_ROOT`     | Container mount; must be absolute      |
 | `HOST_BACKUP_ROOT`     | absolute `BACKUP_ROOT`   | Container mount; must be absolute      |
+| `HOST_THEMES_ROOT`     | absolute `data/themes`   | Container mount; must be absolute      |
 | `PORT_RANGE_START/END` | `25500`/`25999`          | Change before seeding                  |
 | `UPNP_ENABLED`         | `false`                  | Automatic router forwarding, see below |
 | `CURSEFORGE_API_KEY`   | empty                    | Optional, see below                    |
