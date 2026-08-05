@@ -144,6 +144,11 @@ export const scheduleSchema = z.object({
         z.object({ type: z.literal('power'), action: z.enum(['start', 'stop', 'restart']) }),
         z.object({ type: z.literal('command'), command: z.string().min(1).max(1024) }),
         z.object({ type: z.literal('backup'), retain: z.number().int().min(1).max(50).default(5) }),
+        z.object({
+          type: z.literal('update'),
+          /** Restart after the update finishes. */
+          startAfter: z.boolean().default(true),
+        }),
       ]),
     )
     .min(1)
@@ -159,7 +164,15 @@ export const apiKeySchema = z.object({
   name: z.string().trim().min(1).max(64),
   /** Null = never expires. */
   expiresAt: z.string().datetime().nullable().optional(),
-  scopes: z.array(z.string().max(64)).max(32).default(['*']),
+  scopes: z
+    .array(z.union([z.literal('*'), z.literal('admin'), z.enum(SERVER_PERMISSIONS)]))
+    .min(1)
+    .max(32)
+    .default(['*']),
+});
+
+export const cloneServerSchema = z.object({
+  name: serverNameSchema,
 });
 
 export const inviteUserSchema = z.object({
@@ -183,3 +196,4 @@ export type UpdateServerInput = z.infer<typeof updateServerSchema>;
 export type ScheduleInput = z.infer<typeof scheduleSchema>;
 export type ModInstallInput = z.infer<typeof modInstallSchema>;
 export type ResourceLimitsInput = z.infer<typeof resourceLimitsSchema>;
+export type CloneServerInput = z.infer<typeof cloneServerSchema>;

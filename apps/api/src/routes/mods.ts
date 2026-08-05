@@ -8,9 +8,11 @@ import {
   installMod,
   listInstalledMods,
   modrinthVersions,
+  checkModUpdates,
   removeMod,
   searchModrinth,
   setModEnabled,
+  updateMod,
 } from '../services/mods.js';
 
 export async function modRoutes(app: FastifyInstance): Promise<void> {
@@ -120,5 +122,40 @@ export async function modRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return { ok: true, needsRestart: ['running', 'starting'].includes(server.state) };
+  });
+
+  app.post('/api/servers/:uid/mods/check-updates', async (request) => {
+    const { uid } = request.params as { uid: string };
+    const { server } = await requireServerAccess(request, uid, 'server.mods');
+    const result = await checkModUpdates(server);
+    return {
+      ok: true,
+      ...result,
+      message:
+        result.updates === 0
+          ? 'Everything is up to date.'
+          : `${result.updates} mod${result.updates === 1 ? '' : 's'} can be updated.`,
+    };
+  });
+
+  app.post('/api/servers/:uid/mods/:fileName/update', async (request, reply) => {
+    const { uid, fileName } = request.params as { uid: string; fileName: string };
+    const { server, user } = await requireServerAccess(request, uid, 'server.mods');
+
+    const result = await updateMod(server, decodeURIComponent(fileName));
+    await recordActivity({
+      serverId: server.id,
+      actorId: user.id,
+      actorName: user.displayName,
+      action: 'mod.update',
+      message: `${user.displayName} updated ${result.fileName}.`,
+    });
+
+    return reply.code(201).send({
+      ok: true,
+      fileName: result.fileName,
+      message: 'Updated. Restart the server for it to load.',
+      needsRestart: ['running', 'starting'].includes(server.state),
+    });
   });
 }

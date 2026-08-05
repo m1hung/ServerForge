@@ -2,6 +2,7 @@ import { notFound } from '@serverforge/core';
 import type { GameAdapter, GameVariant } from './types.js';
 import { minecraftAdapter } from './minecraft/index.js';
 import { palworldAdapter } from './palworld/index.js';
+import { valheimAdapter } from './valheim/index.js';
 
 /**
  * The adapter registry.
@@ -9,7 +10,7 @@ import { palworldAdapter } from './palworld/index.js';
  * This array is the complete list of games the platform supports. Adding one
  * is: write the adapter, import it, push it here. No other file changes.
  */
-const ADAPTERS: GameAdapter[] = [minecraftAdapter, palworldAdapter];
+const ADAPTERS: GameAdapter[] = [minecraftAdapter, palworldAdapter, valheimAdapter];
 
 const byId = new Map(ADAPTERS.map((adapter) => [adapter.id, adapter]));
 

@@ -363,8 +363,8 @@ function ApiKeysCard() {
             <div>
               <CardTitle>API keys</CardTitle>
               <CardDescription>
-                For scripts and automation. A key can do everything your account can — treat it
-                like your password.
+                For scripts and automation. Choose full access or limit a key to
+                specific permissions — treat every key like a password.
               </CardDescription>
             </div>
             <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>

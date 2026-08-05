@@ -8,6 +8,7 @@ import type {
   VersionInfo,
 } from '../types.js';
 import { parseIni, parseTuple, quoteUnreal, stringifyIni, stringifyTuple, unrealBool, unrealFloat } from '../util/ini.js';
+import { STEAMCMD_IMAGE, steamAppUpdate } from '../util/steamcmd.js';
 import { palworldSettingsSchema } from './settings.js';
 
 /**
@@ -21,9 +22,8 @@ import { palworldSettingsSchema } from './settings.js';
  */
 
 const STEAM_APP_ID = '2394010';
-const STEAMCMD_IMAGE = 'steamcmd/steamcmd:ubuntu-24';
 /** Palworld ships as a 64-bit Linux binary needing the Steam runtime libs. */
-const RUNTIME_IMAGE = 'steamcmd/steamcmd:ubuntu-24';
+const RUNTIME_IMAGE = STEAMCMD_IMAGE;
 
 const CONFIG_PATH = 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini';
 const CONFIG_SECTION = '/Script/Pal.PalGameWorldSettings';
@@ -97,26 +97,11 @@ export const palworldAdapter: GameAdapter = {
       15,
     );
 
-    const result = await tools.runInContainer({
-      image: STEAMCMD_IMAGE,
-      command: [
-        '+force_install_dir',
-        '/home/container',
-        '+login',
-        'anonymous',
-        '+app_update',
-        STEAM_APP_ID,
-        'validate',
-        '+quit',
-      ],
-      timeoutMs: 60 * 60 * 1000,
+    await steamAppUpdate(tools, {
+      appId: STEAM_APP_ID,
+      validate: true,
+      report: (msg) => report.log(msg),
     });
-
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `SteamCMD failed (exit ${result.exitCode}). This is usually a temporary Steam outage — try installing again.\n${result.output.slice(-4000)}`,
-      );
-    }
 
     await report.phase('configuring', 'Preparing the configuration…', 70);
     await tools.mkdir('Pal/Saved/Config/LinuxServer');

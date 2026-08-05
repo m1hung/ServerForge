@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Link2,
   Package,
+  RefreshCw,
   Search,
   Trash2,
 } from 'lucide-react';
@@ -47,6 +48,7 @@ interface InstalledMod {
   enabled: boolean;
   source: string;
   versionName: string | null;
+  updateAvailable: boolean;
   installedAt: string | null;
 }
 
@@ -167,6 +169,27 @@ export function ModsPanel({
     onError,
   });
 
+  const checkUpdates = useMutation({
+    mutationFn: () =>
+      api.post<{ message: string; updates: number }>(`/api/servers/${uid}/mods/check-updates`),
+    onSuccess: (result) => {
+      toast.push({ tone: 'ok', message: result.message });
+      refresh();
+    },
+    onError,
+  });
+
+  const updateOne = useMutation({
+    mutationFn: (mod: InstalledMod) =>
+      api.post<{ message: string; needsRestart: boolean }>(
+        `/api/servers/${uid}/mods/${encodeURIComponent(mod.fileName)}/update`,
+      ),
+    onSuccess: (result) => {
+      announceInstalled(result);
+    },
+    onError,
+  });
+
   const installFromUrl = useMutation({
     mutationFn: () =>
       api.post<{ message: string; needsRestart: boolean }>(`/api/servers/${uid}/mods`, {
@@ -226,6 +249,18 @@ export function ModsPanel({
         </p>
         {canManage && (
           <div className="flex shrink-0 gap-2">
+            {data.sources.modrinth && list.some((m) => m.source === 'modrinth') && (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={checkUpdates.isPending}
+                loadingText="Checking…"
+                onClick={() => checkUpdates.mutate()}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                Check updates
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setLinking(true)}>
               <Link2 className="h-4 w-4" aria-hidden />
               From a link
@@ -268,6 +303,7 @@ export function ModsPanel({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{mod.name}</span>
                     {!mod.enabled && <Badge tone="neutral">Off</Badge>}
+                    {mod.updateAvailable && <Badge tone="warn">Update</Badge>}
                     <Badge>{SOURCE_LABELS[mod.source] ?? mod.source}</Badge>
                   </div>
                   <p className="mt-0.5 truncate font-mono text-[11.5px] text-ink-subtle">
@@ -280,6 +316,16 @@ export function ModsPanel({
 
                 {canManage && (
                   <div className="flex shrink-0 items-center gap-2">
+                    {mod.updateAvailable && mod.source === 'modrinth' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={updateOne.isPending}
+                        onClick={() => updateOne.mutate(mod)}
+                      >
+                        Update
+                      </Button>
+                    )}
                     <Toggle
                       checked={mod.enabled}
                       onChange={() => toggle.mutate(mod)}

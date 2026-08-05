@@ -7,7 +7,15 @@ import { recordActivity } from '../lib/events.js';
 import { createBackupRecord, pruneScheduleBackups, runBackup, runRestore } from '../services/backups.js';
 import { restartServer, sendConsoleCommand, startServer, stopServer } from '../services/servers.js';
 import { createInstallWorker } from './install-worker.js';
-import { backupQueue, restoreQueue, scheduleQueue, type BackupJob, type RestoreJob, type ScheduleJob } from './index.js';
+import {
+  backupQueue,
+  installQueue,
+  restoreQueue,
+  scheduleQueue,
+  type BackupJob,
+  type RestoreJob,
+  type ScheduleJob,
+} from './index.js';
 
 /**
  * Worker registration.
@@ -18,10 +26,11 @@ import { backupQueue, restoreQueue, scheduleQueue, type BackupJob, type RestoreJ
  */
 
 export interface ScheduleAction {
-  type: 'power' | 'command' | 'backup';
+  type: 'power' | 'command' | 'backup' | 'update';
   action?: 'start' | 'stop' | 'restart';
   command?: string;
   retain?: number;
+  startAfter?: boolean;
 }
 
 export function createWorkers(): Worker[] {
@@ -115,6 +124,18 @@ async function runSchedule(scheduleId: string): Promise<void> {
             ignore: [],
             scheduleId: schedule.id,
             retain: action.retain ?? 5,
+          });
+          break;
+        }
+
+        case 'update': {
+          if (['running', 'starting'].includes(server.state)) {
+            await stopServer(server.uid, {});
+          }
+          await installQueue().add('install', {
+            serverUid: server.uid,
+            mode: 'update',
+            startAfter: action.startAfter !== false,
           });
           break;
         }

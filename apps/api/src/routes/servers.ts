@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import {
   badRequest,
+  cloneServerSchema,
   conflict,
   consoleCommandSchema,
   createServerSchema,
   defaultsFor,
+  forbidden,
   groupSettings,
   powerActionSchema,
   settingsPatchSchema,
@@ -16,10 +18,11 @@ import {
 } from '@serverforge/core';
 import { buildCatalogue, getAdapter } from '@serverforge/adapters';
 import { prisma, serializeBigInts } from '@serverforge/db';
-import { requireAuth, requireServerAccess } from '../lib/auth.js';
+import { apiKeyAllows, requireAuth, requireServerAccess } from '../lib/auth.js';
 import { readConsoleBuffer, recordActivity } from '../lib/events.js';
 import { installQueue } from '../queue/index.js';
 import {
+  cloneServer,
   createServer,
   deleteServer,
   restartServer,
@@ -70,6 +73,9 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
   // ── Fleet ─────────────────────────────────────────────────────────────
   app.get('/api/servers', async (request) => {
     const user = await requireAuth(request);
+    if (!apiKeyAllows(user, 'server.view')) {
+      throw forbidden('This API key is missing the "view" scope.');
+    }
     const isAdmin = user.role === 'owner' || user.role === 'admin';
 
     const servers = await prisma.server.findMany({
@@ -107,6 +113,9 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/servers', async (request, reply) => {
     const user = await requireAuth(request);
+    if (!apiKeyAllows(user, 'server.settings')) {
+      throw forbidden('This API key is missing the "settings" scope required to create servers.');
+    }
     const input = createServerSchema.parse(request.body);
 
     const server = await createServer(input, { id: user.id, displayName: user.displayName });
@@ -398,6 +407,59 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(202).send({
       ok: true,
       message: 'Reinstalling. Your world and configuration files are kept.',
+    });
+  });
+
+  /**
+   * Downloads the latest game/server binaries without wiping the world.
+   *
+   * Steam games re-run `app_update`; Minecraft clears known jars/loaders then
+   * reinstalls the chosen version. Optional `version` switches Minecraft
+   * builds; Steam servers always track the public branch.
+   */
+  app.post('/api/servers/:uid/update', async (request, reply) => {
+    const { uid } = request.params as { uid: string };
+    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
+
+    if (['installing', 'updating', 'restoring', 'creating'].includes(server.state)) {
+      throw conflict('This server is already busy with another job.');
+    }
+    if (['running', 'starting', 'stopping'].includes(server.state)) {
+      throw conflict('Stop the server before updating it.');
+    }
+
+    const body = (request.body ?? {}) as { version?: string; startAfter?: boolean };
+    if (body.version) {
+      await prisma.server.update({ where: { id: server.id }, data: { version: body.version } });
+    }
+
+    await installQueue().add('install', {
+      serverUid: uid,
+      mode: 'update',
+      startAfter: body.startAfter === true,
+      actorId: user.id,
+    });
+
+    return reply.code(202).send({
+      ok: true,
+      message: 'Updating. Your world and configuration files are kept.',
+    });
+  });
+
+  /** Duplicate settings + files onto a new server with fresh ports. */
+  app.post('/api/servers/:uid/clone', async (request, reply) => {
+    const { uid } = request.params as { uid: string };
+    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
+    const input = cloneServerSchema.parse(request.body);
+
+    const cloned = await cloneServer(uid, input, {
+      id: user.id,
+      displayName: user.displayName,
+    });
+
+    return reply.code(201).send({
+      server: { uid: cloned.uid, name: cloned.name, state: cloned.state },
+      message: `Cloned as "${cloned.name}". It is offline — start it when you are ready.`,
     });
   });
 

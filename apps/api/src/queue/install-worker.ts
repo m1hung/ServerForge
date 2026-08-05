@@ -37,15 +37,18 @@ export function createInstallWorker(): Worker<InstallJob> {
         await job.updateProgress(percent);
       };
 
+      const verb =
+        mode === 'update' ? 'Updating' : mode === 'reinstall' ? 'Reinstalling' : 'Installing';
+
       await setServerState(serverUid, mode === 'update' ? 'updating' : 'installing');
-      await report('queued', mode === 'reinstall' ? 'Reinstalling…' : 'Starting installation…', 0);
+      await report('queued', `${verb}…`, 0);
 
       try {
-        if (mode === 'reinstall') {
-          // Worlds and configs are the user's data. A reinstall replaces the
-          // server binaries, never the save — that distinction is the whole
-          // reason "reinstall" is safe to offer as a self-service button.
-          await report('preparing', 'Clearing the previous installation…', 3);
+        // Worlds and configs are the user's data. Reinstall/update replace
+        // known server binaries only — SteamCMD games update in place and
+        // those paths are not in the clear list, so saves survive either way.
+        if (mode === 'reinstall' || mode === 'update') {
+          await report('preparing', 'Preparing the existing installation…', 3);
           await clearInstallArtifacts(localDataPath(server.dataPath));
         }
 
@@ -115,16 +118,19 @@ export function createInstallWorker(): Worker<InstallJob> {
           data: { installedAt: new Date(), crashCount: 0 },
         });
 
-        await report('done', 'Installation finished.', 100);
+        await report('done', `${verb} finished.`, 100);
         await setServerState(serverUid, 'offline');
 
+        const action =
+          mode === 'update'
+            ? 'server.update'
+            : mode === 'reinstall'
+              ? 'server.reinstall'
+              : 'server.install';
         await recordActivity({
           serverId: server.id,
-          action: mode === 'reinstall' ? 'server.reinstall' : 'server.install',
-          message:
-            mode === 'reinstall'
-              ? `Reinstalled ${adapter.name} ${resolved.label}.`
-              : `Installed ${adapter.name} ${resolved.label}.`,
+          action,
+          message: `${verb} ${adapter.name} ${resolved.label}.`,
         });
 
         if (startAfter) {
@@ -138,7 +144,7 @@ export function createInstallWorker(): Worker<InstallJob> {
           serverId: serverUid,
           phase: 'failed',
           percent: 0,
-          message: 'Installation failed.',
+          message: `${verb} failed.`,
           error: message,
           at: Date.now(),
         });
@@ -163,6 +169,9 @@ export function createInstallWorker(): Worker<InstallJob> {
  * Removes server binaries and loader artifacts while preserving anything the
  * player created. The allowlist approach (delete known artifacts) is safer
  * than a denylist: an unrecognised folder survives a reinstall.
+ *
+ * Steam game files are intentionally absent — SteamCMD updates them in place
+ * and wiping them would only force a full re-download.
  */
 async function clearInstallArtifacts(dataPath: string): Promise<void> {
   const disposable = [

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, Copy, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api, ApiError } from '@/lib/api';
@@ -22,7 +22,7 @@ import {
 import type { ServerState } from '@/components/server-status';
 
 /**
- * Renaming, resizing and deleting a server.
+ * Renaming, resizing, updating, cloning and deleting a server.
  *
  * Kept apart from the game settings panel because these are panel-level
  * properties rather than anything the game itself reads, and because deletion
@@ -34,6 +34,8 @@ export interface GeneralPanelServer {
   name: string;
   description: string | null;
   state: ServerState;
+  version: string;
+  gameName: string;
   limits: { memoryMib: number; cpuCores: number; diskMib: number };
   permissions: string[];
 }
@@ -48,12 +50,17 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
   const [limits, setLimits] = useState(server.limits);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmUpdate, setConfirmUpdate] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneName, setCloneName] = useState(`${server.name} copy`);
 
   const canEdit = server.permissions.includes('server.settings');
   const canDelete = server.permissions.includes('server.delete');
 
   const isLive = ['running', 'starting'].includes(server.state);
-  const isBusy = ['installing', 'creating', 'updating', 'restoring', 'deleting'].includes(server.state);
+  const isBusy = ['installing', 'creating', 'updating', 'restoring', 'deleting'].includes(
+    server.state,
+  );
 
   const dirty =
     name !== server.name ||
@@ -67,9 +74,6 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
       api.patch(`/api/servers/${server.uid}`, {
         name,
         description: description.trim() === '' ? null : description.trim(),
-        // Send only what this form owns. Echoing the whole limits object back
-        // would include fields the panel never edits (swap, IO weight) and
-        // couple this request to unrelated parts of the server row.
         limits: {
           memoryMib: limits.memoryMib,
           cpuCores: limits.cpuCores,
@@ -81,8 +85,6 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
       toast.push({
         tone: 'ok',
         message: 'Saved',
-        // Memory and CPU are applied to the running container immediately;
-        // disk is enforced by the watcher, so neither needs a restart.
         hint: isLive ? 'New limits applied to the running server.' : undefined,
       });
       queryClient.invalidateQueries({ queryKey: ['server', server.uid] });
@@ -93,6 +95,38 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
         const next: Record<string, string> = {};
         for (const issue of error.fieldIssues) next[issue.key] = issue.message;
         setErrors(next);
+        toast.push({ tone: 'danger', message: error.body.message, hint: error.body.hint });
+      }
+    },
+  });
+
+  const updateGame = useMutation({
+    mutationFn: () => api.post(`/api/servers/${server.uid}/update`, { startAfter: false }),
+    onSuccess: (result: { message?: string }) => {
+      setConfirmUpdate(false);
+      toast.push({ tone: 'ok', message: result.message ?? 'Update started.' });
+      queryClient.invalidateQueries({ queryKey: ['server', server.uid] });
+    },
+    onError: (error) => {
+      if (error instanceof ApiError) {
+        toast.push({ tone: 'danger', message: error.body.message, hint: error.body.hint });
+      }
+    },
+  });
+
+  const clone = useMutation({
+    mutationFn: () =>
+      api.post<{ server: { uid: string } }>(`/api/servers/${server.uid}/clone`, {
+        name: cloneName.trim(),
+      }),
+    onSuccess: (result) => {
+      setCloneOpen(false);
+      toast.push({ tone: 'ok', message: 'Server cloned.' });
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      router.push(`/servers/${result.server.uid}`);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError) {
         toast.push({ tone: 'danger', message: error.body.message, hint: error.body.hint });
       }
     },
@@ -207,9 +241,45 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
         </CardBody>
       </Card>
 
-      {/* ── Danger zone ─────────────────────────────────────────────────
-          The one card in the app with a coloured border. Nothing else needs
-          to shout, so this is unmistakable without any texture on it. */}
+      {canEdit && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Maintenance</CardTitle>
+            <CardDescription>
+              Update game files from upstream, or clone this server onto a fresh port.
+            </CardDescription>
+          </CardHeader>
+          <CardBody className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={isBusy || isLive}
+              onClick={() => setConfirmUpdate(true)}
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden />
+              Update {server.gameName}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={isBusy || isLive}
+              onClick={() => {
+                setCloneName(`${server.name} copy`);
+                setCloneOpen(true);
+              }}
+            >
+              <Copy className="h-4 w-4" aria-hidden />
+              Clone server
+            </Button>
+            {(isBusy || isLive) && (
+              <p className="basis-full text-[12.5px] text-ink-muted">
+                {isLive
+                  ? 'Stop the server before updating or cloning.'
+                  : 'Wait for the current job to finish first.'}
+              </p>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
       {canDelete && (
         <Card className="border-danger/40">
           <CardHeader>
@@ -220,11 +290,7 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
             </CardDescription>
           </CardHeader>
           <CardBody>
-            <Button
-              variant="danger"
-              onClick={() => setConfirmDelete(true)}
-              disabled={isBusy}
-            >
+            <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={isBusy}>
               <Trash2 className="h-4 w-4" aria-hidden />
               Delete server
             </Button>
@@ -237,11 +303,6 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
         </Card>
       )}
 
-      {/*
-        Sticky save bar, so nobody has to scroll back up to find it. left-60
-        matches the sidebar's w-60, so the bar starts exactly at the content
-        edge instead of a rem short of it.
-      */}
       {dirty && canEdit && (
         <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:left-60">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
@@ -271,6 +332,65 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
           </div>
         </div>
       )}
+
+      <Modal
+        open={confirmUpdate}
+        onClose={() => setConfirmUpdate(false)}
+        title={`Update ${server.gameName}?`}
+        description="Downloads the latest server files. Your world and settings are kept."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmUpdate(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={updateGame.isPending}
+              loadingText="Starting…"
+              onClick={() => updateGame.mutate()}
+            >
+              Update now
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] leading-relaxed text-ink-muted">
+          Current version label: <span className="font-medium text-ink">{server.version}</span>.
+          Steam games refresh from the public branch; Minecraft reinstalls the selected build.
+        </p>
+      </Modal>
+
+      <Modal
+        open={cloneOpen}
+        onClose={() => setCloneOpen(false)}
+        title="Clone this server"
+        description="Copies the world, mods and settings onto a new server with its own ports."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCloneOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={clone.isPending}
+              loadingText="Cloning…"
+              disabled={cloneName.trim().length < 2}
+              onClick={() => clone.mutate()}
+            >
+              Clone
+            </Button>
+          </>
+        }
+      >
+        <Field label="Name for the copy" required>
+          <Input
+            value={cloneName}
+            onChange={(e) => setCloneName(e.target.value)}
+            maxLength={48}
+            autoFocus
+          />
+        </Field>
+      </Modal>
 
       <Modal
         open={confirmDelete}
@@ -317,21 +437,25 @@ function Slider({
   max,
   step,
   format,
+  disabled,
   onChange,
   label,
-  disabled,
 }: {
   value: number;
   min: number;
   max: number;
   step: number;
-  format: (value: number) => string;
-  onChange: (value: number) => void;
-  label: string;
+  format: (v: number) => string;
   disabled?: boolean;
+  onChange: (v: number) => void;
+  label: string;
 }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-[12.5px]">
+        <span className="text-ink-muted">{label}</span>
+        <span className="font-medium tabular-nums text-ink">{format(value)}</span>
+      </div>
       <input
         type="range"
         min={min}
@@ -341,11 +465,8 @@ function Slider({
         disabled={disabled}
         aria-label={label}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-sm bg-line accent-[hsl(var(--accent))] disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full accent-accent"
       />
-      <span className="w-20 shrink-0 text-right font-mono text-[13px] text-ink">
-        {format(value)}
-      </span>
     </div>
   );
 }

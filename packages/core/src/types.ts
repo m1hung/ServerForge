@@ -54,6 +54,15 @@ export type ServerPermission = (typeof SERVER_PERMISSIONS)[number];
 
 export const OWNER_PERMISSIONS: ServerPermission[] = [...SERVER_PERMISSIONS];
 
+/**
+ * Scopes an API key may be limited to.
+ *
+ * `*` is full account power (dashboard-equivalent). Otherwise each entry is a
+ * server permission the key may exercise, plus `admin` for panel admin routes.
+ */
+export const API_KEY_SCOPES = ['*', 'admin', ...SERVER_PERMISSIONS] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
 export interface ResourceLimits {
   /** Container memory ceiling in MiB. 0 = unlimited (not recommended). */
   memoryMib: number;

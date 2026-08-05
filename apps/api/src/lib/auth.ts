@@ -1,5 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { forbidden, unauthorized, type Role, type ServerPermission } from '@serverforge/core';
+import {
+  forbidden,
+  unauthorized,
+  type Role,
+  type ServerPermission,
+} from '@serverforge/core';
 import { prisma, uid as makeUid, type ServerWithAccess } from '@serverforge/db';
 import { config } from '../config.js';
 import { generateToken, hashToken } from './crypto.js';
@@ -12,7 +17,7 @@ import { generateToken, hashToken } from './crypto.js';
  *   • `Authorization: Bearer sf_…` API keys for scripts and CI
  *
  * Both resolve to the same `AuthenticatedUser`, so route handlers never care
- * which was used.
+ * which was used — except API keys may be scope-limited.
  */
 
 export const SESSION_COOKIE = 'sf_session';
@@ -25,6 +30,8 @@ export interface AuthenticatedUser {
   role: Role;
   /** Set when the request authenticated with an API key rather than a cookie. */
   apiKeyId?: string;
+  /** Scopes on the API key. Absent for cookie sessions (full account power). */
+  apiKeyScopes?: string[];
 }
 
 declare module 'fastify' {
@@ -126,7 +133,20 @@ async function resolveApiKey(token: string): Promise<AuthenticatedUser | null> {
     displayName: key.user.displayName,
     role: key.user.role,
     apiKeyId: key.id,
+    apiKeyScopes: key.scopes,
   };
+}
+
+/**
+ * Whether an API key is allowed to exercise a scope.
+ * Cookie sessions always pass — the key check only applies to Bearer auth.
+ */
+export function apiKeyAllows(user: AuthenticatedUser, scope: string): boolean {
+  if (!user.apiKeyId) return true;
+  const scopes = user.apiKeyScopes ?? [];
+  if (scopes.includes('*')) return true;
+  if (scopes.includes(scope)) return true;
+  return false;
 }
 
 /** Fastify preHandler that requires a signed-in user. */
@@ -140,6 +160,9 @@ export async function requireAuth(request: FastifyRequest): Promise<Authenticate
 export async function requireRole(request: FastifyRequest, roles: Role[]): Promise<AuthenticatedUser> {
   const user = await requireAuth(request);
   if (!roles.includes(user.role)) throw forbidden('That action is limited to administrators.');
+  if (!apiKeyAllows(user, 'admin')) {
+    throw forbidden('This API key is not allowed to perform administrator actions.');
+  }
   return user;
 }
 
@@ -155,6 +178,12 @@ export async function requireServerAccess(
   permission: ServerPermission,
 ): Promise<{ user: AuthenticatedUser; server: ServerWithAccess }> {
   const user = await requireAuth(request);
+
+  if (!apiKeyAllows(user, permission)) {
+    throw forbidden(
+      `This API key is missing the "${permission.replace('server.', '')}" scope.`,
+    );
+  }
 
   const server = await prisma.server.findUnique({
     where: { uid: serverUid },

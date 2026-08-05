@@ -493,6 +493,8 @@ export default function ServerPage() {
               name: server.name,
               description: server.description,
               state,
+              version: server.version,
+              gameName: server.game?.name ?? server.gameId,
               limits: server.limits,
               permissions: server.permissions ?? [],
             }}

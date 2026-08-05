@@ -420,3 +420,88 @@ export async function deleteServer(
     metadata: { name: server.name, gameId: server.gameId },
   });
 }
+
+/**
+ * Clones a stopped server: same game, settings and files, new ports and name.
+ *
+ * Worlds and mods are copied. Allocated ports differ, so settings are
+ * re-applied afterwards so the game listens on the new allocations.
+ */
+export async function cloneServer(
+  sourceUid: string,
+  input: { name: string },
+  actor: { id: string; displayName: string },
+): Promise<Server> {
+  const source = await loadServer(sourceUid);
+
+  if (['running', 'starting', 'stopping', 'installing', 'updating', 'restoring', 'creating'].includes(source.state)) {
+    throw conflict('Stop the server and wait for any jobs to finish before cloning it.');
+  }
+  if (!source.installedAt) {
+    throw conflict('Finish installing this server before cloning it.');
+  }
+
+  const created = await createServer(
+    {
+      name: input.name,
+      description: source.description ?? undefined,
+      gameId: source.gameId,
+      variantId: source.variantId,
+      version: source.version,
+      limits: {
+        memoryMib: source.memoryMib,
+        cpuCores: source.cpuCores,
+        diskMib: source.diskMib,
+        swapMib: source.swapMib,
+        ioWeight: source.ioWeight,
+      },
+      settings: (source.settings ?? {}) as Record<string, string | number | boolean>,
+      startOnCreate: false,
+    },
+    actor,
+  );
+
+  try {
+    const from = localDataPath(source.dataPath);
+    const to = localDataPath(created.dataPath);
+    await fs.cp(from, to, { recursive: true, force: true });
+
+    const fresh = await loadServer(created.uid);
+    const adapter = getAdapter(fresh.gameId);
+    const { createInstallTools } = await import('./install-tools.js');
+    const tools = createInstallTools({
+      dataPath: localDataPath(fresh.dataPath),
+      runtime: getRuntime(fresh.node),
+    });
+    await adapter.applySettings(buildContext(fresh), tools);
+    const { chownTreeForGame } = await import('../lib/ownership.js');
+    await chownTreeForGame(localDataPath(fresh.dataPath));
+
+    await prisma.server.update({
+      where: { id: created.id },
+      data: {
+        state: 'offline',
+        installedAt: new Date(),
+        build: source.build,
+        javaMajor: source.javaMajor,
+      },
+    });
+  } catch (error) {
+    await deleteServer(created.uid, actor).catch(() => undefined);
+    throw conflict(
+      'Could not copy the server files.',
+      error instanceof Error ? error.message : 'Check disk space and try again.',
+    );
+  }
+
+  await recordActivity({
+    serverId: created.id,
+    actorId: actor.id,
+    actorName: actor.displayName,
+    action: 'server.clone',
+    message: `${actor.displayName} cloned this server from ${source.name}.`,
+    metadata: { sourceUid },
+  });
+
+  return prisma.server.findUniqueOrThrow({ where: { id: created.id } });
+}

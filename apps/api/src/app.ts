@@ -119,6 +119,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return {
       status: healthy ? 'ok' : 'degraded',
       brand: brand.name,
+      version: process.env.npm_package_version ?? '0.1.0',
       checks: { database, cache },
     };
   });

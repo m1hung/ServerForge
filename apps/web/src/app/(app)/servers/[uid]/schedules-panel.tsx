@@ -28,12 +28,13 @@ import {
  * says back in words when it will next run.
  */
 
-type ActionType = 'power' | 'command' | 'backup';
+type ActionType = 'power' | 'command' | 'backup' | 'update';
 
 type ScheduleAction =
   | { type: 'power'; action: 'start' | 'stop' | 'restart' }
   | { type: 'command'; command: string }
-  | { type: 'backup'; retain: number };
+  | { type: 'backup'; retain: number }
+  | { type: 'update'; startAfter: boolean };
 
 interface Schedule {
   uid: string;
@@ -60,6 +61,7 @@ const DEFAULT_ACTION: Record<ActionType, ScheduleAction> = {
   power: { type: 'power', action: 'restart' },
   command: { type: 'command', command: 'say Server restarting in 60 seconds' },
   backup: { type: 'backup', retain: 5 },
+  update: { type: 'update', startAfter: true },
 };
 
 /** The browser's zone, so "4am" means 4am where the person reading it lives. */
@@ -79,6 +81,10 @@ function describeAction(action: ScheduleAction): string {
       return `Run “${action.command}”`;
     case 'backup':
       return `Back up, keeping the newest ${action.retain}`;
+    case 'update':
+      return action.startAfter
+        ? 'Update game files, then start'
+        : 'Update game files';
   }
 }
 
@@ -448,6 +454,7 @@ function ScheduleEditor({
                   <option value="power">Power</option>
                   <option value="command">Command</option>
                   <option value="backup">Backup</option>
+                  <option value="update">Update</option>
                 </Select>
 
                 {action.type === 'power' && (
@@ -466,6 +473,19 @@ function ScheduleEditor({
                     <option value="start">Start</option>
                     <option value="stop">Stop</option>
                   </Select>
+                )}
+
+                {action.type === 'update' && (
+                  <label className="flex items-center gap-2 text-[12.5px] text-ink-muted">
+                    <input
+                      type="checkbox"
+                      checked={action.startAfter}
+                      onChange={(e) =>
+                        setAction(index, { type: 'update', startAfter: e.target.checked })
+                      }
+                    />
+                    Start after update
+                  </label>
                 )}
 
                 {action.type === 'command' && (

@@ -169,7 +169,10 @@ export interface InstalledModEntry {
   sizeBytes: number;
   enabled: boolean;
   source: string;
+  projectId: string | null;
+  versionId: string | null;
   versionName: string | null;
+  updateAvailable: boolean;
   installedAt: Date | null;
 }
 
@@ -211,7 +214,10 @@ export async function listInstalledMods(server: {
       sizeBytes: stat?.size ?? 0,
       enabled: !isDisabled,
       source: record?.source ?? 'upload',
+      projectId: record?.projectId ?? null,
+      versionId: record?.versionId ?? null,
       versionName: record?.versionName ?? null,
+      updateAvailable: record?.updateAvailable ?? false,
       installedAt: record?.installedAt ?? null,
     });
   }
@@ -367,6 +373,79 @@ export async function removeMod(
   await fs.rm(target, { force: true });
   await fs.rm(`${target}${DISABLED_SUFFIX}`, { force: true });
   await prisma.installedMod.deleteMany({ where: { serverId: server.id, fileName: base } });
+}
+
+/**
+ * Compares installed Modrinth mods against the latest compatible release.
+ * Returns how many were flagged as having an update.
+ */
+export async function checkModUpdates(server: {
+  id: string;
+  variantId: string;
+  version: string;
+}): Promise<{ checked: number; updates: number }> {
+  const known = await prisma.installedMod.findMany({
+    where: { serverId: server.id, source: 'modrinth', projectId: { not: null } },
+  });
+
+  let updates = 0;
+  for (const mod of known) {
+    if (!mod.projectId) continue;
+    try {
+      const versions = await modrinthVersions(mod.projectId, {
+        variantId: server.variantId,
+        gameVersion: server.version,
+      });
+      const latest = versions[0];
+      if (!latest) {
+        await prisma.installedMod.update({
+          where: { id: mod.id },
+          data: { updateAvailable: false },
+        });
+        continue;
+      }
+      const available = Boolean(mod.versionId && latest.id !== mod.versionId);
+      if (available) updates += 1;
+      await prisma.installedMod.update({
+        where: { id: mod.id },
+        data: { updateAvailable: available },
+      });
+    } catch (error) {
+      logger.warn({ error, projectId: mod.projectId }, 'mod update check failed');
+    }
+  }
+
+  return { checked: known.length, updates };
+}
+
+/** Reinstalls a Modrinth mod at the newest compatible version. */
+export async function updateMod(
+  server: {
+    id: string;
+    dataPath: string;
+    gameId: string;
+    variantId: string;
+    version: string;
+    node: { id: string; transport: string; agentUrl: string | null };
+  },
+  fileName: string,
+): Promise<{ fileName: string }> {
+  const base = path.basename(fileName);
+  const record = await prisma.installedMod.findUnique({
+    where: { serverId_fileName: { serverId: server.id, fileName: base } },
+  });
+  if (!record?.projectId || record.source !== 'modrinth') {
+    throw conflict('Only Modrinth mods can be updated from the panel.');
+  }
+
+  // Remove the old file first so a renamed upstream jar does not leave two copies.
+  await removeMod(server, base);
+
+  return installMod(server, {
+    source: 'modrinth',
+    projectId: record.projectId,
+    kind: (record.kind as ModInstallInput['kind']) ?? 'mod',
+  });
 }
 
 /** Turns "sodium-fabric-0.6.5.jar" into "Sodium Fabric". */

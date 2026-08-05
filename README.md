@@ -17,6 +17,7 @@ lives in one.
 | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Minecraft: Java Edition** | Vanilla · Paper · Purpur · Fabric · Forge · NeoForge · Modrinth modpacks · CurseForge-style `.zip` server packs |
 | **Palworld**                | Vanilla dedicated · Modded (UE4SS workflow)                                                                     |
+| **Valheim**                 | Vanilla dedicated · BepInEx mods                                                                                |
 
 Adding a game means writing one adapter file and adding it to a list. Nothing
 in the API, the workers, or the dashboard needs to change —

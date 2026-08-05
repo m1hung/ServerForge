@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { minecraftAdapter } from '../packages/adapters/src/minecraft/index.js';
 import { palworldAdapter } from '../packages/adapters/src/palworld/index.js';
+import { valheimAdapter } from '../packages/adapters/src/valheim/index.js';
 import { buildCatalogue, getAdapter, getVariant, listAdapters } from '../packages/adapters/src/registry.js';
 import { buildJavaFlags, heapForMemoryLimit, isCalendarVersion, javaImageFor, javaMajorFor, tokenizeFlags } from '../packages/adapters/src/minecraft/java.js';
 import { mergeProperties, parseProperties } from '../packages/adapters/src/util/properties.js';
@@ -32,8 +33,8 @@ function contextFor(adapter: typeof minecraftAdapter, variantId: string): Server
 }
 
 describe('registry', () => {
-  it('exposes both launch games', () => {
-    expect(listAdapters().map((a) => a.id)).toEqual(['minecraft-java', 'palworld']);
+  it('exposes every registered game', () => {
+    expect(listAdapters().map((a) => a.id)).toEqual(['minecraft-java', 'palworld', 'valheim']);
   });
 
   it('throws a 404-shaped error for an unknown game', () => {
@@ -153,6 +154,56 @@ describe('minecraft adapter', () => {
     it('returns null for ordinary lines', () => {
       expect(minecraftAdapter.inspectLog?.('[12:00:00] [Server thread/INFO]: Preparing spawn area')).toBeNull();
     });
+  });
+});
+
+describe('valheim adapter', () => {
+  it('asks for udp game and query ports', () => {
+    expect(valheimAdapter.requiredPorts('valheim-vanilla')).toEqual([
+      { purpose: 'game', protocol: 'udp' },
+      { purpose: 'query', protocol: 'udp' },
+    ]);
+  });
+
+  it('defaults to enough memory for a small group', () => {
+    expect(valheimAdapter.defaultLimits('valheim-vanilla').memoryMib).toBeGreaterThanOrEqual(4096);
+  });
+
+  it('passes the allocated port and settings to the launcher', () => {
+    const ctx: ServerContext = {
+      ...contextFor(minecraftAdapter, 'paper'),
+      variantId: 'valheim-vanilla',
+      settings: {
+        ...defaultsFor(valheimAdapter.settingsSchema('valheim-vanilla')),
+        ServerName: 'My Viking Realm',
+        WorldName: 'Midgard',
+        Password: 'secret',
+        Public: false,
+      },
+      allocations: [
+        { ip: '0.0.0.0', port: 2456, purpose: 'game', primary: true },
+        { ip: '0.0.0.0', port: 2457, purpose: 'query', primary: false },
+      ],
+    };
+    const plan = valheimAdapter.startup(ctx);
+    expect(plan.command[0]).toBe('./start_server.sh');
+    expect(plan.command).toContain('-port');
+    expect(plan.command).toContain('2456');
+    expect(plan.command).toContain('My Viking Realm');
+    expect(plan.command).toContain('Midgard');
+    expect(plan.command).toContain('-password');
+    expect(plan.command).toContain('secret');
+    expect(plan.command).toContain('0');
+  });
+
+  it('only offers a mods directory on the BepInEx variant', () => {
+    expect(valheimAdapter.modDirectory?.('valheim-vanilla')).toBeNull();
+    expect(valheimAdapter.modDirectory?.('valheim-bepinex')).toBe('BepInEx/plugins');
+  });
+
+  it('explains a port conflict in plain language', () => {
+    const insight = valheimAdapter.inspectLog?.('Address already in use');
+    expect(insight?.hint).toMatch(/port/i);
   });
 });
 
