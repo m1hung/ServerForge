@@ -3,14 +3,17 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Globe,
+  HardDrive,
   LayoutGrid,
   Loader2,
   LogOut,
   Moon,
+  ScrollText,
   Settings,
   Plus,
   Server,
   Sun,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -47,6 +50,12 @@ interface Me {
 function describeRoute(pathname: string): { label: string; path: string } {
   if (pathname.startsWith("/account"))
     return { label: "Account", path: "~/account" };
+  if (pathname.startsWith("/people"))
+    return { label: "People", path: "~/people" };
+  if (pathname.startsWith("/machines"))
+    return { label: "Machines", path: "~/machines" };
+  if (pathname.startsWith("/audit"))
+    return { label: "Audit log", path: "~/audit" };
   if (pathname === "/servers/new")
     return { label: "Deploy server", path: "~/servers/new" };
   if (pathname.startsWith("/servers/")) {
@@ -125,21 +134,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   // Only routes that exist are listed — a nav entry that 404s is worse than
-  // one that is absent. The admin pages (People, Machines) are the remaining
-  // gap; their APIs exist under /api/admin/*.
+  // one that is absent.
   //
-  // Network is owner/admin only, matching the API: showing it to a subuser
-  // would offer a page that answers 403.
+  // The panel section is owner/admin only, matching the API: showing it to a
+  // subuser would offer pages that answer 403.
   const canManagePanel =
     me.data.user.role === "owner" || me.data.user.role === "admin";
 
   const nav = [
     { href: "/servers", label: "Servers", icon: LayoutGrid },
     ...(canManagePanel
-      ? [{ href: "/network", label: "Network", icon: Globe }]
+      ? [
+          { href: "/people", label: "People", icon: Users },
+          { href: "/machines", label: "Machines", icon: HardDrive, mobile: false },
+          { href: "/network", label: "Network", icon: Globe },
+          { href: "/audit", label: "Audit log", icon: ScrollText, mobile: false },
+        ]
       : []),
     { href: "/account", label: "Account", icon: Settings },
   ];
+
+  // The bottom bar splits the width evenly between its entries, so past four
+  // the labels stop fitting on a phone. Capacity planning and log reading are
+  // desk work; they stay reachable by URL and from the sidebar on a tablet up.
+  const mobileNav = nav.filter((item) => item.mobile !== false);
   const route = describeRoute(pathname);
 
   const signOut = async () => {
@@ -333,7 +351,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
         aria-label="Main"
       >
-        {nav.map((item) => {
+        {mobileNav.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (

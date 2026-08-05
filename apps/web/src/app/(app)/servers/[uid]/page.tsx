@@ -55,6 +55,9 @@ import { SettingsPanel } from "./settings-panel";
 import { GeneralPanel } from "./general-panel";
 import { FilesPanel } from "./files-panel";
 import { BackupsPanel } from "./backups-panel";
+import { ModsPanel } from "./mods-panel";
+import { SchedulesPanel } from "./schedules-panel";
+import { SubusersPanel } from "./subusers-panel";
 
 interface ServerDetail {
   server: {
@@ -77,15 +80,49 @@ interface ServerDetail {
   };
 }
 
-const TABS = [
+const ALL_TABS = [
   "Overview",
   "Console",
   "Files",
   "Backups",
+  "Schedules",
+  "Mods",
   "Settings",
+  "Access",
   "General",
 ] as const;
-type Tab = (typeof TABS)[number];
+type Tab = (typeof ALL_TABS)[number];
+
+/** Which tab each section needs; Overview and General are open to anyone. */
+const TAB_PERMISSION: Partial<Record<Tab, string>> = {
+  Console: "server.console",
+  Files: "server.files",
+  Backups: "server.backups",
+  Schedules: "server.schedules",
+  Mods: "server.mods",
+  Settings: "server.settings",
+  Access: "server.subusers",
+};
+
+/**
+ * The tabs this person can actually open.
+ *
+ * Every section behind a permission answers 403 without it, so a tab that is
+ * only ever an error message is worse than no tab — the same reasoning the
+ * sidebar uses. Mods is hidden on server types with no mod folder, which is
+ * most of them.
+ */
+function visibleTabs(server: {
+  permissions: string[];
+  modDirectory: string | null;
+}): Tab[] {
+  const held = server.permissions ?? [];
+  return ALL_TABS.filter((tab) => {
+    if (tab === "Mods" && !server.modDirectory) return false;
+    const needed = TAB_PERMISSION[tab];
+    return !needed || held.includes(needed);
+  });
+}
 
 export default function ServerPage() {
   const params = useParams<{ uid: string }>();
@@ -147,6 +184,7 @@ export default function ServerPage() {
 
   if (!detail.data) return null;
   const server = detail.data.server;
+  const tabs = visibleTabs(server);
 
   const isLive = ["running", "starting", "stopping"].includes(state);
   const isBusy = [
@@ -372,7 +410,7 @@ export default function ServerPage() {
           role="tablist"
           aria-label="Server sections"
         >
-          {TABS.map((entry) => (
+          {tabs.map((entry) => (
             <button
               key={entry}
               id={`tab-${entry.toLowerCase()}`}
@@ -430,7 +468,23 @@ export default function ServerPage() {
           />
         )}
 
+        {tab === "Schedules" && (
+          <SchedulesPanel uid={uid} permissions={server.permissions ?? []} />
+        )}
+
+        {tab === "Mods" && (
+          <ModsPanel
+            uid={uid}
+            state={state}
+            permissions={server.permissions ?? []}
+          />
+        )}
+
         {tab === "Settings" && <SettingsPanel uid={uid} state={state} />}
+
+        {tab === "Access" && (
+          <SubusersPanel uid={uid} permissions={server.permissions ?? []} />
+        )}
 
         {tab === "General" && (
           <GeneralPanel
