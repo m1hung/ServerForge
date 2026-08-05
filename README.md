@@ -147,6 +147,20 @@ tests/          Unit tests
 The compose commands work with both `docker compose` and the older
 standalone `docker-compose`; the wrapper picks whichever is installed.
 
+`npm test` includes an integration suite that drives the Docker runtime
+driver against real Docker — creating containers, streaming their logs,
+writing to their stdin and stopping them. It skips itself when the socket is
+unreachable, so a machine without Docker still gets a green run. If it skips
+when you did not expect it to, the usual cause is not being in the `docker`
+group yet:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+Log out and back in, since group membership is only picked up at login.
+Everything the suite creates is named `sf-selftest-*` and removed afterwards.
+
 ## Rebranding
 
 Change three variables in `.env` and their `NEXT_PUBLIC_` mirrors:

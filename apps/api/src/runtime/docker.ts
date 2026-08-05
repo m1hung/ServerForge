@@ -227,7 +227,11 @@ export class DockerRuntime implements RuntimeDriver {
     try {
       await this.docker.getContainer(containerId).kill();
     } catch (error) {
-      if (!isNotModified(error) && !isNotFound(error)) throw error;
+      // Killing something that already exited is the goal, not a failure. It
+      // is also routine: "force stop" is what people press when a server is
+      // in the middle of dying on its own. Docker answers 409 here rather
+      // than the 304 it uses for stop.
+      if (!isNotModified(error) && !isNotFound(error) && !isNotRunning(error)) throw error;
     }
   }
 
@@ -501,6 +505,11 @@ function isNotFound(error: unknown): boolean {
 
 function isNotModified(error: unknown): boolean {
   return (error as { statusCode?: number })?.statusCode === 304;
+}
+
+/** Docker's answer when an operation needs a running container and has none. */
+function isNotRunning(error: unknown): boolean {
+  return (error as { statusCode?: number })?.statusCode === 409;
 }
 
 /** Minimal writable sink; avoids pulling in a stream helper dependency. */
