@@ -11,10 +11,12 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dockerFixHint, probeDocker } from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const args = new Set(process.argv.slice(2));
+const winShell = process.platform === "win32";
 
 const color = {
   bold: (text) => `\x1b[1m${text}\x1b[0m`,
@@ -31,15 +33,12 @@ function success(message) {
   console.log(`${color.green("✓")} ${message}`);
 }
 
-function commandExists(command) {
-  return spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0;
-}
-
 function run(command, commandArgs, options = {}) {
   const result = spawnSync(command, commandArgs, {
     cwd: root,
     env: process.env,
     stdio: options.quiet ? "ignore" : "inherit",
+    shell: winShell,
   });
 
   if (result.error)
@@ -119,43 +118,34 @@ async function waitForHttp(url, label, timeoutMs = 120_000) {
 }
 
 function ensureDocker() {
-  if (!commandExists("docker")) {
-    throw new Error(
-      "Docker is not installed. Install Docker Engine and run this launcher again.",
-    );
+  const status = process.env.DOCKER_HOST ? { ok: true } : probeDocker();
+  if (status.ok) {
+    success("Docker is ready");
+    return;
   }
 
-  const docker = spawnSync("docker", ["info"], { encoding: "utf8" });
-  if (docker.status !== 0) {
-    const output = `${docker.stdout ?? ""}\n${docker.stderr ?? ""}`.trim();
-    if (output.includes("permission denied")) {
-      throw new Error(
-        "Docker is running, but this session cannot access its socket. Run `./start-server.sh` so the launcher can repair group access.",
-      );
-    }
-    throw new Error(
-      `Docker is unavailable. ${output || "Verify `docker ps` works."}`,
-    );
-  }
-
-  success("Docker is ready");
+  throw new Error(
+    `${status.detail || "Docker is unavailable."}\n\n${dockerFixHint(status.reason)}`,
+  );
 }
 
 function openDashboard(url) {
   if (args.has("--no-open")) return;
 
-  const opener =
-    process.platform === "darwin"
-      ? { command: "open", args: [url] }
-      : process.platform === "linux" &&
-          (process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
-        ? { command: "xdg-open", args: [url] }
-        : null;
+  let opener = null;
+  if (process.platform === "darwin") {
+    opener = { command: "open", args: [url] };
+  } else if (process.platform === "win32") {
+    opener = { command: "cmd", args: ["/c", "start", "", url] };
+  } else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
+    opener = { command: "xdg-open", args: [url] };
+  }
 
   if (!opener) return;
   const child = spawn(opener.command, opener.args, {
     detached: true,
     stdio: "ignore",
+    shell: process.platform === "win32",
   });
   child.on("error", () => undefined);
   child.unref();

@@ -3,7 +3,9 @@
 ## Requirements
 
 - Node.js 20.11 or newer (22 recommended)
-- Docker, with your user able to reach the socket
+- Docker with a working CLI (`docker ps`)
+  - **Linux:** Docker Engine; your user should be in the `docker` group
+  - **macOS / Windows:** [Docker Desktop](https://docs.docker.com/desktop/)
 - Docker Compose — either `docker compose` or the older `docker-compose`
 
 Check Docker access before anything else:
@@ -11,6 +13,8 @@ Check Docker access before anything else:
 ```bash
 docker ps
 ```
+
+### Linux
 
 If that fails with a permission error:
 
@@ -20,22 +24,50 @@ sudo usermod -aG docker $USER
 
 Log out and back in. Group membership does not apply to existing sessions.
 
+### macOS
+
+Install Docker Desktop, start it, and wait until it reports Running. The
+default socket is usually `/var/run/docker.sock`; if the CLI cannot find the
+daemon, set `DOCKER_SOCKET` in `.env` to `~/.docker/run/docker.sock` (bootstrap
+detects this automatically when possible).
+
+### Windows
+
+Install Docker Desktop with the **WSL 2** backend.
+
+- **Recommended:** clone the repo inside your WSL distro and run `npm start`
+  there (with Docker Desktop’s WSL integration enabled for that distro).
+- **Native:** from PowerShell or cmd in the project folder, run
+  `npm start` or `start-server.cmd` while Docker Desktop is running.
+
+Keep `HOST_DATA_ROOT` / the project under a path Docker Desktop can share
+(usually somewhere in your user profile). Game servers always run as Linux
+containers; the host OS only needs Node for bootstrap and Compose.
+
 ## Persistent one-click install
 
 From the project directory:
 
 ```bash
-./start-server.sh
+npm start
 ```
 
-Or run `npm start`. This single launcher is safe on both new and existing
-installations. It installs dependencies, runs bootstrap, starts Postgres and
-Redis, applies and seeds the database, then builds and starts the API and
-dashboard in detached production containers.
+Platform-specific launchers:
+
+| Platform | Command |
+| -------- | ------- |
+| Linux | `./start-server.sh` |
+| Windows | `start-server.cmd` or `.\start-server.ps1` |
+| Any | `npm start` |
+
+This single launcher is safe on both new and existing installations. It
+installs dependencies, runs bootstrap, starts Postgres and Redis, applies and
+seeds the database, then builds and starts the API and dashboard in detached
+production containers.
 
 Closing the terminal does not stop the panel. Every service has
 `restart: unless-stopped`, so it also returns after a reboot when Docker starts
-at boot. On a systemd installation, the launcher enables Docker at boot when
+at boot. On Linux with systemd, `./start-server.sh` enables Docker at boot when
 possible. Check it at any time with:
 
 ```bash

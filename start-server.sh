@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Linux convenience launcher.
+#
+# Grants docker-group access when needed, enables the Docker systemd unit at
+# boot, then hands off to the cross-platform Node launcher. On Windows or
+# macOS use `npm start`, `start-server.cmd`, or `start-server.ps1` instead.
 set -Eeuo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"

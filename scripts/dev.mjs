@@ -7,18 +7,27 @@
  * process dies, take the other one down too, so `npm run dev` never leaves a
  * half-running stack behind.
  */
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
 const targets = [
-  { name: 'api', color: '\x1b[36m', args: ['run', 'dev', '--workspace', '@serverforge/api'] },
-  { name: 'web', color: '\x1b[35m', args: ['run', 'dev', '--workspace', '@serverforge/web'] },
+  {
+    name: "api",
+    color: "\x1b[36m",
+    args: ["run", "dev", "--workspace", "@serverforge/api"],
+  },
+  {
+    name: "web",
+    color: "\x1b[35m",
+    args: ["run", "dev", "--workspace", "@serverforge/web"],
+  },
 ];
 
-const RESET = '\x1b[0m';
+const RESET = "\x1b[0m";
 const children = [];
 let shuttingDown = false;
 
@@ -26,38 +35,47 @@ function prefix(name, color, chunk) {
   const label = `${color}${name.padEnd(3)}${RESET} │ `;
   return chunk
     .toString()
-    .split('\n')
-    .filter((line) => line.trim() !== '')
+    .split("\n")
+    .filter((line) => line.trim() !== "")
     .map((line) => label + line)
-    .join('\n');
+    .join("\n");
 }
 
 function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  for (const child of children) child.kill('SIGTERM');
+  for (const child of children) {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // Windows may already have torn the process down.
+    }
+  }
   setTimeout(() => process.exit(code), 300);
 }
 
 for (const target of targets) {
-  const child = spawn('npm', target.args, {
+  const child = spawn(npm, target.args, {
     cwd: root,
-    env: { ...process.env, FORCE_COLOR: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, FORCE_COLOR: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
   });
 
-  child.stdout.on('data', (chunk) => {
+  child.stdout.on("data", (chunk) => {
     const text = prefix(target.name, target.color, chunk);
     if (text) console.log(text);
   });
-  child.stderr.on('data', (chunk) => {
+  child.stderr.on("data", (chunk) => {
     const text = prefix(target.name, target.color, chunk);
     if (text) console.error(text);
   });
 
-  child.on('exit', (code) => {
+  child.on("exit", (code) => {
     if (!shuttingDown) {
-      console.error(`\n${target.color}${target.name}${RESET} exited with code ${code}. Stopping everything.\n`);
+      console.error(
+        `\n${target.color}${target.name}${RESET} exited with code ${code}. Stopping everything.\n`,
+      );
       shutdown(code ?? 1);
     }
   });
@@ -65,8 +83,8 @@ for (const target of targets) {
   children.push(child);
 }
 
-process.on('SIGINT', () => shutdown(0));
-process.on('SIGTERM', () => shutdown(0));
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
 
-console.log('\n  API  http://localhost:8080/health');
-console.log('  Web  http://localhost:3000\n');
+console.log("\n  API  http://localhost:8080/health");
+console.log("  Web  http://localhost:3000\n");

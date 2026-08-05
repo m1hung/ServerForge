@@ -19,7 +19,7 @@
     "studio": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma studio",
     "seed": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs tsx src/seed.ts",
     "build": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma generate && tsc -b",
-    "clean": "rm -rf dist generated *.tsbuildinfo"
+    "clean": "node ../../scripts/clean.mjs dist generated *.tsbuildinfo"
   },
   "dependencies": {
     "@node-rs/argon2": "2.0.2",

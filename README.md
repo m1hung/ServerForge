@@ -49,38 +49,55 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
 ## Requirements
 
 - **Node.js 20.11+** (22 recommended)
-- **Docker** — game servers run as containers
+- **Docker** — game servers run as Linux containers
+  - Linux: Docker Engine
+  - macOS / Windows: [Docker Desktop](https://docs.docker.com/desktop/)
 - **PostgreSQL 14+** and **Redis 7+** — the compose file provides both
 
-Your user must be able to reach the Docker socket:
-
-```bash
-sudo usermod -aG docker $USER
-```
-
-Log out and back in afterwards, then check it works:
+Confirm Docker works before anything else:
 
 ```bash
 docker ps
 ```
 
-## Quick start
-
-For a persistent installation, run the launcher:
+**Linux:** if that fails with a permission error:
 
 ```bash
-./start-server.sh
+sudo usermod -aG docker $USER
 ```
 
-You can also use `npm start`. The launcher installs dependencies, creates the
-configuration and secrets, initializes the database, builds the production
-containers, and opens the dashboard. It is idempotent, so use the same command
-again after updates or a manual stop.
+Log out and back in afterwards.
+
+**Windows:** install Docker Desktop with the WSL 2 backend. Running ServerForge
+inside WSL is the smoothest path; native PowerShell/cmd also works once Desktop
+is running. Keep the project under a path Docker Desktop can share (typically
+somewhere under your user profile).
+
+**macOS:** install and start Docker Desktop, then confirm `docker ps` works.
+
+## Quick start
+
+### Persistent install (all platforms)
+
+```bash
+npm start
+```
+
+Or use the platform launcher:
+
+| Platform | Command |
+| -------- | ------- |
+| Linux | `./start-server.sh` (also enables Docker at boot / fixes group access) |
+| macOS | `npm start` |
+| Windows | `start-server.cmd` or `npm start` |
+
+The launcher installs dependencies, creates configuration and secrets,
+initializes the database, builds the production containers, and opens the
+dashboard. It is idempotent — run it again after updates or a manual stop.
 
 The stack runs detached and every service uses `restart: unless-stopped`.
-Closing the terminal does not stop it, and it returns after a reboot when
-Docker is enabled at boot. The launcher enables the Docker systemd service
-when possible.
+Closing the terminal does not stop it. On Linux, the bash launcher also enables
+Docker at boot when systemd is available.
 
 ```bash
 npm run stop:persistent

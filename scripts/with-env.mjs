@@ -14,25 +14,29 @@
  *
  *   node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma db push
  */
-import { spawn } from 'node:child_process';
+import { spawn } from "node:child_process";
 
 const [command, ...args] = process.argv.slice(2);
 
 if (!command) {
-  console.error('with-env.mjs: no command given');
+  console.error("with-env.mjs: no command given");
   process.exit(1);
 }
 
-// npm puts node_modules/.bin on PATH for scripts, so `prisma` resolves without
-// a shell — which keeps arguments from being re-interpreted.
-const child = spawn(command, args, { stdio: 'inherit', env: process.env });
+// On Windows, npm shims are `.cmd` files; `shell: true` lets CreateProcess find them.
+// Elsewhere, keep shell off so arguments are not re-interpreted.
+const child = spawn(command, args, {
+  stdio: "inherit",
+  env: process.env,
+  shell: process.platform === "win32",
+});
 
-child.on('exit', (code, signal) => {
+child.on("exit", (code, signal) => {
   if (signal) process.kill(process.pid, signal);
   else process.exit(code ?? 0);
 });
 
-child.on('error', (error) => {
+child.on("error", (error) => {
   console.error(`with-env.mjs: could not run ${command}: ${error.message}`);
   process.exit(1);
 });

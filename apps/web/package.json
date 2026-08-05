@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p ${WEB_PORT:-3000}",
+    "dev": "node ../../scripts/run-web.mjs dev",
     "build": "next build",
-    "start": "next start -p ${WEB_PORT:-3000}",
+    "start": "node ../../scripts/run-web.mjs start",
     "lint": "next lint",
-    "clean": "rm -rf .next"
+    "clean": "node ../../scripts/clean.mjs .next"
   },
   "dependencies": {
     "@serverforge/core": "*",

@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { Worker } from 'bullmq';
 import type { InstallPhase } from '@serverforge/core';
 import { getAdapter } from '@serverforge/adapters';
@@ -176,6 +177,6 @@ async function clearInstallArtifacts(dataPath: string): Promise<void> {
   ];
 
   for (const entry of disposable) {
-    await fs.rm(`${dataPath}/${entry}`, { recursive: true, force: true }).catch(() => undefined);
+    await fs.rm(path.join(dataPath, entry), { recursive: true, force: true }).catch(() => undefined);
   }
 }
