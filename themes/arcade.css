@@ -1,0 +1,276 @@
+/*
+ * theme: Arcade
+ * description: Coin-op cabinet — chrome bezel, pixel titles, insert-coin bounce.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rubik:wght@500;600;700&display=swap");
+
+html[data-sf-theme="arcade"],
+html[data-sf-theme="arcade"].dark {
+  --font-sans: "Rubik", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Press Start 2P", "Rubik", monospace;
+
+  --canvas: 265 35% 10%;
+  --surface: 265 30% 14%;
+  --surface-raised: 265 28% 18%;
+  --line: 265 20% 28%;
+  --line-strong: 320 90% 62%;
+
+  --ink: 0 0% 98%;
+  --ink-muted: 265 15% 75%;
+  --ink-subtle: 265 10% 58%;
+
+  --accent: 45 100% 55%;
+  --accent-soft: 320 50% 20%;
+  --accent-ink: 265 40% 10%;
+
+  --ok: 145 80% 48%;
+  --warn: 45 100% 55%;
+  --danger: 350 85% 58%;
+  --info: 195 95% 58%;
+  --focus: 45 100% 55%;
+  --shadow-overlay: 0 18px 50px -12px rgb(20 0 40 / 0.7);
+
+  --ar-pink: #ff2bd6;
+  --ar-cyan: #2de2ff;
+  --ar-gold: #ffd400;
+}
+
+html[data-sf-theme="arcade"].light {
+  --canvas: 265 40% 96%;
+  --surface: 0 0% 100%;
+  --surface-raised: 265 35% 93%;
+  --line: 265 20% 85%;
+  --line-strong: 320 70% 45%;
+
+  --ink: 265 30% 14%;
+  --ink-muted: 265 15% 40%;
+  --ink-subtle: 265 10% 48%;
+
+  --accent: 320 85% 42%;
+  --accent-soft: 320 60% 92%;
+  --accent-ink: 0 0% 100%;
+
+  --ok: 145 70% 28%;
+  --warn: 35 90% 35%;
+  --danger: 350 75% 40%;
+  --info: 195 80% 32%;
+  --focus: 320 85% 42%;
+
+  --ar-pink: #d1009a;
+  --ar-cyan: #0090a8;
+  --ar-gold: #c9a000;
+}
+
+@keyframes sf-ar-marquee {
+  from { background-position: 0 0; }
+  to { background-position: 40px 0; }
+}
+
+@keyframes sf-ar-coin {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-5px); }
+  60% { transform: translateY(-2px); }
+}
+
+@keyframes sf-ar-insert {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes sf-ar-cabinet-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+html[data-sf-theme="arcade"] body {
+  font-family: var(--font-sans);
+}
+
+html[data-sf-theme="arcade"] body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, hsl(320 90% 50% / 0.2), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(195 95% 50% / 0.15), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 0% 80%, hsl(45 100% 50% / 0.1), transparent 50%);
+}
+
+html[data-sf-theme="arcade"] body::after {
+  content: "INSERT COIN";
+  pointer-events: none;
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ar-gold);
+  text-shadow: 2px 2px 0 #000;
+  animation: sf-ar-insert 1.2s steps(2) infinite;
+}
+
+@media (max-width: 767px) {
+  html[data-sf-theme="arcade"] body::after { bottom: 4.5rem; }
+}
+
+html[data-sf-theme="arcade"] [data-sf-shell],
+html[data-sf-theme="arcade"] [data-sf-workspace],
+html[data-sf-theme="arcade"] [data-sf-main] {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-sf-theme="arcade"] .display,
+html[data-sf-theme="arcade"] .engraved,
+html[data-sf-theme="arcade"] h1 {
+  font-family: var(--font-display);
+  font-size: 0.78em;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ar-gold);
+  text-shadow:
+    3px 3px 0 #000,
+    -1px 0 var(--ar-pink),
+    1px 0 var(--ar-cyan);
+}
+
+html[data-sf-theme="arcade"] .eyebrow {
+  font-family: var(--font-display);
+  font-size: 8px;
+  color: var(--ar-cyan);
+  letter-spacing: 0.08em;
+}
+
+html[data-sf-theme="arcade"] [data-sf-sidebar] {
+  border-right: 4px solid #111;
+  background:
+    linear-gradient(180deg, hsl(265 30% 18%), hsl(265 35% 12%));
+  box-shadow:
+    inset 0 0 0 3px hsl(45 100% 55% / 0.35),
+    inset 0 0 0 6px #111;
+}
+
+html[data-sf-theme="arcade"] [data-sf-sidebar]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ar-pink) 0 10px,
+    var(--ar-cyan) 10px 20px,
+    var(--ar-gold) 20px 30px,
+    #111 30px 40px
+  );
+  background-size: 40px 8px;
+  animation: sf-ar-marquee 0.8s linear infinite;
+}
+
+html[data-sf-theme="arcade"] [data-sf-topbar] {
+  border-bottom: 4px solid #111;
+  background: hsl(var(--surface));
+  box-shadow: inset 0 -3px 0 var(--ar-gold);
+}
+
+html[data-sf-theme="arcade"] [data-sf-nav] a {
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+html[data-sf-theme="arcade"] [data-sf-nav] a[aria-current="page"] {
+  background: var(--ar-gold);
+  color: #111;
+  box-shadow: 3px 3px 0 #111;
+  animation: sf-ar-coin 0.9s ease;
+}
+
+html[data-sf-theme="arcade"] [data-sf-nav] a[aria-current="page"] svg {
+  color: #111 !important;
+}
+
+html[data-sf-theme="arcade"] [data-sf-main] > * {
+  animation: sf-ar-cabinet-in 0.35s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+
+html[data-sf-theme="arcade"] .card,
+html[data-sf-theme="arcade"] .panel {
+  border: 3px solid #111;
+  border-radius: 6px;
+  background: hsl(var(--surface));
+  box-shadow:
+    0 0 0 2px var(--ar-cyan),
+    5px 5px 0 #111;
+}
+
+html[data-sf-theme="arcade"] .card:hover,
+html[data-sf-theme="arcade"] .panel:hover {
+  transform: translate(-2px, -2px);
+  box-shadow:
+    0 0 0 2px var(--ar-pink),
+    7px 7px 0 #111;
+}
+
+html[data-sf-theme="arcade"] .card::before,
+html[data-sf-theme="arcade"] .panel::before {
+  display: none;
+}
+
+html[data-sf-theme="arcade"] [data-sf-control="button"] {
+  border-radius: 4px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+html[data-sf-theme="arcade"] [data-sf-control="button"][data-sf-variant="primary"] {
+  background: var(--ar-gold);
+  color: #111;
+  border: 3px solid #111;
+  box-shadow: 3px 3px 0 var(--ar-pink);
+}
+
+html[data-sf-theme="arcade"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ar-cyan);
+  animation: sf-ar-coin 0.45s ease;
+}
+
+html[data-sf-theme="arcade"] [data-sf-control="button"][data-sf-variant="secondary"] {
+  border: 3px solid #111;
+  box-shadow: 2px 2px 0 var(--ar-cyan);
+}
+
+html[data-sf-theme="arcade"] input,
+html[data-sf-theme="arcade"] select,
+html[data-sf-theme="arcade"] textarea {
+  border-radius: 4px !important;
+  border: 3px solid #111 !important;
+}
+
+html[data-sf-theme="arcade"] ::selection {
+  background: var(--ar-pink);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-theme="arcade"] body::after,
+  html[data-sf-theme="arcade"] [data-sf-sidebar]::before,
+  html[data-sf-theme="arcade"] [data-sf-main] > *,
+  html[data-sf-theme="arcade"] [data-sf-nav] a[aria-current="page"],
+  html[data-sf-theme="arcade"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+    animation: none !important;
+  }
+  html[data-sf-theme="arcade"] .card:hover,
+  html[data-sf-theme="arcade"] .panel:hover {
+    transform: none;
+  }
+}

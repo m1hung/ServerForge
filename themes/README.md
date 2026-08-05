@@ -116,7 +116,17 @@ motion.
 
 ## Examples
 
-- `ember.css`, `forest.css`, `slate.css` — token palettes
-- `zenless.css` — full New Eridu-inspired redesign with animation
+**Token palettes** (colour only): `ember`, `forest`, `slate`
+
+**Full redesigns** (fonts, chrome, motion):
+
+| Theme | Vibe |
+| ----- | ---- |
+| `zenless` | ZZZ street comic — flat Proxy yellow, stickers, hazard stripes |
+| `blueprint` | Drafting table — cyan grids, plate titles, crosshairs |
+| `phosphor` | Green CRT — scan sweep, flicker, terminal type |
+| `arcade` | Coin-op cabinet — pixel titles, marquee, insert-coin |
+| `inkseal` | Sumi & vermillion — brush titles, seal stamp |
+| `obsidian` | Volcanic glass — molten veins, rising embers |
 
 See also the **Custom CSS themes** section in the root `README.md`.

@@ -1,0 +1,267 @@
+/*
+ * theme: Inkseal
+ * description: Sumi ink and vermillion chops — brush titles, seal stamps, quiet paper.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;600;700&family=Source+Sans+3:wght@450;600;700&display=swap");
+
+html[data-sf-theme="inkseal"],
+html[data-sf-theme="inkseal"].dark {
+  --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Noto Serif JP", "Source Sans 3", serif;
+
+  --canvas: 30 8% 9%;
+  --surface: 30 7% 12%;
+  --surface-raised: 30 6% 16%;
+  --line: 30 6% 24%;
+  --line-strong: 5 65% 48%;
+
+  --ink: 35 20% 92%;
+  --ink-muted: 30 8% 68%;
+  --ink-subtle: 30 6% 52%;
+
+  --accent: 5 72% 48%;
+  --accent-soft: 5 40% 16%;
+  --accent-ink: 35 30% 96%;
+
+  --ok: 150 35% 48%;
+  --warn: 35 70% 52%;
+  --danger: 5 72% 48%;
+  --info: 200 35% 55%;
+  --focus: 5 72% 48%;
+  --shadow-overlay: 0 16px 48px -14px rgb(0 0 0 / 0.6);
+
+  --seal: #c23b2e;
+  --sumi: #e8e0d4;
+}
+
+html[data-sf-theme="inkseal"].light {
+  --canvas: 36 35% 94%;
+  --surface: 36 40% 98%;
+  --surface-raised: 36 28% 92%;
+  --line: 30 15% 82%;
+  --line-strong: 5 65% 42%;
+
+  --ink: 25 25% 14%;
+  --ink-muted: 25 12% 38%;
+  --ink-subtle: 25 10% 48%;
+
+  --accent: 5 70% 42%;
+  --accent-soft: 5 55% 92%;
+  --accent-ink: 36 40% 98%;
+
+  --ok: 150 40% 28%;
+  --warn: 32 75% 32%;
+  --danger: 5 70% 40%;
+  --info: 200 40% 34%;
+  --focus: 5 70% 42%;
+
+  --seal: #a83228;
+  --sumi: #2a241c;
+}
+
+@keyframes sf-is-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.03); }
+}
+
+@keyframes sf-is-ink-in {
+  from { opacity: 0; filter: blur(3px); transform: translateY(4px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+
+@keyframes sf-is-stamp {
+  0% { transform: scale(1.4) rotate(-8deg); opacity: 0; }
+  60% { transform: scale(0.96) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-6deg); opacity: 0.9; }
+}
+
+html[data-sf-theme="inkseal"] body {
+  font-family: var(--font-sans);
+}
+
+html[data-sf-theme="inkseal"] body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 80% 10%, hsl(5 50% 40% / 0.08), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 10% 90%, hsl(30 10% 50% / 0.08), transparent 50%),
+    linear-gradient(180deg, hsl(var(--canvas)), hsl(var(--canvas)));
+  opacity: 1;
+}
+
+/* Soft ink blot */
+html[data-sf-theme="inkseal"] body::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  width: 280px;
+  height: 280px;
+  right: -40px;
+  bottom: -60px;
+  z-index: 0;
+  border-radius: 40% 60% 55% 45%;
+  background: radial-gradient(circle, hsl(30 8% 20% / 0.5), transparent 70%);
+  animation: sf-is-breathe 8s ease-in-out infinite;
+}
+
+html[data-sf-theme="inkseal"].light body::after {
+  background: radial-gradient(circle, hsl(30 20% 70% / 0.45), transparent 70%);
+}
+
+html[data-sf-theme="inkseal"] [data-sf-shell],
+html[data-sf-theme="inkseal"] [data-sf-workspace],
+html[data-sf-theme="inkseal"] [data-sf-main] {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-sf-theme="inkseal"] .display,
+html[data-sf-theme="inkseal"] .engraved,
+html[data-sf-theme="inkseal"] h1,
+html[data-sf-theme="inkseal"] h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+html[data-sf-theme="inkseal"] .eyebrow {
+  font-family: var(--font-display);
+  color: var(--seal);
+  letter-spacing: 0.2em;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-sidebar] {
+  border-right: 1px solid hsl(var(--line));
+  background: hsl(var(--surface) / 0.95);
+}
+
+html[data-sf-theme="inkseal"] [data-sf-sidebar]::before {
+  content: "印";
+  position: absolute;
+  top: 5.5rem;
+  right: 0.85rem;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--seal);
+  border: 2px solid var(--seal);
+  border-radius: 2px;
+  transform: rotate(-6deg);
+  animation: sf-is-stamp 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  box-shadow: 1px 1px 0 hsl(5 50% 20% / 0.3);
+}
+
+html[data-sf-theme="inkseal"] [data-sf-topbar] {
+  border-bottom: 1px solid hsl(var(--line));
+  background: hsl(var(--canvas) / 0.9);
+}
+
+html[data-sf-theme="inkseal"] [data-sf-topbar]::after {
+  content: "";
+  position: absolute;
+  left: 1.25rem;
+  right: 1.25rem;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--seal), transparent);
+  opacity: 0.55;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-nav] a {
+  border-radius: 2px;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-nav] a[aria-current="page"] {
+  background: hsl(5 50% 40% / 0.12);
+  color: var(--sumi);
+  box-shadow: inset 3px 0 0 var(--seal);
+}
+
+html[data-sf-theme="inkseal"] [data-sf-nav] a[aria-current="page"] svg {
+  color: var(--seal) !important;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-main] > * {
+  animation: sf-is-ink-in 0.45s ease both;
+}
+
+html[data-sf-theme="inkseal"] .card,
+html[data-sf-theme="inkseal"] .panel {
+  border-radius: 2px;
+  border: 1px solid hsl(var(--line));
+  background: hsl(var(--surface));
+  box-shadow: 0 1px 0 hsl(35 20% 100% / 0.03);
+}
+
+html[data-sf-theme="inkseal"] .card:hover,
+html[data-sf-theme="inkseal"] .panel:hover {
+  transform: none;
+  border-color: hsl(5 50% 45% / 0.45);
+  box-shadow: 0 8px 24px -16px rgb(0 0 0 / 0.5);
+}
+
+html[data-sf-theme="inkseal"] .card::before,
+html[data-sf-theme="inkseal"] .panel::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid hsl(5 65% 48% / 0.55);
+  border-radius: 1px;
+  transform: rotate(8deg);
+  opacity: 0.7;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-control="button"] {
+  border-radius: 2px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-control="button"][data-sf-variant="primary"] {
+  background: var(--seal);
+  color: #f7f1ea;
+  border: 1px solid hsl(5 50% 30%);
+  box-shadow: none;
+}
+
+html[data-sf-theme="inkseal"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+html[data-sf-theme="inkseal"] input,
+html[data-sf-theme="inkseal"] select,
+html[data-sf-theme="inkseal"] textarea {
+  border-radius: 2px !important;
+}
+
+html[data-sf-theme="inkseal"] input:focus,
+html[data-sf-theme="inkseal"] select:focus,
+html[data-sf-theme="inkseal"] textarea:focus {
+  border-color: var(--seal) !important;
+  box-shadow: 0 0 0 1px var(--seal);
+}
+
+html[data-sf-theme="inkseal"] ::selection {
+  background: hsl(5 65% 48% / 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-theme="inkseal"] body::after,
+  html[data-sf-theme="inkseal"] [data-sf-sidebar]::before,
+  html[data-sf-theme="inkseal"] [data-sf-main] > * {
+    animation: none !important;
+  }
+}

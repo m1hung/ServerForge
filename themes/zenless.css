@@ -1,182 +1,152 @@
 /*
  * theme: Zenless
- * description: Full New Eridu redesign — cut corners, neon yellow, street motion.
+ * description: New Eridu street comic — flat black, Proxy yellow, sticker chrome.
  *
- * A complete visual pass (not just colour tokens): angular chrome, comic
- * borders, animated hollow-grid backdrop, and Proxy-yellow accents.
- * Scope redesign rules with [data-sf-theme="zenless"] so they unload cleanly.
+ * Inspired by Zenless Zone Zero's graphic UI: bold yellow blocks, thick ink
+ * outlines, and poster/sticker energy — not Night City neon cyberpunk.
+ * Scope redesign rules with [data-sf-theme="zenless"].
  */
 
-@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Exo+2:wght@600;700;800&family=Nunito:wght@500;600;700&display=swap");
 
 /* ── Tokens ─────────────────────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"],
 html[data-sf-theme="zenless"].dark {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Chakra Petch", "IBM Plex Sans", sans-serif;
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Exo 2", "Nunito", sans-serif;
 
-  --canvas: 260 18% 5%;
-  --surface: 255 16% 8%;
-  --surface-raised: 250 14% 12%;
-  --line: 250 12% 18%;
-  --line-strong: 48 55% 38%;
+  /* Warm-black canvas — comic page, not OLED noir. */
+  --canvas: 40 8% 8%;
+  --surface: 40 6% 11%;
+  --surface-raised: 40 5% 15%;
+  --line: 40 5% 22%;
+  --line-strong: 48 95% 48%;
 
-  --ink: 48 35% 96%;
-  --ink-muted: 250 12% 72%;
-  --ink-subtle: 250 10% 54%;
+  --ink: 40 20% 97%;
+  --ink-muted: 40 8% 72%;
+  --ink-subtle: 40 6% 55%;
 
-  --accent: 48 100% 52%;
-  --accent-soft: 48 50% 12%;
-  --accent-ink: 260 35% 6%;
+  /* Bangboo / Proxy yellow — flat and loud. */
+  --accent: 48 100% 50%;
+  --accent-soft: 48 70% 14%;
+  --accent-ink: 40 30% 8%;
 
-  --ok: 155 65% 52%;
-  --warn: 38 95% 58%;
-  --danger: 350 90% 60%;
-  --info: 190 100% 58%;
+  --ok: 145 55% 48%;
+  --warn: 32 95% 52%;
+  --danger: 2 78% 55%;
+  --info: 210 70% 58%;
 
-  --focus: 48 100% 52%;
-  --shadow-overlay: 0 20px 60px -16px rgb(0 0 0 / 0.85);
+  --focus: 48 100% 50%;
+  --shadow-overlay: 0 12px 40px -10px rgb(0 0 0 / 0.55);
 
-  --zz-yellow: hsl(48 100% 52%);
-  --zz-cyan: hsl(190 100% 58%);
-  --zz-magenta: hsl(320 85% 58%);
-  --zz-cut: 10px;
+  --zz-yellow: #ffd000;
+  --zz-ink: #14120f;
+  --zz-paper: #f4f0e6;
+  --zz-stripe: #ffd000;
+  --zz-cut: 14px;
 }
 
 html[data-sf-theme="zenless"].light {
-  --canvas: 48 45% 96%;
-  --surface: 0 0% 100%;
-  --surface-raised: 48 40% 93%;
-  --line: 250 14% 86%;
-  --line-strong: 48 35% 55%;
+  --canvas: 42 45% 95%;
+  --surface: 40 50% 99%;
+  --surface-raised: 42 40% 92%;
+  --line: 40 12% 82%;
+  --line-strong: 48 90% 42%;
 
-  --ink: 260 25% 10%;
-  --ink-muted: 255 12% 36%;
-  --ink-subtle: 250 10% 44%;
+  --ink: 40 25% 10%;
+  --ink-muted: 40 10% 38%;
+  --ink-subtle: 40 8% 46%;
 
-  --accent: 45 100% 36%;
-  --accent-soft: 48 85% 90%;
-  --accent-ink: 0 0% 100%;
+  --accent: 46 100% 42%;
+  --accent-soft: 48 90% 90%;
+  --accent-ink: 40 30% 8%;
 
-  --ok: 155 68% 26%;
-  --warn: 32 92% 31%;
-  --danger: 350 72% 43%;
-  --info: 195 90% 30%;
+  --ok: 145 60% 28%;
+  --warn: 32 90% 32%;
+  --danger: 2 72% 40%;
+  --info: 210 70% 36%;
 
-  --focus: 45 100% 36%;
-  --shadow-overlay: 0 16px 48px -12px rgb(40 30 8 / 0.18);
+  --focus: 46 100% 42%;
+  --shadow-overlay: 0 12px 36px -12px rgb(40 30 10 / 0.18);
 
-  --zz-yellow: hsl(45 100% 36%);
-  --zz-cyan: hsl(195 90% 30%);
-  --zz-magenta: hsl(320 70% 42%);
+  --zz-yellow: #f0b400;
+  --zz-ink: #1a1612;
+  --zz-paper: #fffdf8;
 }
 
-/* ── Motion ─────────────────────────────────────────────────────────────── */
+/* ── Motion (comic / sticker, not glitch) ───────────────────────────────── */
 
-@keyframes sf-zz-grid-drift {
+@keyframes sf-zz-stripe-scroll {
   from {
-    background-position: 0 0, 0 0, 0 0;
+    background-position: 0 0;
   }
   to {
-    background-position: 48px 48px, -36px 36px, 0 0;
+    background-position: 56px 0;
   }
 }
 
-@keyframes sf-zz-scan {
+@keyframes sf-zz-pop {
   0% {
-    transform: translateY(-100%);
+    transform: scale(0.96) rotate(-0.4deg);
     opacity: 0;
   }
-  10% {
-    opacity: 0.35;
-  }
-  90% {
-    opacity: 0.35;
+  70% {
+    transform: scale(1.02) rotate(0.3deg);
   }
   100% {
-    transform: translateY(100vh);
-    opacity: 0;
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
   }
 }
 
-@keyframes sf-zz-pulse-edge {
+@keyframes sf-zz-wiggle {
   0%,
   100% {
-    box-shadow:
-      inset 3px 0 0 var(--zz-yellow),
-      0 0 0 0 transparent;
+    transform: rotate(0deg);
   }
-  50% {
-    box-shadow:
-      inset 3px 0 0 var(--zz-yellow),
-      0 0 24px -4px hsl(48 100% 52% / 0.35);
+  25% {
+    transform: rotate(-1.2deg);
+  }
+  75% {
+    transform: rotate(1.2deg);
   }
 }
 
-@keyframes sf-zz-glitch-skew {
-  0%,
-  92%,
+@keyframes sf-zz-bounce-in {
+  0% {
+    transform: translateY(8px) scale(0.92);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-3px) scale(1.03);
+    opacity: 1;
+  }
   100% {
-    transform: translateX(0) skewX(0deg);
-    filter: none;
+    transform: translateY(0) scale(1);
   }
-  93% {
-    transform: translateX(-2px) skewX(-0.4deg);
-    filter: hue-rotate(-8deg);
+}
+
+@keyframes sf-zz-tab-fill {
+  from {
+    transform: translateX(-100%);
   }
-  94% {
-    transform: translateX(2px) skewX(0.4deg);
-    filter: hue-rotate(8deg);
-  }
-  95% {
+  to {
     transform: translateX(0);
-    filter: none;
   }
 }
 
-@keyframes sf-zz-bar-in {
-  from {
-    transform: scaleY(0);
-    opacity: 0;
-  }
-  to {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-}
-
-@keyframes sf-zz-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px) skewX(-1deg);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) skewX(0);
-  }
-}
-
-@keyframes sf-zz-sheen {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-@keyframes sf-zz-corner-blink {
+@keyframes sf-zz-sticker-float {
   0%,
   100% {
-    opacity: 0.55;
+    transform: translateY(0) rotate(-2deg);
   }
   50% {
-    opacity: 1;
+    transform: translateY(-3px) rotate(2deg);
   }
 }
 
-/* ── Atmosphere ─────────────────────────────────────────────────────────── */
+/* ── Atmosphere: poster paper + hazard stripes ──────────────────────────── */
 
 html[data-sf-theme="zenless"] body {
   font-family: var(--font-sans);
@@ -184,61 +154,52 @@ html[data-sf-theme="zenless"] body {
   position: relative;
 }
 
+/* Soft paper grain — not a neon grid. */
 html[data-sf-theme="zenless"] body::before {
   content: "";
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 0;
-  opacity: 0.45;
+  opacity: 0.55;
   background-image:
-    linear-gradient(hsl(48 100% 52% / 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(190 100% 58% / 0.03) 1px, transparent 1px),
-    radial-gradient(ellipse 80% 50% at 10% -10%, hsl(48 100% 50% / 0.12), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(320 80% 50% / 0.08), transparent 50%);
+    radial-gradient(circle at 1px 1px, hsl(40 10% 100% / 0.04) 1px, transparent 0),
+    linear-gradient(165deg, hsl(48 100% 50% / 0.07), transparent 42%),
+    linear-gradient(345deg, hsl(2 70% 45% / 0.05), transparent 40%);
   background-size:
-    48px 48px,
-    48px 48px,
+    12px 12px,
     100% 100%,
     100% 100%;
-  animation: sf-zz-grid-drift 28s linear infinite;
 }
 
+/* Top hazard / Proxy stripe — ZZZ marketing staple. */
 html[data-sf-theme="zenless"] body::after {
   content: "";
   pointer-events: none;
   position: fixed;
+  top: 0;
   left: 0;
   right: 0;
-  height: 28%;
-  z-index: 50;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    hsl(190 100% 60% / 0.04),
-    transparent
+  height: 6px;
+  z-index: 60;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--zz-ink),
+    var(--zz-ink) 8px,
+    var(--zz-stripe) 8px,
+    var(--zz-stripe) 16px
   );
-  animation: sf-zz-scan 9s ease-in-out infinite;
-  mix-blend-mode: screen;
+  background-size: 56px 56px;
+  animation: sf-zz-stripe-scroll 1.8s linear infinite;
+  box-shadow: 0 2px 0 var(--zz-yellow);
 }
 
 html[data-sf-theme="zenless"].light body::before {
-  opacity: 0.35;
+  opacity: 0.4;
   background-image:
-    linear-gradient(hsl(45 100% 36% / 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(195 90% 30% / 0.04) 1px, transparent 1px),
-    radial-gradient(ellipse 70% 45% at 0% 0%, hsl(48 100% 50% / 0.1), transparent 50%),
-    radial-gradient(ellipse 50% 40% at 100% 80%, hsl(320 70% 50% / 0.06), transparent 55%);
-}
-
-html[data-sf-theme="zenless"].light body::after {
-  mix-blend-mode: multiply;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    hsl(45 100% 36% / 0.05),
-    transparent
-  );
+    radial-gradient(circle at 1px 1px, hsl(40 30% 20% / 0.05) 1px, transparent 0),
+    linear-gradient(165deg, hsl(48 100% 50% / 0.1), transparent 45%),
+    linear-gradient(345deg, hsl(2 70% 50% / 0.04), transparent 40%);
 }
 
 html[data-sf-theme="zenless"] [data-sf-shell],
@@ -248,57 +209,73 @@ html[data-sf-theme="zenless"] [data-sf-main] {
   z-index: 1;
 }
 
-/* ── Typography ─────────────────────────────────────────────────────────── */
+html[data-sf-theme="zenless"] [data-sf-shell] {
+  padding-top: 6px;
+}
+
+/* ── Typography: bold anime-UI titles ───────────────────────────────────── */
 
 html[data-sf-theme="zenless"] .display,
 html[data-sf-theme="zenless"] .engraved,
 html[data-sf-theme="zenless"] h1,
 html[data-sf-theme="zenless"] h2 {
   font-family: var(--font-display);
-  letter-spacing: 0.02em;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-html[data-sf-theme="zenless"] .eyebrow,
+html[data-sf-theme="zenless"] .eyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--zz-yellow);
+}
+
 html[data-sf-theme="zenless"] .legend {
   font-family: var(--font-display);
-  letter-spacing: 0.14em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-html[data-sf-theme="zenless"] [data-sf-topbar] .engraved {
-  animation: sf-zz-glitch-skew 7s steps(1) infinite;
+html[data-sf-theme="zenless"] [data-sf-sidebar] .engraved {
+  color: var(--zz-yellow);
+  text-shadow: 2px 2px 0 var(--zz-ink);
 }
 
-/* ── Shell / sidebar ────────────────────────────────────────────────────── */
+/* ── Shell / sidebar — sticker panel ────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] [data-sf-sidebar] {
-  border-right: 1px solid hsl(var(--line));
-  background:
-    linear-gradient(180deg, hsl(var(--surface-raised) / 0.9), hsl(var(--surface))),
-    hsl(var(--surface));
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
-  animation: sf-zz-pulse-edge 4.5s ease-in-out infinite;
+  border-right: 3px solid var(--zz-yellow);
+  background: hsl(var(--surface));
+  box-shadow: inset 0 0 0 1px hsl(40 5% 100% / 0.04);
 }
 
 html[data-sf-theme="zenless"] [data-sf-sidebar]::before {
-  content: "";
+  content: "PROXY";
   position: absolute;
-  top: 12px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
+  top: 4.75rem;
+  right: -1.35rem;
+  z-index: 2;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--zz-ink);
   background: var(--zz-yellow);
-  box-shadow: 14px 0 0 var(--zz-cyan);
-  animation: sf-zz-corner-blink 2.2s ease-in-out infinite;
+  border: 2px solid var(--zz-ink);
+  transform: rotate(90deg);
+  transform-origin: center;
+  animation: sf-zz-sticker-float 3.5s ease-in-out infinite;
+  box-shadow: 2px 2px 0 var(--zz-ink);
 }
 
 html[data-sf-theme="zenless"] [data-sf-topbar] {
   position: relative;
-  border-bottom: 1px solid hsl(var(--line));
-  background:
-    linear-gradient(90deg, hsl(48 100% 52% / 0.08), transparent 35%),
-    hsl(var(--canvas) / 0.82);
-  backdrop-filter: blur(16px);
+  border-bottom: 3px solid var(--zz-ink);
+  background: hsl(var(--surface));
 }
 
 html[data-sf-theme="zenless"] [data-sf-topbar]::after {
@@ -306,198 +283,189 @@ html[data-sf-theme="zenless"] [data-sf-topbar]::after {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    var(--zz-yellow),
-    var(--zz-cyan),
-    var(--zz-magenta),
-    transparent 75%
-  );
-  background-size: 200% 100%;
-  animation: sf-zz-sheen 5s linear infinite;
+  bottom: -3px;
+  height: 3px;
+  background: var(--zz-yellow);
 }
 
-@media (max-width: 767px) {
-  html[data-sf-theme="zenless"] [data-sf-topbar]::after {
-    opacity: 0.85;
-  }
+html[data-sf-theme="zenless"] [data-sf-nav] a {
+  border: 2px solid transparent;
+  border-radius: 999px 8px 999px 8px;
+  font-weight: 700;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    color 0.15s ease;
+}
+
+html[data-sf-theme="zenless"] [data-sf-nav] a:hover {
+  transform: translateX(4px) rotate(-0.5deg);
+  border-color: hsl(48 100% 50% / 0.35);
+  color: hsl(var(--ink));
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"] {
-  background: linear-gradient(90deg, hsl(48 100% 52% / 0.18), transparent 80%);
-  color: hsl(var(--ink));
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  background: var(--zz-yellow);
+  color: var(--zz-ink);
+  border-color: var(--zz-ink);
+  box-shadow: 3px 3px 0 var(--zz-ink);
+  font-weight: 800;
+}
+
+html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"] svg {
+  color: var(--zz-ink) !important;
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 15%;
-  bottom: 15%;
-  width: 3px;
-  background: var(--zz-yellow);
-  transform-origin: center top;
-  animation: sf-zz-bar-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-  box-shadow: 0 0 12px var(--zz-yellow);
-}
-
-html[data-sf-theme="zenless"] [data-sf-nav] a {
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
-}
-
-html[data-sf-theme="zenless"] [data-sf-nav] a:hover {
-  transform: translateX(3px);
-  color: hsl(var(--ink));
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, hsl(40 30% 100% / 0.35), transparent 45%);
+  transform-origin: left center;
+  animation: sf-zz-tab-fill 0.35s cubic-bezier(0.2, 1.2, 0.4, 1);
+  pointer-events: none;
 }
 
 html[data-sf-theme="zenless"] [data-sf-mobile-nav] {
-  border-top: 2px solid var(--zz-yellow);
-  background: hsl(var(--surface) / 0.96);
+  border-top: 3px solid var(--zz-yellow);
+  background: hsl(var(--surface));
 }
 
 html[data-sf-theme="zenless"] [data-sf-main] > * {
-  animation: sf-zz-rise 0.45s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+  animation: sf-zz-pop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) both;
 }
 
-/* ── Cards / panels ─────────────────────────────────────────────────────── */
+/* ── Cards: comic stickers ──────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] .card,
 html[data-sf-theme="zenless"] .panel {
-  border: 1px solid hsl(var(--line));
-  border-radius: 0;
-  clip-path: polygon(
-    0 0,
-    calc(100% - var(--zz-cut)) 0,
-    100% var(--zz-cut),
-    100% 100%,
-    var(--zz-cut) 100%,
-    0 calc(100% - var(--zz-cut))
-  );
-  background:
-    linear-gradient(135deg, hsl(48 100% 52% / 0.05), transparent 40%),
-    hsl(var(--surface));
-  box-shadow:
-    0 0 0 1px hsl(48 100% 52% / 0.06),
-    4px 4px 0 hsl(48 100% 52% / 0.12);
+  border: 3px solid var(--zz-ink);
+  border-radius: 18px 4px 16px 4px;
+  background: hsl(var(--surface));
+  box-shadow: 5px 5px 0 var(--zz-yellow);
   transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
+    transform 0.18s cubic-bezier(0.2, 1.2, 0.4, 1),
+    box-shadow 0.18s ease;
 }
 
 html[data-sf-theme="zenless"] .card:hover,
 html[data-sf-theme="zenless"] .panel:hover {
-  border-color: hsl(48 100% 52% / 0.45);
-  box-shadow:
-    0 0 0 1px hsl(48 100% 52% / 0.15),
-    6px 6px 0 hsl(48 100% 52% / 0.2);
-  transform: translate(-1px, -1px);
+  transform: translate(-2px, -2px) rotate(-0.35deg);
+  box-shadow: 8px 8px 0 var(--zz-yellow);
 }
 
 html[data-sf-theme="zenless"] .card::before,
 html[data-sf-theme="zenless"] .panel::before {
   content: "";
   position: absolute;
-  top: 0;
-  right: 0;
-  width: var(--zz-cut);
-  height: var(--zz-cut);
+  top: 10px;
+  right: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--zz-yellow);
-  clip-path: polygon(0 0, 100% 0, 100% 100%);
-  opacity: 0.9;
+  border: 2px solid var(--zz-ink);
+  box-shadow: -14px 0 0 0 hsl(2 78% 55%);
+  z-index: 1;
 }
 
 html[data-sf-theme="zenless"] .readout,
 html[data-sf-theme="zenless"] .inset-well {
-  border-radius: 0;
-  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  border: 2px solid var(--zz-ink);
+  border-radius: 10px 2px 10px 2px;
+  background: hsl(var(--canvas));
 }
 
-/* ── Controls ───────────────────────────────────────────────────────────── */
+/* ── Controls: chunky street UI ─────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] [data-sf-control="button"] {
-  border-radius: 0;
-  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  border-radius: 999px 6px 999px 6px;
   font-family: var(--font-display);
-  letter-spacing: 0.06em;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  border-width: 2px;
   transition:
-    transform 0.15s ease,
-    filter 0.15s ease,
+    transform 0.15s cubic-bezier(0.2, 1.3, 0.4, 1),
+    box-shadow 0.15s ease,
     background-color 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color 0.15s ease;
 }
 
 html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"] {
-  background-image: linear-gradient(
-    110deg,
-    hsl(48 100% 52%) 0%,
-    hsl(48 100% 62%) 40%,
-    hsl(42 100% 48%) 50%,
-    hsl(48 100% 52%) 60%,
-    hsl(48 100% 58%) 100%
-  );
-  background-size: 220% 100%;
-  color: hsl(var(--accent-ink));
-  border: 1px solid hsl(48 100% 70% / 0.5);
-  box-shadow: 0 0 18px -4px hsl(48 100% 52% / 0.55);
-  animation: sf-zz-sheen 3.5s linear infinite;
+  background: var(--zz-yellow);
+  color: var(--zz-ink);
+  border: 2px solid var(--zz-ink);
+  box-shadow: 3px 3px 0 var(--zz-ink);
 }
 
 html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
-  transform: translateY(-1px) scale(1.01);
-  filter: brightness(1.05);
+  transform: translate(-1px, -1px) scale(1.03);
+  box-shadow: 5px 5px 0 var(--zz-ink);
+  filter: none;
+  animation: sf-zz-wiggle 0.35s ease;
+}
+
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--zz-ink);
 }
 
 html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="secondary"],
 html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="outline"] {
-  border-color: hsl(var(--line-strong) / 0.7);
+  border: 2px solid var(--zz-ink);
+  background: hsl(var(--surface-raised));
+  box-shadow: 2px 2px 0 hsl(48 100% 50% / 0.35);
 }
 
 html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="secondary"]:hover,
 html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="outline"]:hover {
-  border-color: var(--zz-yellow);
-  color: var(--zz-yellow);
-  box-shadow: 3px 3px 0 hsl(48 100% 52% / 0.25);
+  background: var(--zz-yellow);
+  color: var(--zz-ink);
+  border-color: var(--zz-ink);
+  box-shadow: 3px 3px 0 var(--zz-ink);
+}
+
+html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="danger"] {
+  border: 2px solid var(--zz-ink);
+  box-shadow: 2px 2px 0 hsl(2 78% 55%);
 }
 
 html[data-sf-theme="zenless"] input,
 html[data-sf-theme="zenless"] select,
 html[data-sf-theme="zenless"] textarea {
-  border-radius: 0 !important;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  border-radius: 10px 2px 10px 2px !important;
+  border-width: 2px !important;
+  border-color: var(--zz-ink) !important;
+  font-weight: 600;
 }
 
 html[data-sf-theme="zenless"] input:focus,
 html[data-sf-theme="zenless"] select:focus,
 html[data-sf-theme="zenless"] textarea:focus {
   border-color: var(--zz-yellow) !important;
-  box-shadow: 0 0 0 1px var(--zz-yellow), 0 0 16px -6px var(--zz-yellow);
+  box-shadow: 3px 3px 0 var(--zz-yellow);
+  outline: none;
 }
 
 /* ── Status / misc ──────────────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] .lamp {
-  box-shadow: 0 0 8px currentColor;
+  border: 2px solid var(--zz-ink);
+  box-shadow: 1px 1px 0 var(--zz-ink);
 }
 
 html[data-sf-theme="zenless"] .meter {
-  border-radius: 0;
-  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%);
+  border: 2px solid var(--zz-ink);
+  border-radius: 999px 4px;
+  background: var(--zz-ink);
 }
 
 html[data-sf-theme="zenless"] ::selection {
-  background: hsl(48 100% 52% / 0.35);
-  color: hsl(var(--ink));
+  background: var(--zz-yellow);
+  color: var(--zz-ink);
 }
 
 html[data-sf-theme="zenless"] .scrollbar-thin {
@@ -506,21 +474,32 @@ html[data-sf-theme="zenless"] .scrollbar-thin {
 
 html[data-sf-theme="zenless"] .scrollbar-thin::-webkit-scrollbar-thumb {
   background-color: var(--zz-yellow);
-  border-radius: 0;
+  border: 2px solid var(--zz-ink);
+  border-radius: 4px;
+}
+
+html[data-sf-theme="zenless"] .inset-well {
+  animation: none;
+}
+
+/* Brand mark in sidebar gets a Bangboo-ish badge bounce on load */
+html[data-sf-theme="zenless"] [data-sf-sidebar] .inset-well {
+  border: 2px solid var(--zz-ink);
+  border-radius: 10px 3px;
+  background: var(--zz-yellow);
+  color: var(--zz-ink) !important;
+  animation: sf-zz-bounce-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-sf-theme="zenless"] body::before,
   html[data-sf-theme="zenless"] body::after,
-  html[data-sf-theme="zenless"] [data-sf-sidebar],
-  html[data-sf-theme="zenless"] [data-sf-topbar]::after,
-  html[data-sf-theme="zenless"] [data-sf-topbar] .engraved,
-  html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"],
+  html[data-sf-theme="zenless"] [data-sf-sidebar]::before,
   html[data-sf-theme="zenless"] [data-sf-main] > *,
   html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before,
-  html[data-sf-theme="zenless"] [data-sf-sidebar]::before {
+  html[data-sf-theme="zenless"] [data-sf-sidebar] .inset-well,
+  html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
     animation: none !important;
   }
 

@@ -204,10 +204,11 @@ themes can go further — fonts, chrome, clip-paths, and CSS animation.
 2. Put it in `data/themes/` (created by bootstrap)
 3. Open **Account → Appearance** and pick it
 
-Built-in themes include simple palettes (`ember`, `forest`, `slate`) and a full
-redesign (`zenless`). Owners and admins can set the panel-wide default.
-Light/dark mode (sidebar sun/moon) still applies; redesign themes should define
-both `html.dark` and `html.light` (or scoped `[data-sf-theme].light`).
+Built-in themes include colour palettes (`ember`, `forest`, `slate`) and full
+redesigns (`zenless`, `blueprint`, `phosphor`, `arcade`, `inkseal`, `obsidian`).
+Owners and admins can set the panel-wide default. Light/dark mode (sidebar
+sun/moon) still applies; redesign themes should define both `html.dark` and
+`html.light` (or scoped `[data-sf-theme].light`).
 
 The active theme id is exposed as `data-sf-theme` on `<html>`, with stable
 hooks like `[data-sf-sidebar]` and `[data-sf-control="button"]` for deep

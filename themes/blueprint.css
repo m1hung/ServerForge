@@ -1,0 +1,249 @@
+/*
+ * theme: Blueprint
+ * description: Drafting-table cyan — grids, crosshairs, and plate titles.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Special+Elite&display=swap");
+
+html[data-sf-theme="blueprint"],
+html[data-sf-theme="blueprint"].dark {
+  --font-sans: "IBM Plex Mono", ui-monospace, monospace;
+  --font-display: "Special Elite", "IBM Plex Mono", serif;
+
+  --canvas: 210 55% 14%;
+  --surface: 210 50% 18%;
+  --surface-raised: 210 45% 22%;
+  --line: 195 60% 38%;
+  --line-strong: 190 90% 62%;
+
+  --ink: 190 80% 92%;
+  --ink-muted: 195 40% 72%;
+  --ink-subtle: 200 30% 58%;
+
+  --accent: 190 95% 62%;
+  --accent-soft: 200 50% 22%;
+  --accent-ink: 210 60% 10%;
+
+  --ok: 150 50% 55%;
+  --warn: 40 85% 60%;
+  --danger: 5 75% 62%;
+  --info: 190 95% 62%;
+  --focus: 190 95% 62%;
+  --shadow-overlay: 0 16px 40px -12px rgb(0 20 40 / 0.65);
+
+  --bp-line: hsl(190 90% 62% / 0.35);
+  --bp-ink: hsl(190 95% 72%);
+}
+
+html[data-sf-theme="blueprint"].light {
+  --canvas: 205 45% 92%;
+  --surface: 205 50% 96%;
+  --surface-raised: 205 40% 90%;
+  --line: 205 35% 72%;
+  --line-strong: 205 70% 38%;
+
+  --ink: 210 50% 16%;
+  --ink-muted: 210 30% 36%;
+  --ink-subtle: 210 22% 46%;
+
+  --accent: 205 85% 32%;
+  --accent-soft: 200 50% 88%;
+  --accent-ink: 0 0% 100%;
+
+  --ok: 150 55% 28%;
+  --warn: 32 85% 32%;
+  --danger: 5 70% 40%;
+  --info: 205 85% 32%;
+  --focus: 205 85% 32%;
+
+  --bp-line: hsl(205 70% 38% / 0.3);
+  --bp-ink: hsl(205 70% 28%);
+}
+
+@keyframes sf-bp-draw {
+  from { stroke-dashoffset: 120; opacity: 0.3; }
+  to { stroke-dashoffset: 0; opacity: 1; }
+}
+
+@keyframes sf-bp-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sf-bp-crosshair {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.7; }
+}
+
+html[data-sf-theme="blueprint"] body {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+}
+
+html[data-sf-theme="blueprint"] body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(var(--bp-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bp-line) 1px, transparent 1px),
+    linear-gradient(hsl(190 80% 70% / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(190 80% 70% / 0.08) 1px, transparent 1px);
+  background-size: 48px 48px, 48px 48px, 8px 8px, 8px 8px;
+}
+
+html[data-sf-theme="blueprint"] body::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 12px;
+  z-index: 0;
+  border: 1px solid var(--bp-line);
+  box-shadow: inset 0 0 0 4px hsl(var(--canvas) / 0.4);
+}
+
+html[data-sf-theme="blueprint"] [data-sf-shell],
+html[data-sf-theme="blueprint"] [data-sf-workspace],
+html[data-sf-theme="blueprint"] [data-sf-main] {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-sf-theme="blueprint"] .display,
+html[data-sf-theme="blueprint"] .engraved,
+html[data-sf-theme="blueprint"] h1,
+html[data-sf-theme="blueprint"] h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+html[data-sf-theme="blueprint"] .eyebrow,
+html[data-sf-theme="blueprint"] .legend {
+  font-family: var(--font-sans);
+  letter-spacing: 0.14em;
+}
+
+html[data-sf-theme="blueprint"] [data-sf-sidebar] {
+  border-right: 1px solid var(--bp-ink);
+  background: hsl(var(--surface) / 0.92);
+}
+
+html[data-sf-theme="blueprint"] [data-sf-sidebar]::before,
+html[data-sf-theme="blueprint"] [data-sf-sidebar]::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--bp-ink);
+  animation: sf-bp-crosshair 3s ease-in-out infinite;
+}
+
+html[data-sf-theme="blueprint"] [data-sf-sidebar]::before {
+  top: 10px;
+  left: 10px;
+  border-right: none;
+  border-bottom: none;
+}
+
+html[data-sf-theme="blueprint"] [data-sf-sidebar]::after {
+  bottom: 10px;
+  right: 10px;
+  border-left: none;
+  border-top: none;
+}
+
+html[data-sf-theme="blueprint"] [data-sf-topbar] {
+  border-bottom: 1px solid var(--bp-ink);
+  background: hsl(var(--canvas) / 0.85);
+}
+
+html[data-sf-theme="blueprint"] [data-sf-topbar]::after {
+  content: "PLATE A — WORKING DRAWING";
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--bp-ink);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  html[data-sf-theme="blueprint"] [data-sf-topbar]::after { display: none; }
+}
+
+html[data-sf-theme="blueprint"] [data-sf-nav] a[aria-current="page"] {
+  background: transparent;
+  box-shadow: inset 3px 0 0 var(--bp-ink);
+  color: var(--bp-ink);
+}
+
+html[data-sf-theme="blueprint"] [data-sf-main] > * {
+  animation: sf-bp-fade-up 0.35s ease both;
+}
+
+html[data-sf-theme="blueprint"] .card,
+html[data-sf-theme="blueprint"] .panel {
+  border-radius: 0;
+  border: 1px solid var(--bp-ink);
+  background: hsl(var(--surface) / 0.88);
+  box-shadow: none;
+}
+
+html[data-sf-theme="blueprint"] .card:hover,
+html[data-sf-theme="blueprint"] .panel:hover {
+  transform: none;
+  box-shadow: inset 0 0 0 1px var(--bp-ink);
+}
+
+html[data-sf-theme="blueprint"] .card::before,
+html[data-sf-theme="blueprint"] .panel::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px dashed hsl(190 70% 60% / 0.35);
+  pointer-events: none;
+}
+
+html[data-sf-theme="blueprint"] [data-sf-control="button"] {
+  border-radius: 0;
+  font-family: var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11.5px;
+}
+
+html[data-sf-theme="blueprint"] [data-sf-control="button"][data-sf-variant="primary"] {
+  background: transparent;
+  color: var(--bp-ink);
+  border: 1px solid var(--bp-ink);
+  box-shadow: 3px 3px 0 hsl(190 90% 50% / 0.35);
+}
+
+html[data-sf-theme="blueprint"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  background: hsl(190 90% 62% / 0.15);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 hsl(190 90% 50% / 0.45);
+}
+
+html[data-sf-theme="blueprint"] input,
+html[data-sf-theme="blueprint"] select,
+html[data-sf-theme="blueprint"] textarea {
+  border-radius: 0 !important;
+  font-family: var(--font-sans);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-theme="blueprint"] [data-sf-main] > *,
+  html[data-sf-theme="blueprint"] [data-sf-sidebar]::before,
+  html[data-sf-theme="blueprint"] [data-sf-sidebar]::after {
+    animation: none !important;
+  }
+}

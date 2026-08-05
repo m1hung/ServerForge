@@ -1,0 +1,293 @@
+/*
+ * theme: Obsidian
+ * description: Volcanic glass — basalt panels, molten amber veins, ember drift.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Oswald:wght@500;600&display=swap");
+
+html[data-sf-theme="obsidian"],
+html[data-sf-theme="obsidian"].dark {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Oswald", "DM Sans", sans-serif;
+
+  --canvas: 20 12% 5%;
+  --surface: 18 10% 8%;
+  --surface-raised: 16 9% 12%;
+  --line: 15 8% 18%;
+  --line-strong: 28 95% 48%;
+
+  --ink: 30 20% 95%;
+  --ink-muted: 20 10% 68%;
+  --ink-subtle: 18 8% 50%;
+
+  --accent: 28 100% 52%;
+  --accent-soft: 20 60% 14%;
+  --accent-ink: 20 30% 6%;
+
+  --ok: 145 50% 48%;
+  --warn: 35 95% 52%;
+  --danger: 5 85% 55%;
+  --info: 200 60% 55%;
+  --focus: 28 100% 52%;
+  --shadow-overlay: 0 20px 50px -14px rgb(0 0 0 / 0.8);
+
+  --lava: #ff6a00;
+  --ember: #ffb347;
+  --basalt: #1a1410;
+}
+
+html[data-sf-theme="obsidian"].light {
+  --canvas: 25 20% 95%;
+  --surface: 0 0% 100%;
+  --surface-raised: 25 18% 92%;
+  --line: 20 12% 84%;
+  --line-strong: 22 90% 40%;
+
+  --ink: 20 25% 12%;
+  --ink-muted: 20 12% 38%;
+  --ink-subtle: 18 10% 46%;
+
+  --accent: 22 95% 38%;
+  --accent-soft: 28 70% 90%;
+  --accent-ink: 0 0% 100%;
+
+  --ok: 145 55% 28%;
+  --warn: 32 90% 32%;
+  --danger: 5 75% 40%;
+  --info: 200 55% 34%;
+  --focus: 22 95% 38%;
+
+  --lava: #d35400;
+  --ember: #c47a20;
+  --basalt: #f7f3ee;
+}
+
+@keyframes sf-ob-vein {
+  0%, 100% { background-position: 0% 50%; opacity: 0.55; }
+  50% { background-position: 100% 50%; opacity: 0.9; }
+}
+
+@keyframes sf-ob-ember {
+  0% { transform: translateY(0) scale(1); opacity: 0; }
+  15% { opacity: 0.8; }
+  100% { transform: translateY(-100vh) scale(0.4); opacity: 0; }
+}
+
+@keyframes sf-ob-heat {
+  from { opacity: 0; transform: translateY(12px); filter: brightness(0.85); }
+  to { opacity: 1; transform: translateY(0); filter: brightness(1); }
+}
+
+@keyframes sf-ob-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent, 4px 4px 0 hsl(28 100% 40% / 0.25); }
+  50% { box-shadow: 0 0 28px -6px hsl(28 100% 50% / 0.45), 4px 4px 0 hsl(28 100% 40% / 0.35); }
+}
+
+html[data-sf-theme="obsidian"] body {
+  font-family: var(--font-sans);
+  background: var(--basalt);
+}
+
+html[data-sf-theme="obsidian"] body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 110%, hsl(28 100% 45% / 0.22), transparent 55%),
+    radial-gradient(circle at 20% 30%, hsl(15 40% 20% / 0.35), transparent 40%),
+    linear-gradient(160deg, hsl(20 12% 5%), hsl(15 15% 7%) 40%, hsl(10 20% 4%));
+}
+
+html[data-sf-theme="obsidian"] body::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  left: 12%;
+  bottom: 0;
+  width: 4px;
+  height: 10px;
+  z-index: 0;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow:
+    40vw 0 0 1px var(--lava),
+    65vw -20px 0 0 var(--ember),
+    25vw -40px 0 2px hsl(28 100% 60% / 0.7);
+  animation: sf-ob-ember 9s linear infinite;
+}
+
+html[data-sf-theme="obsidian"].light body::before {
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 110%, hsl(28 90% 50% / 0.12), transparent 55%),
+    linear-gradient(160deg, hsl(25 20% 95%), hsl(25 18% 92%));
+}
+
+html[data-sf-theme="obsidian"] [data-sf-shell],
+html[data-sf-theme="obsidian"] [data-sf-workspace],
+html[data-sf-theme="obsidian"] [data-sf-main] {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-sf-theme="obsidian"] .display,
+html[data-sf-theme="obsidian"] .engraved,
+html[data-sf-theme="obsidian"] h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--ember), var(--lava), var(--ember));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sf-ob-vein 5s ease-in-out infinite;
+}
+
+html[data-sf-theme="obsidian"] .eyebrow {
+  font-family: var(--font-display);
+  letter-spacing: 0.18em;
+  color: var(--lava);
+}
+
+html[data-sf-theme="obsidian"] [data-sf-sidebar] {
+  border-right: 1px solid hsl(var(--line));
+  background: linear-gradient(180deg, hsl(18 10% 9%), hsl(20 12% 5%));
+}
+
+html[data-sf-theme="obsidian"] [data-sf-sidebar]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--lava),
+    var(--ember),
+    var(--lava),
+    transparent
+  );
+  background-size: 100% 200%;
+  animation: sf-ob-vein 4s linear infinite;
+}
+
+html[data-sf-theme="obsidian"] [data-sf-topbar] {
+  border-bottom: 1px solid hsl(var(--line));
+  background: hsl(var(--canvas) / 0.9);
+  backdrop-filter: blur(12px);
+}
+
+html[data-sf-theme="obsidian"] [data-sf-topbar]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--lava), var(--ember), transparent);
+  opacity: 0.8;
+}
+
+html[data-sf-theme="obsidian"] [data-sf-nav] a[aria-current="page"] {
+  background: hsl(28 80% 40% / 0.12);
+  color: var(--ember);
+  box-shadow: inset 3px 0 0 var(--lava);
+}
+
+html[data-sf-theme="obsidian"] [data-sf-nav] a[aria-current="page"] svg {
+  color: var(--lava) !important;
+  filter: drop-shadow(0 0 6px hsl(28 100% 50% / 0.6));
+}
+
+html[data-sf-theme="obsidian"] [data-sf-main] > * {
+  animation: sf-ob-heat 0.45s ease both;
+}
+
+html[data-sf-theme="obsidian"] .card,
+html[data-sf-theme="obsidian"] .panel {
+  border-radius: 4px;
+  border: 1px solid hsl(var(--line));
+  background:
+    linear-gradient(145deg, hsl(28 80% 40% / 0.06), transparent 40%),
+    hsl(var(--surface));
+  box-shadow: 4px 4px 0 hsl(28 100% 40% / 0.2);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
+}
+
+html[data-sf-theme="obsidian"] .card:hover,
+html[data-sf-theme="obsidian"] .panel:hover {
+  border-color: hsl(28 90% 50% / 0.45);
+  animation: sf-ob-pulse-glow 2s ease-in-out infinite;
+  transform: translateY(-2px);
+}
+
+html[data-sf-theme="obsidian"] .card::before,
+html[data-sf-theme="obsidian"] .panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--lava), transparent);
+  opacity: 0.7;
+}
+
+html[data-sf-theme="obsidian"] [data-sf-control="button"] {
+  border-radius: 3px;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html[data-sf-theme="obsidian"] [data-sf-control="button"][data-sf-variant="primary"] {
+  background: linear-gradient(180deg, var(--ember), var(--lava));
+  color: #1a0e08;
+  border: 1px solid hsl(28 80% 30%);
+  box-shadow: 0 0 18px -4px hsl(28 100% 50% / 0.55);
+}
+
+html[data-sf-theme="obsidian"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+html[data-sf-theme="obsidian"] input,
+html[data-sf-theme="obsidian"] select,
+html[data-sf-theme="obsidian"] textarea {
+  border-radius: 3px !important;
+}
+
+html[data-sf-theme="obsidian"] input:focus,
+html[data-sf-theme="obsidian"] select:focus,
+html[data-sf-theme="obsidian"] textarea:focus {
+  border-color: var(--lava) !important;
+  box-shadow: 0 0 0 1px var(--lava), 0 0 16px -4px hsl(28 100% 50% / 0.45);
+}
+
+html[data-sf-theme="obsidian"] ::selection {
+  background: hsl(28 100% 50% / 0.4);
+}
+
+html[data-sf-theme="obsidian"] .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--ember), var(--lava));
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-sf-theme="obsidian"] body::after,
+  html[data-sf-theme="obsidian"] .display,
+  html[data-sf-theme="obsidian"] .engraved,
+  html[data-sf-theme="obsidian"] h1,
+  html[data-sf-theme="obsidian"] [data-sf-sidebar]::before,
+  html[data-sf-theme="obsidian"] [data-sf-main] > *,
+  html[data-sf-theme="obsidian"] .card:hover,
+  html[data-sf-theme="obsidian"] .panel:hover {
+    animation: none !important;
+  }
+}
