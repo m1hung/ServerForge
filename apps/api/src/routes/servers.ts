@@ -181,6 +181,7 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
         createdAt: server.createdAt,
         isOwner: server.ownerId === user.id,
         modDirectory: adapter.modDirectory?.(server.variantId) ?? null,
+        consoleGlossary: adapter.consoleGlossary?.(server.variantId) ?? null,
         /**
          * What this caller may actually do here. The UI hides what it cannot
          * use rather than rendering buttons that fail with a 403 on click.

@@ -155,6 +155,30 @@ export interface LogInsight {
   playerEvent?: { type: 'join' | 'leave'; name: string };
 }
 
+/** One entry in the in-console command glossary. */
+export interface ConsoleCommandEntry {
+  /** Exact command or template, e.g. `op <player>`. */
+  command: string;
+  /** What it does, written for someone who has never opened a console. */
+  summary: string;
+  /** Groups related commands in the UI. */
+  category: string;
+}
+
+/**
+ * Per-game console help shown beside the live log.
+ *
+ * `acceptsCommands` is false for games that only stream logs to stdin (no typed
+ * commands). The glossary can still list in-game admin commands for reference.
+ */
+export interface ConsoleGlossary {
+  /** Whether typing into the panel console reaches the game process. */
+  acceptsCommands: boolean;
+  /** One or two sentences explaining how this game's console works. */
+  note?: string;
+  commands: ConsoleCommandEntry[];
+}
+
 export interface EulaRequirement {
   /** Shown as a checkbox in the deploy wizard. */
   key: string;
@@ -218,4 +242,10 @@ export interface GameAdapter {
 
   /** Where mods/plugins are dropped, relative to the server dir. */
   modDirectory?(variantId: string): string | null;
+
+  /**
+   * Commands operators can (or cannot) type in the panel console.
+   * Optional so a new adapter still works before its glossary is written.
+   */
+  consoleGlossary?(variantId: string): ConsoleGlossary;
 }

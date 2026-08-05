@@ -8,6 +8,7 @@ import type {
   VersionInfo,
 } from '../types.js';
 import { STEAMCMD_IMAGE, steamAppUpdate } from '../util/steamcmd.js';
+import { valheimConsoleGlossary } from './console-commands.js';
 import { valheimSettingsSchema } from './settings.js';
 
 /**
@@ -188,6 +189,10 @@ export const valheimAdapter: GameAdapter = {
 
   modDirectory(variantId) {
     return variantId === 'valheim-bepinex' ? 'BepInEx/plugins' : null;
+  },
+
+  consoleGlossary() {
+    return valheimConsoleGlossary();
   },
 };
 

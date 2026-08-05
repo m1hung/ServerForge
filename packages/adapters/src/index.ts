@@ -12,3 +12,6 @@ export {
 } from './minecraft/modpacks.js';
 export { mergeProperties, parseProperties, stringifyProperties } from './util/properties.js';
 export { parseIni, parseTuple, stringifyIni, stringifyTuple } from './util/ini.js';
+export { minecraftConsoleGlossary } from './minecraft/console-commands.js';
+export { palworldConsoleGlossary } from './palworld/console-commands.js';
+export { valheimConsoleGlossary } from './valheim/console-commands.js';

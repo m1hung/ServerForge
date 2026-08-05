@@ -49,7 +49,7 @@ import {
   StatusBadge,
   type ServerState,
 } from "@/components/server-status";
-import { Console } from "@/components/console";
+import { Console, type ConsoleGlossary } from "@/components/console";
 import { useServerStream, type Stats } from "@/hooks/use-server-stream";
 import { SettingsPanel } from "./settings-panel";
 import { GeneralPanel } from "./general-panel";
@@ -76,6 +76,7 @@ interface ServerDetail {
     crashCount: number;
     isOwner: boolean;
     modDirectory: string | null;
+    consoleGlossary: ConsoleGlossary | null;
     permissions: string[];
   };
 }
@@ -447,6 +448,7 @@ export default function ServerPage() {
               connected={stream.connected}
               canSend={state === "running"}
               onSend={(command) => sendCommand.mutate(command)}
+              glossary={server.consoleGlossary}
               disabledReason={
                 state === "starting"
                   ? "Wait for the server to finish starting"

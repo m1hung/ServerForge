@@ -9,6 +9,7 @@ import type {
 } from '../types.js';
 import { parseIni, parseTuple, quoteUnreal, stringifyIni, stringifyTuple, unrealBool, unrealFloat } from '../util/ini.js';
 import { STEAMCMD_IMAGE, steamAppUpdate } from '../util/steamcmd.js';
+import { palworldConsoleGlossary } from './console-commands.js';
 import { palworldSettingsSchema } from './settings.js';
 
 /**
@@ -235,6 +236,10 @@ export const palworldAdapter: GameAdapter = {
 
   modDirectory(variantId) {
     return variantId === 'palworld-modded' ? 'Pal/Content/Paks/~mods' : null;
+  },
+
+  consoleGlossary() {
+    return palworldConsoleGlossary();
   },
 };
 

@@ -73,6 +73,19 @@ describe('registry', () => {
       }
     }
   });
+
+  it('exposes a console command glossary for every game', () => {
+    for (const adapter of listAdapters()) {
+      const glossary = adapter.consoleGlossary?.(adapter.variants[0]!.id);
+      expect(glossary).toBeDefined();
+      expect(glossary!.commands.length).toBeGreaterThan(0);
+      for (const entry of glossary!.commands) {
+        expect(entry.command.trim().length).toBeGreaterThan(0);
+        expect(entry.summary.length).toBeGreaterThan(10);
+        expect(entry.category.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
 });
 
 describe('minecraft adapter', () => {

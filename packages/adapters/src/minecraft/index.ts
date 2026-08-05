@@ -11,6 +11,7 @@ import type {
   VersionInfo,
 } from '../types.js';
 import { mergeProperties, stringifyProperties } from '../util/properties.js';
+import { minecraftConsoleGlossary } from './console-commands.js';
 import { minecraftSettingsSchema } from './settings.js';
 import { buildJavaFlags, javaImageFor, javaMajorFor, type JavaFlagsPreset } from './java.js';
 import {
@@ -389,6 +390,10 @@ export const minecraftAdapter: GameAdapter = {
       return 'mods';
     }
     return null;
+  },
+
+  consoleGlossary() {
+    return minecraftConsoleGlossary();
   },
 };
 
