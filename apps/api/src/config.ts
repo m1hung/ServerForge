@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { homedir } from 'node:os';
+import { accessSync, constants } from 'node:fs';
 import { z } from 'zod';
 
 /**
@@ -17,6 +19,39 @@ const hex64 = z
 const isAbsoluteIfSet = (value: string) => value.trim() === '' || path.isAbsolute(value.trim());
 const absoluteMessage = 'must be an absolute path — run `npm run bootstrap` to fill it in';
 const optional = (value: string | undefined) => (value?.trim() ? value.trim() : undefined);
+
+/** Host Docker endpoint for dockerode when DOCKER_SOCKET is unset. */
+function defaultDockerSocket(): string {
+  if (process.platform === 'win32') return '//./pipe/docker_engine';
+  const candidates = [
+    '/var/run/docker.sock',
+    path.join(homedir(), '.docker', 'run', 'docker.sock'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.R_OK | constants.W_OK);
+      return candidate;
+    } catch {
+      // try next
+    }
+  }
+  return '/var/run/docker.sock';
+}
+
+/** Resolve the Docker endpoint the API should use on this host. */
+function resolveDockerSocket(configured: string | undefined): string {
+  const value = configured?.trim();
+  // .env.example ships the Linux path; remap when the API runs host-native on
+  // Windows. Inside the Linux API container, platform is always linux.
+  if (
+    process.platform === 'win32' &&
+    (!value || value === '/var/run/docker.sock')
+  ) {
+    return '//./pipe/docker_engine';
+  }
+  if (!value) return defaultDockerSocket();
+  return value;
+}
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -59,7 +94,7 @@ const schema = z.object({
    */
   COOKIE_SECURE: z.enum(['true', 'false', 'auto']).default('auto'),
 
-  DOCKER_SOCKET: z.string().default('/var/run/docker.sock'),
+  DOCKER_SOCKET: z.string().optional(),
   DOCKER_NETWORK: z.string().default('serverforge_games'),
   PORT_RANGE_START: z.coerce.number().int().default(25500),
   PORT_RANGE_END: z.coerce.number().int().default(25999),
@@ -102,6 +137,7 @@ export type Config = z.infer<typeof schema> & {
   HOST_DATA_ROOT: string;
   HOST_BACKUP_ROOT: string;
   upnpEnabled: boolean;
+  DOCKER_SOCKET: string;
 };
 
 function load(): Config {
@@ -124,6 +160,7 @@ function load(): Config {
 
   return {
     ...env,
+    DOCKER_SOCKET: resolveDockerSocket(env.DOCKER_SOCKET),
     isProduction,
     cookieSecure:
       env.COOKIE_SECURE === 'true' ? true : env.COOKIE_SECURE === 'false' ? false : isProduction,

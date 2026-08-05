@@ -10,9 +10,12 @@
  */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  dockerFixHint,
+  probeDocker,
+} from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const envPath = path.join(root, ".env");
@@ -147,36 +150,17 @@ async function main() {
     );
   }
 
-  // Docker access is checked properly rather than just "does the socket
-  // exist": the socket is almost always present, and the thing that actually
-  // stops people is not being in the `docker` group. Finding that out here
-  // beats finding out when the next command fails.
-  const docker = await dockerStatus();
+  // Docker access via `docker info` — works for Engine, Desktop, and named pipes.
+  const docker = process.env.DOCKER_HOST ? { ok: true } : probeDocker();
 
-  if (docker !== "ok") {
+  if (!docker.ok) {
     console.log(`\n${c.bold(c.yellow("Before you can continue"))}\n`);
-
-    if (docker === "missing") {
-      console.log(
-        `  Docker is not running — no socket at /var/run/docker.sock.\n`,
-      );
-      console.log(`    ${c.cyan("sudo systemctl start docker")}\n`);
-    } else {
-      console.log(
-        `  Your user cannot access the Docker socket. One-time fix:\n`,
-      );
-      console.log(`    ${c.cyan("sudo usermod -aG docker $USER")}\n`);
-      console.log(
-        `  Then log out and back in, or run ${c.cyan("newgrp docker")} in this`,
-      );
-      console.log(`  terminal. Check it worked with ${c.cyan("docker ps")}.\n`);
-    }
-
-    console.log(`  ${c.dim("Everything below needs Docker, so start there.")}`);
+    console.log(dockerFixHint(docker.reason));
+    console.log(`\n  ${c.dim("Everything below needs Docker, so start there.")}`);
   }
 
   console.log(
-    `\n${c.bold(docker === "ok" ? "Start the persistent panel:" : "Then:")}\n`,
+    `\n${c.bold(docker.ok ? "Start the persistent panel:" : "Then:")}\n`,
   );
   console.log(
     `  ${c.cyan("npm start".padEnd(20))} ${c.dim("# setup, start, and keep it running")}`,
@@ -187,19 +171,6 @@ async function main() {
   console.log(
     `\nThen open ${c.cyan("http://localhost:3000")} and create your account.\n`,
   );
-}
-
-/** 'ok' | 'denied' | 'missing' */
-async function dockerStatus() {
-  if (process.env.DOCKER_HOST) return "ok";
-  const socket = "/var/run/docker.sock";
-  if (!(await exists(socket))) return "missing";
-  try {
-    await fs.access(socket, fsConstants.R_OK | fsConstants.W_OK);
-    return "ok";
-  } catch {
-    return "denied";
-  }
 }
 
 main().catch((error) => {

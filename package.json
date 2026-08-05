@@ -14,8 +14,9 @@
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
     "build": "npm run build --workspace @serverforge/core && npm run build --workspace @serverforge/db && npm run build --workspace @serverforge/adapters && npm run build --workspace @serverforge/api && npm run build --workspace @serverforge/web",
-    "start": "bash start-server.sh",
-    "start:persistent": "bash start-server.sh",
+    "start": "node scripts/start-persistent.mjs",
+    "start:persistent": "node scripts/start-persistent.mjs",
+    "start:linux": "bash start-server.sh",
     "stop:persistent": "node scripts/compose.mjs --profile full stop",
     "status:persistent": "node scripts/compose.mjs --profile full ps",
     "dev": "node scripts/dev.mjs",

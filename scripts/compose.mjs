@@ -9,73 +9,31 @@
  *
  *   node scripts/compose.mjs up -d
  */
-import { spawn, spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { assertDockerAccess } from "./lib/docker-access.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const composeFile = path.join(root, 'docker', 'docker-compose.yml');
-const envFile = path.join(root, '.env');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const composeFile = path.join(root, "docker", "docker-compose.yml");
+const envFile = path.join(root, ".env");
+const winShell = process.platform === "win32";
 
 function detect() {
-  const plugin = spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' });
-  if (plugin.status === 0) return { command: 'docker', prefix: ['compose'] };
+  const plugin = spawnSync("docker", ["compose", "version"], {
+    stdio: "ignore",
+    shell: winShell,
+  });
+  if (plugin.status === 0) return { command: "docker", prefix: ["compose"] };
 
-  const standalone = spawnSync('docker-compose', ['version'], { stdio: 'ignore' });
-  if (standalone.status === 0) return { command: 'docker-compose', prefix: [] };
+  const standalone = spawnSync("docker-compose", ["version"], {
+    stdio: "ignore",
+    shell: winShell,
+  });
+  if (standalone.status === 0) return { command: "docker-compose", prefix: [] };
 
   return null;
-}
-
-/**
- * The Docker socket exists on almost every machine — what varies is whether
- * *this user* may talk to it. Checking access up front turns Docker's
- * "permission denied while trying to connect to the docker API" into
- * something that says what to actually do about it.
- */
-function checkSocketAccess() {
-  if (process.env.DOCKER_HOST) return; // remote or rootless daemon; not our call
-
-  const socket = '/var/run/docker.sock';
-  if (!existsSync(socket)) {
-    console.error(
-      [
-        '',
-        'Docker does not appear to be running.',
-        '',
-        `  No socket at ${socket}.`,
-        '',
-        '  Start it with:  sudo systemctl start docker',
-        '',
-      ].join('\n'),
-    );
-    process.exit(1);
-  }
-
-  try {
-    accessSync(socket, constants.R_OK | constants.W_OK);
-  } catch {
-    console.error(
-      [
-        '',
-        'Your user cannot access the Docker socket.',
-        '',
-        '  This is the most common first-run problem, and it is a one-time fix:',
-        '',
-        '    sudo usermod -aG docker $USER',
-        '',
-        '  Then log out and back in — group membership does not apply to shells',
-        '  that are already open. To fix just this terminal without logging out:',
-        '',
-        '    newgrp docker',
-        '',
-        '  Check it worked with:  docker ps',
-        '',
-      ].join('\n'),
-    );
-    process.exit(1);
-  }
 }
 
 /**
@@ -98,11 +56,14 @@ function hostRoots() {
 
   return Object.fromEntries(
     [
-      ['HOST_DATA_ROOT', 'data/servers'],
-      ['HOST_BACKUP_ROOT', 'data/backups'],
+      ["HOST_DATA_ROOT", "data/servers"],
+      ["HOST_BACKUP_ROOT", "data/backups"],
     ].map(([key, fallback]) => {
-      const configured = (process.env[key] ?? fromEnvFile[key] ?? '').trim();
-      return [key, path.resolve(root, configured === '' ? fallback : configured)];
+      const configured = (process.env[key] ?? fromEnvFile[key] ?? "").trim();
+      return [
+        key,
+        path.resolve(root, configured === "" ? fallback : configured),
+      ];
     }),
   );
 }
@@ -112,42 +73,56 @@ function readEnvFile() {
   if (!existsSync(envFile)) return {};
 
   const values = {};
-  for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+  for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
     const match = line.trim().match(/^([A-Z0-9_]+)=(.*)$/);
-    if (match) values[match[1]] = match[2].trim().replace(/^["']|["']$/g, '');
+    if (match) values[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
   }
   return values;
 }
 
-checkSocketAccess();
+assertDockerAccess();
 
 const tool = detect();
 
 if (!tool) {
   console.error(
     [
-      '',
-      'Docker Compose was not found.',
-      '',
-      '  Install it with:  sudo apt install docker-compose-plugin',
-      '  Or see:           https://docs.docker.com/compose/install/',
-      '',
-      'You can also run Postgres and Redis yourself and point DATABASE_URL',
-      'and REDIS_URL at them — nothing else in the panel requires Compose.',
-      '',
-    ].join('\n'),
+      "",
+      "Docker Compose was not found.",
+      "",
+      "  Install Docker Desktop (Windows/macOS) or the Compose plugin (Linux):",
+      "  https://docs.docker.com/compose/install/",
+      "",
+      "  On Linux you can also:  sudo apt install docker-compose-plugin",
+      "",
+      "You can also run Postgres and Redis yourself and point DATABASE_URL",
+      "and REDIS_URL at them — nothing else in the panel requires Compose.",
+      "",
+    ].join("\n"),
   );
   process.exit(1);
 }
 
 const child = spawn(
   tool.command,
-  [...tool.prefix, '--file', composeFile, '--env-file', envFile, ...process.argv.slice(2)],
-  { stdio: 'inherit', cwd: root, env: { ...process.env, ...hostRoots() } },
+  [
+    ...tool.prefix,
+    "--file",
+    composeFile,
+    "--env-file",
+    envFile,
+    ...process.argv.slice(2),
+  ],
+  {
+    stdio: "inherit",
+    cwd: root,
+    env: { ...process.env, ...hostRoots() },
+    shell: winShell,
+  },
 );
 
-child.on('exit', (code) => process.exit(code ?? 0));
-child.on('error', (error) => {
+child.on("exit", (code) => process.exit(code ?? 0));
+child.on("error", (error) => {
   console.error(`Could not run ${tool.command}: ${error.message}`);
   process.exit(1);
 });

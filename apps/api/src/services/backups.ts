@@ -217,13 +217,12 @@ export async function backupFilePath(backupUid: string): Promise<string> {
 // ────────────────────────────────────────────────────────────────── helpers ──
 
 function tarDirectory(source: string, dest: string, excludes: string[]): Promise<void> {
-  const args = [
+  // GNU tar accepts --warning=…; macOS bsdtar does not. Prefer the quieter
+  // GNU flags when available, otherwise fall back to a portable invocation.
+  const gnuQuiet = ['--warning=no-file-changed', '--warning=no-file-removed'];
+  const base = [
     '--create',
     '--gzip',
-    // Errors on individual files (a world file being rewritten mid-backup)
-    // should warn, not abort a 10 GB archive at 99%.
-    '--warning=no-file-changed',
-    '--warning=no-file-removed',
     ...excludes.map((pattern) => `--exclude=${pattern}`),
     '--file',
     dest,
@@ -231,7 +230,13 @@ function tarDirectory(source: string, dest: string, excludes: string[]): Promise
     source,
     '.',
   ];
-  return runProcess('tar', args, [0, 1]);
+
+  return runProcess('tar', [...gnuQuiet, ...base], [0, 1]).catch((error: Error) => {
+    if (!/unrecognized option|unknown option|invalid option/i.test(error.message)) {
+      throw error;
+    }
+    return runProcess('tar', base, [0, 1]);
+  });
 }
 
 function untarInto(archive: string, dest: string): Promise<void> {

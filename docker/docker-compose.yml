@@ -99,6 +99,7 @@ services:
       # `npm run bootstrap` fills both with absolute paths.
       HOST_DATA_ROOT: ${HOST_DATA_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}
       HOST_BACKUP_ROOT: ${HOST_BACKUP_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}
+      DOCKER_SOCKET: /var/run/docker.sock
       # Plain-HTTP LAN dashboards cannot store Secure cookies; set true behind TLS.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # Automatic router port forwarding.
