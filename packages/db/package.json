@@ -1,0 +1,36 @@
+{
+  "name": "@serverforge/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "generate": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma generate",
+    "migrate": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma migrate dev",
+    "deploy": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma migrate deploy",
+    "push": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma db push",
+    "studio": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma studio",
+    "seed": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs tsx src/seed.ts",
+    "build": "node --env-file-if-exists=../../.env ../../scripts/with-env.mjs prisma generate && tsc -b",
+    "clean": "rm -rf dist generated *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "2.0.2",
+    "@prisma/client": "6.2.1",
+    "@serverforge/core": "*"
+  },
+  "devDependencies": {
+    "prisma": "6.2.1",
+    "tsx": "4.19.2"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  }
+}

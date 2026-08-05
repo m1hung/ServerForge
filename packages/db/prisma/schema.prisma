@@ -1,0 +1,400 @@
+// ServerForge data model.
+//
+// Design notes:
+//  * Every user-facing row has a short public `uid` used in URLs so we never
+//    leak sequential ids or raw UUIDs into the address bar.
+//  * Settings live in a JSON column validated by the adapter's SettingsSchema
+//    rather than one column per game — adding a game must not need a migration.
+//  * Anything deletable by a user is soft-referenced with onDelete rules that
+//    keep audit history intact.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────── identity ──
+
+enum Role {
+  owner
+  admin
+  user
+}
+
+model User {
+  id           String   @id @default(cuid())
+  uid          String   @unique
+  /// Sign-in handle. Unique, case-insensitive in the application layer.
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  role         Role     @default(user)
+  avatarColor  String   @default("#f97316")
+
+  suspended    Boolean  @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions     Session[]
+  apiKeys      ApiKey[]
+  ownedServers Server[]     @relation("ServerOwner")
+  subuserOn    ServerUser[]
+  auditEntries AuditLog[]
+
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  /// SHA-256 of the cookie value. The plaintext token never touches the DB.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  uid         String    @unique
+  name        String
+  /// SHA-256 of the full key. Shown once at creation, never again.
+  tokenHash   String    @unique
+  /// First 8 chars, so the UI can say "sf_live_3f8a…" without storing the key.
+  prefix      String
+  scopes      String[]  @default(["*"])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────────────── infrastructure ──
+
+/// A machine that can run game containers. The local Docker daemon is seeded
+/// as node "local"; remote nodes are reached through the agent transport.
+model Node {
+  id          String   @id @default(cuid())
+  uid         String   @unique
+  name        String
+  /// "docker" (local socket) or "agent" (remote daemon over HTTPS).
+  transport   String   @default("docker")
+  /// Base URL for the agent transport. Null for local.
+  agentUrl    String?
+  /// Encrypted shared secret for the agent transport.
+  agentToken  String?
+  /// Address players connect to. Used to build join strings in the UI.
+  publicHost  String   @default("localhost")
+
+  dataRoot    String   @default("/var/lib/serverforge/servers")
+  backupRoot  String   @default("/var/lib/serverforge/backups")
+
+  memoryMib   Int      @default(0) // 0 = autodetect
+  diskMib     Int      @default(0)
+  cpuCores    Float    @default(0)
+  /// Percentage of node resources we refuse to allocate, keeping headroom.
+  overheadPct Int      @default(10)
+
+  portRangeStart Int   @default(25500)
+  portRangeEnd   Int   @default(25999)
+
+  online        Boolean   @default(false)
+  lastSeenAt    DateTime?
+  maintenance   Boolean   @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  servers     Server[]
+  allocations Allocation[]
+
+  @@index([online])
+}
+
+/// A host ip:port pair. Rows are created up-front for a node's range so
+/// allocation is a single indexed UPDATE ... WHERE serverId IS NULL.
+model Allocation {
+  id       String  @id @default(cuid())
+  nodeId   String
+  node     Node    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  ip       String  @default("0.0.0.0")
+  port     Int
+  /// Adapter-defined role: "game", "rcon", "query", "extra".
+  purpose  String  @default("game")
+  primary  Boolean @default(false)
+  notes    String?
+
+  serverId String?
+  server   Server? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, ip, port])
+  @@index([serverId])
+  @@index([nodeId, serverId])
+}
+
+// ────────────────────────────────────────────────────────────────── servers ──
+
+enum ServerState {
+  creating
+  installing
+  install_failed
+  offline
+  starting
+  running
+  stopping
+  crashed
+  updating
+  restoring
+  suspended
+  deleting
+}
+
+model Server {
+  id          String      @id @default(cuid())
+  uid         String      @unique
+  name        String
+  description String?
+  state       ServerState @default(creating)
+
+  ownerId     String
+  owner       User        @relation("ServerOwner", fields: [ownerId], references: [id])
+  nodeId      String
+  node        Node        @relation(fields: [nodeId], references: [id])
+
+  /// Adapter identity, e.g. gameId="minecraft-java", variantId="paper".
+  gameId      String
+  variantId   String
+  /// Resolved concrete version, e.g. "1.21.4". Never "latest" after install.
+  version     String
+  /// Loader build number where the variant has one (Paper build, Fabric loader).
+  build       String?
+  /// Runtime major version the game needs (e.g. Java 25), resolved from the
+  /// publisher metadata at install time rather than guessed at every start.
+  javaMajor   Int?
+
+  /// Validated against the variant's SettingsSchema.
+  settings    Json        @default("{}")
+  /// Extra container env, merged after adapter-generated env.
+  environment Json        @default("{}")
+  /// Advanced: replaces the adapter-generated startup command entirely.
+  startupOverride String?
+  javaFlagsPreset String  @default("balanced")
+  customJavaFlags String?
+
+  memoryMib   Int
+  cpuCores    Float
+  diskMib     Int
+  swapMib     Int?
+  ioWeight    Int         @default(500)
+
+  containerId String?
+  /// Path on the node, derived from uid. Stored so moves stay traceable.
+  dataPath    String
+
+  installedAt DateTime?
+  lastStartAt DateTime?
+  lastCrashAt DateTime?
+  crashCount  Int         @default(0)
+  autoRestart Boolean     @default(true)
+
+  suspendedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  allocations Allocation[]
+  subusers    ServerUser[]
+  backups     Backup[]
+  schedules   Schedule[]
+  mods        InstalledMod[]
+  activity    Activity[]
+  metrics     MetricSample[]
+  installLogs InstallLog[]
+
+  @@index([ownerId])
+  @@index([nodeId, state])
+  @@index([state])
+}
+
+model ServerUser {
+  id          String   @id @default(cuid())
+  serverId    String
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissions String[]
+  createdAt   DateTime @default(now())
+
+  @@unique([serverId, userId])
+  @@index([userId])
+}
+
+// ────────────────────────────────────────────────────────────────── backups ──
+
+enum BackupState {
+  pending
+  running
+  completed
+  failed
+  deleting
+}
+
+model Backup {
+  id         String      @id @default(cuid())
+  uid        String      @unique
+  serverId   String
+  server     Server      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name       String
+  state      BackupState @default(pending)
+  /// Relative to the node's backupRoot.
+  filePath   String?
+  sizeBytes  BigInt      @default(0)
+  checksum   String?
+  /// Set when a schedule created it, so retention can prune only its own.
+  scheduleId String?
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([serverId, createdAt])
+  @@index([scheduleId])
+}
+
+// ──────────────────────────────────────────────────────────────── schedules ──
+
+model Schedule {
+  id             String    @id @default(cuid())
+  uid            String    @unique
+  serverId       String
+  server         Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name           String
+  cron           String
+  timezone       String    @default("UTC")
+  enabled        Boolean   @default(true)
+  onlyWhenOnline Boolean   @default(true)
+  /// Array of {type:"power"|"command"|"backup", ...}
+  actions        Json
+  lastRunAt      DateTime?
+  lastRunOk      Boolean?
+  lastRunError   String?
+  nextRunAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([serverId])
+  @@index([enabled, nextRunAt])
+}
+
+// ───────────────────────────────────────────────────────────────────── mods ──
+
+model InstalledMod {
+  id         String   @id @default(cuid())
+  serverId   String
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  /// "modrinth" | "curseforge" | "upload" | "url"
+  source     String
+  projectId  String?
+  versionId  String?
+  name       String
+  fileName   String
+  /// "mod" | "plugin" | "modpack" | "datapack" | "resourcepack"
+  kind       String   @default("mod")
+  sizeBytes  BigInt   @default(0)
+  checksum   String?
+  /// Upstream version string for update checks.
+  versionName String?
+  updateAvailable Boolean @default(false)
+  enabled    Boolean  @default(true)
+  installedAt DateTime @default(now())
+
+  @@unique([serverId, fileName])
+  @@index([serverId])
+}
+
+// ───────────────────────────────────────────────────── telemetry and audit ──
+
+/// Rolling resource samples. Pruned by the metrics worker; kept coarse on
+/// purpose so a year of history is still a small table.
+model MetricSample {
+  id           BigInt   @id @default(autoincrement())
+  serverId     String
+  server       Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  at           DateTime @default(now())
+  cpuPercent   Float
+  memoryBytes  BigInt
+  diskBytes    BigInt
+  networkRx    BigInt   @default(0)
+  networkTx    BigInt   @default(0)
+  playersOnline Int?
+
+  @@index([serverId, at])
+}
+
+/// Human-readable server timeline shown on the server overview page.
+model Activity {
+  id        String   @id @default(cuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actorName String?
+  /// e.g. "server.start", "backup.create", "settings.update"
+  action    String
+  message   String
+  metadata  Json?
+  at        DateTime @default(now())
+
+  @@index([serverId, at])
+}
+
+/// Append-only install transcript, so a failed install can be diagnosed
+/// after the page was closed.
+model InstallLog {
+  id       BigInt   @id @default(autoincrement())
+  serverId String
+  server   Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  at       DateTime @default(now())
+  phase    String
+  message  String
+
+  @@index([serverId, at])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  ip         String?
+  at         DateTime @default(now())
+
+  @@index([at])
+  @@index([targetType, targetId])
+}
+
+/// Key/value store for panel-wide settings that admins can change at runtime
+/// (SMTP, registration policy, default limits, CurseForge key).
+model Setting {
+  key       String   @id
+  value     Json
+  /// True when the value is encrypted rather than plaintext JSON.
+  encrypted Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}

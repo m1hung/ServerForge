@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+out/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+.env.bak*
+coverage/
+.turbo/
+data/
+volumes/
+backups/
+*.log
+.DS_Store
+packages/db/generated/

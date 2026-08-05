@@ -1,0 +1,58 @@
+{
+  "name": "serverforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted game server hosting platform. Launch a game server in minutes, not hours.",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "build": "npm run build --workspace @serverforge/core && npm run build --workspace @serverforge/db && npm run build --workspace @serverforge/adapters && npm run build --workspace @serverforge/api && npm run build --workspace @serverforge/web",
+    "start": "bash start-server.sh",
+    "start:persistent": "bash start-server.sh",
+    "stop:persistent": "node scripts/compose.mjs --profile full stop",
+    "status:persistent": "node scripts/compose.mjs --profile full ps",
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "npm run dev --workspace @serverforge/api",
+    "dev:web": "npm run dev --workspace @serverforge/web",
+    "db:generate": "npm run generate --workspace @serverforge/db",
+    "db:migrate": "npm run migrate --workspace @serverforge/db",
+    "db:push": "npm run push --workspace @serverforge/db",
+    "db:seed": "npm run seed --workspace @serverforge/db",
+    "db:studio": "npm run studio --workspace @serverforge/db",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b tsconfig.build.json",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
+    "stack:up": "node scripts/compose.mjs up -d",
+    "stack:down": "node scripts/compose.mjs down",
+    "stack:logs": "node scripts/compose.mjs logs -f",
+    "stack:full": "node scripts/compose.mjs --profile full up -d --build"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "@typescript-eslint/eslint-plugin": "8.21.0",
+    "@typescript-eslint/parser": "8.21.0",
+    "eslint": "9.18.0",
+    "happy-dom": "^15.11.7",
+    "prettier": "3.4.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  },
+  "allowScripts": {
+    "esbuild@0.23.1": true,
+    "esbuild@0.21.5": true,
+    "prisma@6.2.1": true,
+    "@prisma/client@6.2.1": true,
+    "@prisma/engines@6.2.1": true,
+    "sharp@0.33.5": true
+  }
+}

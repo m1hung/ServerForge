@@ -1,0 +1,264 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens — friendly surface.
+ *
+ * Five hues, each with exactly one job. Indigo is the accent and means "you
+ * can do this": the primary button, the selected thing, the live series on a
+ * chart. Green, amber, rose and sky belong to state and nothing else, so a
+ * colour on the fleet page always answers "what is this server doing?".
+ * Nothing decorative is ever coloured, which is what keeps five hues calm
+ * instead of busy.
+ *
+ * The greys are not neutral — every one carries a trace of the accent's hue.
+ * That is the difference between an interface that feels considered and one
+ * that feels like unstyled HTML, and it costs nothing: at 6–12% saturation
+ * you never read it as "blue", only as "not cold".
+ *
+ * Nothing is pure. The dark canvas stops at 9% lightness rather than black and
+ * its text at 96% rather than white, because maximum contrast is the harshest
+ * setting available, not the most readable one — and this is a panel people
+ * leave open on a second monitor for hours.
+ *
+ * Depth comes from one hairline border and a single elevation step
+ * (canvas → surface → raised). No gradients, bevels or textures.
+ *
+ * Dark is the default because that is what people run a game panel in. Light
+ * is a real theme, not an inversion — its borders, muted text and every status
+ * colour are tuned separately to hold 4.5:1.
+ */
+@layer base {
+  :root,
+  .dark {
+    --font-sans: ui-sans-serif;
+    --font-mono: ui-monospace;
+
+    --canvas: 250 12% 9%;
+    --surface: 250 10% 12%;
+    --surface-raised: 250 9% 16%;
+    --line: 250 8% 21%;
+    --line-strong: 250 7% 35%;
+
+    --ink: 250 20% 96%;
+    --ink-muted: 250 9% 75%;
+    /* Set by contrast, not taste: the smallest labels are 11px, so this has
+       to clear 4.5:1 on canvas, surface and raised alike. */
+    --ink-subtle: 250 7% 61%;
+
+    /*
+     * Periwinkle rather than a saturated indigo, because this one token has
+     * to do two jobs: fill the primary button *and* be legible as 13px link
+     * text on the canvas. A mid indigo manages the first and fails the
+     * second at 3.8:1.
+     */
+    --accent: 250 90% 76%;
+    --accent-soft: 250 45% 20%;
+    /* The accent is a light colour: text on it must be dark, not white. */
+    --accent-ink: 250 40% 12%;
+
+    --ok: 155 55% 58%;
+    --warn: 40 92% 65%;
+    --danger: 350 80% 70%;
+    --info: 205 90% 70%;
+
+    --focus: 250 90% 76%;
+
+    /* Elevation. One shadow, used by overlays only — cards sit flat. */
+    --shadow-overlay: 0 16px 48px -12px rgb(0 0 0 / 0.7);
+  }
+
+  .light {
+    --canvas: 250 30% 98%;
+    --surface: 0 0% 100%;
+    --surface-raised: 250 28% 96%;
+    --line: 250 16% 90%;
+    --line-strong: 250 10% 72%;
+
+    --ink: 250 25% 12%;
+    --ink-muted: 250 8% 40%;
+    /* 43%, not 46%: the smallest labels sit on `surface-raised`, and three
+       points lighter than this drops them to 4.37:1 there. */
+    --ink-subtle: 250 7% 43%;
+
+    /* The same hue, taken down far enough to carry white text on the button
+       and to read as a link on white. */
+    --accent: 250 68% 52%;
+    --accent-soft: 250 60% 95%;
+    --accent-ink: 0 0% 100%;
+
+    /* Saturated light-mode status colours fail on white; these are darkened
+       until each one carries 12px text at 4.5:1. */
+    --ok: 155 68% 26%;
+    --warn: 32 92% 31%;
+    --danger: 350 72% 43%;
+    --info: 205 88% 34%;
+
+    --focus: 250 68% 52%;
+
+    --shadow-overlay: 0 16px 48px -12px rgb(30 27 55 / 0.16);
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    /* Prevents the layout shift when a modal locks scrolling. */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply min-h-screen bg-canvas font-sans text-ink antialiased;
+  }
+
+  /*
+   * A visible focus ring is not optional. It is drawn with :focus-visible so
+   * mouse users never see it, and keyboard users always do.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-offset-2;
+    --tw-ring-color: hsl(var(--focus));
+    --tw-ring-offset-color: hsl(var(--canvas));
+  }
+
+  ::selection {
+    background: hsl(var(--focus) / 0.28);
+    color: hsl(var(--ink));
+  }
+
+  /* Respect the OS setting for people who get motion sick. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * The only container in the system: a flat surface inside a hairline.
+   * Grouping is done with the border and the gap around it, never with a
+   * shadow — stacked shadows are what make a dense dashboard feel noisy.
+   */
+  .card,
+  .panel {
+    @apply relative rounded-lg border border-line bg-surface;
+  }
+
+  .page-shell {
+    @apply mx-auto w-full max-w-[1400px];
+  }
+
+  /*
+   * The small label above or beside a value. Sentence case at a readable
+   * size — letter-spaced uppercase micro-type looks technical but costs
+   * legibility at exactly the sizes where legibility is scarcest.
+   */
+  .legend {
+    @apply text-[11px] font-medium leading-none text-ink-subtle;
+  }
+
+  /* A section marker: still small, but caps and tracked enough to read as a
+     heading rather than as another data label. */
+  .eyebrow {
+    @apply text-[10.5px] font-semibold uppercase leading-none tracking-[0.09em] text-ink-subtle;
+  }
+
+  /* Titles. Sans, tight, and one weight heavier than body — nothing else. */
+  .display,
+  .engraved {
+    @apply font-sans font-semibold tracking-[-0.015em] text-ink;
+  }
+
+  /*
+   * A value the user is likely to copy: an address, a path, an id. Mono and
+   * tabular so digits line up, on a surface just distinct enough to say
+   * "this is verbatim text" without becoming a component.
+   */
+  .readout {
+    @apply rounded-md border border-line bg-surface-raised font-mono tabular-nums text-ink;
+  }
+
+  /* An input or a recessed region. Same surface, no border of its own — the
+     component that uses it decides whether it needs one. */
+  .inset-well {
+    @apply rounded-md bg-surface-raised;
+  }
+
+  /* A status dot. Colour comes from `currentColor`, so one text-* class
+     drives the dot and its label together and they can never disagree. */
+  .lamp {
+    @apply inline-block rounded-full;
+    background: currentColor;
+  }
+
+  /* The same dot, unlit — a state that is not happening. */
+  .lamp-off {
+    @apply inline-block rounded-full;
+    background: hsl(var(--line-strong));
+  }
+
+  /* A track with a fill. Rounded on both ends so a 2% reading still reads as
+     a bar rather than a speck. */
+  .meter {
+    @apply relative overflow-hidden rounded-full bg-surface-raised;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-surface-raised;
+  }
+
+  .skeleton::after {
+    @apply absolute inset-0 animate-shimmer;
+    content: "";
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--line) / 0.8),
+      transparent
+    );
+  }
+
+  /* Console output: monospace, tight, and scrollable without layout jump. */
+  .console {
+    @apply font-mono text-[13px] leading-[1.55];
+    font-variant-ligatures: none;
+    overflow-anchor: none;
+  }
+
+  /* Key/value data printed beside its label. */
+  .datum {
+    @apply font-mono text-[11.5px] tabular-nums text-ink-muted;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--line-strong)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-clip-padding;
+    background-color: hsl(var(--line-strong));
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

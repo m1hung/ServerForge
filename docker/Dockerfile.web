@@ -1,0 +1,44 @@
+# Multi-stage build for the dashboard.
+#
+# NEXT_PUBLIC_* values are inlined at build time, so the API URL and branding
+# are build args rather than runtime environment.
+
+FROM node:22-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY packages/core/package.json packages/core/
+COPY apps/web/package.json apps/web/
+RUN npm ci --workspaces --include-workspace-root --ignore-scripts=false
+
+FROM deps AS build
+WORKDIR /app
+ARG NEXT_PUBLIC_API_URL=auto
+ARG NEXT_PUBLIC_API_PORT=8080
+ARG NEXT_PUBLIC_BRAND_NAME=ServerForge
+ARG NEXT_PUBLIC_BRAND_TAGLINE="Launch a game server in minutes, not hours."
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_API_PORT=$NEXT_PUBLIC_API_PORT \
+    NEXT_PUBLIC_BRAND_NAME=$NEXT_PUBLIC_BRAND_NAME \
+    NEXT_PUBLIC_BRAND_TAGLINE=$NEXT_PUBLIC_BRAND_TAGLINE \
+    NEXT_TELEMETRY_DISABLED=1
+
+COPY tsconfig.base.json ./
+COPY packages/core ./packages/core
+COPY apps/web ./apps/web
+RUN npm run build --workspace @serverforge/core \
+ && npm run build --workspace @serverforge/web
+
+FROM node:22-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+
+RUN useradd --system --uid 1001 --create-home nextjs
+COPY --from=build --chown=nextjs:nextjs /app/node_modules ./node_modules
+COPY --from=build --chown=nextjs:nextjs /app/apps/web ./apps/web
+COPY --from=build --chown=nextjs:nextjs /app/packages/core ./packages/core
+COPY --from=build --chown=nextjs:nextjs /app/package.json ./
+
+USER nextjs
+EXPOSE 3000
+WORKDIR /app/apps/web
+CMD ["npx", "next", "start", "-p", "3000"]

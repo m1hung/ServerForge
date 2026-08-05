@@ -1,0 +1,162 @@
+# ServerForge stack.
+#
+# Two profiles:
+#   (default)  Postgres + Redis only — for running the panel from source.
+#   full       Adds the API and dashboard containers, for a real deployment.
+#
+#   npm run stack:up                          # dependencies only
+#   docker compose --profile full up -d       # everything
+#
+# The API container needs the Docker socket: that is how it creates game
+# containers. Treat access to this panel as equivalent to root on the host,
+# and never expose it to the internet without a TLS reverse proxy in front.
+
+name: serverforge
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-serverforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: ${POSTGRES_DB:-serverforge}
+      # Fail fast rather than silently accepting trust auth on a fresh volume.
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: '--auth-host=scram-sha-256'
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-serverforge} -d ${POSTGRES_DB:-serverforge}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Queues and the console ring buffer are both reconstructible, so an AOF
+    # is unnecessary — but a small snapshot avoids losing queued jobs on a
+    # host reboot.
+    command: >
+      redis-server
+      --save 60 1000
+      --appendonly no
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    profiles: ['full']
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-serverforge}:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/${POSTGRES_DB:-serverforge}?schema=public
+      REDIS_URL: redis://redis:6379
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env — run npm run bootstrap}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — run npm run bootstrap}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      BRAND_NAME: ${BRAND_NAME:-ServerForge}
+      CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+      # Paths *inside* this container. The bind mounts below make them line up
+      # with the host paths that game containers are created against.
+      DATA_ROOT: /var/lib/serverforge/servers
+      BACKUP_ROOT: /var/lib/serverforge/backups
+      CACHE_ROOT: /var/lib/serverforge/cache
+      # Docker creates game containers as siblings on the host, so the panel
+      # must hand the daemon *host* paths, not its own container paths.
+      #
+      # These must be byte-identical to the bind mount sources below. They are
+      # required rather than defaulted because there is no correct default: a
+      # value here is read inside the container, while the same text under
+      # `volumes:` is resolved by Compose against docker/. Anything relative
+      # therefore means two different directories, and any literal absolute
+      # default is a guess about someone else's host. When the pair disagrees
+      # the daemon silently creates the wrong directory, empty, and the game
+      # server fails with "Unable to access jarfile server.jar".
+      #
+      # `npm run bootstrap` fills both with absolute paths.
+      HOST_DATA_ROOT: ${HOST_DATA_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}
+      HOST_BACKUP_ROOT: ${HOST_BACKUP_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}
+      # Plain-HTTP LAN dashboards cannot store Secure cookies; set true behind TLS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Automatic router port forwarding.
+      #
+      # UPNP_CONTROL_URL is not optional in this deployment shape, even though
+      # it is elsewhere: discovery is SSDP multicast, and multicast does not
+      # cross Docker's bridge, so a container can never find the router by
+      # itself. The SOAP calls afterwards are ordinary unicast HTTP and work
+      # fine from here — the address just has to be handed over.
+      UPNP_ENABLED: ${UPNP_ENABLED:-false}
+      UPNP_CONTROL_URL: ${UPNP_CONTROL_URL:-}
+      UPNP_LEASE_SECONDS: ${UPNP_LEASE_SECONDS:-0}
+      UPNP_INTERNAL_IP: ${UPNP_INTERNAL_IP:-}
+    ports:
+      - '${API_PORT:-8080}:8080'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same variables as the environment block above, on purpose — see there.
+      - ${HOST_DATA_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}:/var/lib/serverforge/servers
+      - ${HOST_BACKUP_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}:/var/lib/serverforge/backups
+      - serverforge-cache:/var/lib/serverforge/cache
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    profiles: ['full']
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+      args:
+        # 'auto' uses the browser hostname + NEXT_PUBLIC_API_PORT so LAN access
+        # keeps the session cookie same-site. The host API_PORT must be baked in
+        # at build time — otherwise the dashboard forever talks to :8080.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-auto}
+        NEXT_PUBLIC_API_PORT: ${API_PORT:-8080}
+        NEXT_PUBLIC_BRAND_NAME: ${BRAND_NAME:-ServerForge}
+        NEXT_PUBLIC_BRAND_TAGLINE: ${BRAND_TAGLINE:-Launch a game server in minutes, not hours.}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+
+networks:
+  # Game containers join this network. Declared here so it exists with a
+  # predictable name before the first server is deployed.
+  games:
+    name: serverforge_games
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  serverforge-cache:
