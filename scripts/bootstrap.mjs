@@ -14,12 +14,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   dockerFixHint,
+  ensureDockerGroupAccess,
   probeDocker,
 } from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const envPath = path.join(root, ".env");
 const examplePath = path.join(root, ".env.example");
+
+// Account may already be in `docker` while this shell is not — refresh for this run.
+ensureDockerGroupAccess({ cwd: root, argv: process.argv });
 
 const c = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,

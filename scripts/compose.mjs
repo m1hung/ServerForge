@@ -13,12 +13,14 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertDockerAccess } from "./lib/docker-access.mjs";
+import { assertDockerAccess, ensureDockerGroupAccess } from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const composeFile = path.join(root, "docker", "docker-compose.yml");
 const envFile = path.join(root, ".env");
 const winShell = process.platform === "win32";
+
+ensureDockerGroupAccess({ cwd: root, argv: process.argv });
 
 function detect() {
   const plugin = spawnSync("docker", ["compose", "version"], {

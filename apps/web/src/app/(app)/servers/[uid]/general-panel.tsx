@@ -101,8 +101,11 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
   });
 
   const updateGame = useMutation({
-    mutationFn: () => api.post(`/api/servers/${server.uid}/update`, { startAfter: false }),
-    onSuccess: (result: { message?: string }) => {
+    mutationFn: () =>
+      api.post<{ message?: string }>(`/api/servers/${server.uid}/update`, {
+        startAfter: false,
+      }),
+    onSuccess: (result) => {
       setConfirmUpdate(false);
       toast.push({ tone: 'ok', message: result.message ?? 'Update started.' });
       queryClient.invalidateQueries({ queryKey: ['server', server.uid] });

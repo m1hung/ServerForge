@@ -4,10 +4,14 @@
  * Prefer `docker info` over probing a fixed socket path: Docker Desktop on
  * Windows uses a named pipe, and macOS sometimes exposes the CLI socket under
  * ~/.docker/run rather than /var/run.
+ *
+ * On Linux, membership in the `docker` group often exists while the *current*
+ * shell still lacks it (added after login). `ensureDockerGroupAccess` re-runs
+ * the process under `sg docker` so first-run setup does not require a logout.
  */
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
 import path from "node:path";
 
 /**
@@ -71,6 +75,65 @@ export function probeDocker() {
   };
 }
 
+/** Whether /etc/group lists this user under `docker` (even if the session lacks it). */
+export function userListedInDockerGroup() {
+  if (process.platform !== "linux") return false;
+  try {
+    const username = userInfo().username;
+    const line = readFileSync("/etc/group", "utf8")
+      .split("\n")
+      .find((entry) => entry.startsWith("docker:"));
+    if (!line) return false;
+    const members = line.split(":")[3]?.split(",") ?? [];
+    return members.includes(username);
+  } catch {
+    return false;
+  }
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * If Docker is denied but the account is already in the docker group, re-exec
+ * under `sg docker` so the launcher can continue without a logout.
+ *
+ * When it re-execs, this function does not return — the child exits the process.
+ * Returns false when no re-exec was needed or possible.
+ */
+export function ensureDockerGroupAccess(options = {}) {
+  if (process.platform !== "linux") return false;
+  if (process.env.SERVERFORGE_DOCKER_GROUP === "1") return false;
+  if (process.env.DOCKER_HOST) return false;
+
+  const status = probeDocker();
+  if (status.ok || status.reason !== "denied") return false;
+
+  const sg = spawnSync("sg", ["docker", "-c", "docker info"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (sg.status !== 0) return false;
+
+  const cwd = options.cwd ?? process.cwd();
+  const argv = options.argv ?? process.argv;
+  const command = argv.map(shellQuote).join(" ");
+
+  console.log(
+    "Docker is running, but this terminal does not have group access yet.",
+  );
+  console.log("Continuing with the docker group for this launch…\n");
+
+  const child = spawnSync("sg", ["docker", "-c", command], {
+    cwd,
+    env: { ...process.env, SERVERFORGE_DOCKER_GROUP: "1" },
+    stdio: "inherit",
+  });
+  process.exit(child.status ?? 1);
+  return true;
+}
+
 /** Human-readable fix steps for the current platform. */
 export function dockerFixHint(reason) {
   const lines = (items) => items.map((line) => `  ${line}`).join("\n");
@@ -121,6 +184,16 @@ export function dockerFixHint(reason) {
     ]);
   }
 
+  if (userListedInDockerGroup()) {
+    return lines([
+      "Your account is already in the docker group, but this terminal was opened before that.",
+      "Refresh group membership in this terminal:",
+      "  newgrp docker",
+      "Or run:  ./start-server.sh",
+      "Then confirm with:  docker ps",
+    ]);
+  }
+
   return lines([
     "Grant Docker access (one-time):",
     "  sudo usermod -aG docker $USER",
@@ -135,6 +208,8 @@ export function dockerFixHint(reason) {
  */
 export function assertDockerAccess() {
   if (process.env.DOCKER_HOST) return;
+
+  ensureDockerGroupAccess();
 
   const status = probeDocker();
   if (status.ok) return;

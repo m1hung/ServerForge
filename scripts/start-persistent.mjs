@@ -11,12 +11,16 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { dockerFixHint, probeDocker } from "./lib/docker-access.mjs";
+import { dockerFixHint, ensureDockerGroupAccess, probeDocker } from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const args = new Set(process.argv.slice(2));
 const winShell = process.platform === "win32";
+
+// Linux: account may already be in `docker` while this shell is not. Re-exec
+// under `sg docker` before any compose/socket work (same idea as start-server.sh).
+ensureDockerGroupAccess({ cwd: root, argv: process.argv });
 
 const color = {
   bold: (text) => `\x1b[1m${text}\x1b[0m`,
