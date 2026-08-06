@@ -1,6 +1,8 @@
 export * from './types.js';
 export * from './registry.js';
 export { compileManifest } from './manifest/compile.js';
+export { loadManifestsFrom } from './manifest/load.js';
+export type { LoadManifestsOptions, ManifestLoadResult } from './manifest/load.js';
 export { ManifestError, assertValidManifest, validateManifest } from './manifest/validate.js';
 export { MANIFEST_VERSION } from './manifest/types.js';
 export type {

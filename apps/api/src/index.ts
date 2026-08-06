@@ -3,6 +3,7 @@ import { brand } from '@serverforge/core';
 import { prisma } from '@serverforge/db';
 import { buildApp } from './app.js';
 import { config } from './config.js';
+import { loadGameManifests, reportManifestLoad } from './lib/game-manifests.js';
 import { logger } from './lib/logger.js';
 import { closeRedis } from './lib/redis.js';
 import { describeMountMismatch } from './lib/storage-paths.js';
@@ -26,6 +27,10 @@ const runWorkers = process.env.WORKER !== '0';
 
 async function main(): Promise<void> {
   await preflight();
+
+  // Before the app is built: the deploy wizard's catalogue is read from the
+  // registry, so a game added here has to be in it before anything is served.
+  reportManifestLoad(await loadGameManifests());
 
   const app = await buildApp();
   const workers = runWorkers ? createWorkers() : [];
@@ -115,6 +120,7 @@ async function preflight(): Promise<void> {
     ['BACKUP_ROOT', config.backupRoot],
     ['CACHE_ROOT', config.cacheRoot],
     ['THEMES_ROOT', config.themesRoot],
+    ['GAMES_ROOT', config.gamesRoot],
   ] as const) {
     try {
       await fs.mkdir(dir, { recursive: true });

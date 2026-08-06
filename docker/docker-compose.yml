@@ -88,6 +88,7 @@ services:
       BACKUP_ROOT: /var/lib/serverforge/backups
       CACHE_ROOT: /var/lib/serverforge/cache
       THEMES_ROOT: /var/lib/serverforge/themes
+      GAMES_ROOT: /var/lib/serverforge/games
       # Docker creates game containers as siblings on the host, so the panel
       # must hand the daemon *host* paths, not its own container paths.
       #
@@ -130,6 +131,8 @@ services:
       - ${HOST_BACKUP_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}:/var/lib/serverforge/backups
       # Custom CSS themes (Account → Appearance). Bootstrap fills HOST_THEMES_ROOT.
       - ${HOST_THEMES_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}:/var/lib/serverforge/themes
+      # Operator game manifests (*.json), read once at start. See docs/adding-a-game.md.
+      - ${HOST_GAMES_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}:/var/lib/serverforge/games
       - serverforge-cache:/var/lib/serverforge/cache
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

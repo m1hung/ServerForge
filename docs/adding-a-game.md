@@ -21,9 +21,35 @@ modpacks is a program, not a table.
 
 ---
 
+## Where manifests live
+
+Two places, same format:
+
+**`data/games/*.json`** — added by whoever runs the panel. Drop a file in,
+restart, and the game is in the deploy wizard. No rebuild and no TypeScript.
+This is the path for a game you want on *your* panel. Created by
+`npm run bootstrap`, and mounted into the API container by the compose stack.
+
+**`packages/adapters/src/manifest/games/*.ts`** — shipped with the panel, and
+what you write to contribute a game upstream. TypeScript rather than JSON so
+the compiler checks it as you write; the shape is identical, and
+`tests/manifest-loader.test.ts` asserts a built-in manifest survives the trip
+through JSON so the two cannot drift.
+
+A few rules for the directory:
+
+- **`id` must not match a game the panel ships with.** It is what servers are
+  stored against, so it has to be unique — and a manifest silently shadowing a
+  built-in would look like the panel losing a game. Loading refuses instead.
+- **Manifests are read once, at startup.** Restart after editing.
+- **A bad file is skipped, not fatal.** Refusing to boot over one typo would
+  take management of every running server with it. The API log names the file
+  and every problem in it; the game is simply absent from the wizard.
+
 ## Writing a manifest
 
-Create `packages/adapters/src/manifest/games/<game>.ts`:
+Create `packages/adapters/src/manifest/games/<game>.ts` (or a `.json` file in
+`data/games/` with the same fields):
 
 ```ts
 import type { GameManifest } from '../types.js';

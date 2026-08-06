@@ -121,6 +121,11 @@ async function main() {
     "HOST_THEMES_ROOT",
     path.resolve(root, "data/themes"),
   );
+  contents = fillIfEmpty(
+    contents,
+    "HOST_GAMES_ROOT",
+    path.resolve(root, "data/games"),
+  );
 
   if (contents !== before) console.log(`${c.green("✓")} generated secrets`);
 
@@ -136,9 +141,11 @@ async function main() {
     "BACKUP_ROOT",
     "CACHE_ROOT",
     "THEMES_ROOT",
+    "GAMES_ROOT",
     "HOST_DATA_ROOT",
     "HOST_BACKUP_ROOT",
     "HOST_THEMES_ROOT",
+    "HOST_GAMES_ROOT",
   ]) {
     contents = absolutise(contents, key);
   }
@@ -149,10 +156,54 @@ async function main() {
   await fs.writeFile(envPath, contents, { mode: 0o600 });
 
   // Directories the API refuses to start without.
-  for (const dir of ["data/servers", "data/backups", "data/cache", "data/themes"]) {
+  for (const dir of [
+    "data/servers",
+    "data/backups",
+    "data/cache",
+    "data/themes",
+    "data/games",
+  ]) {
     await fs.mkdir(path.join(root, dir), { recursive: true });
   }
   console.log(`${c.green("✓")} created data directories`);
+
+  // An empty directory tells nobody what it is for. Both of these are
+  // gitignored under data/, so the note has to be written rather than shipped.
+  const gamesReadme = path.join(root, "data/games/README.md");
+  if (!(await exists(gamesReadme))) {
+    await fs.writeFile(
+      gamesReadme,
+      [
+        "# Games you add yourself",
+        "",
+        "Drop a `.json` game manifest in this folder and restart the panel;",
+        "the game appears in the deploy wizard. No rebuild, no TypeScript.",
+        "",
+        "A manifest describes how a dedicated server installs, launches and",
+        "logs. It suits the common case: installs from Steam, is configured",
+        "through a config file or its command line, and prints something",
+        "recognisable when it is ready.",
+        "",
+        "Start from the built-in Valheim manifest, which uses every part of",
+        "the format:",
+        "",
+        "  packages/adapters/src/manifest/games/valheim.ts",
+        "",
+        "and read docs/adding-a-game.md for the field-by-field reference.",
+        "",
+        "Two things to know:",
+        "",
+        "  - `id` must not match a game the panel already ships with. It is",
+        "    what servers are stored against, so it has to be unique.",
+        "  - Manifests are read once, at startup. Restart after editing.",
+        "",
+        "A manifest that fails to load is skipped rather than stopping the",
+        "panel — check the API log, which names the file and every problem",
+        "in it.",
+        "",
+      ].join("\n"),
+    );
+  }
 
   // Point operators at where custom CSS themes go (gitignored under data/).
   const themesReadme = path.join(root, "data/themes/README.md");

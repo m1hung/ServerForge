@@ -20,10 +20,11 @@ lives in one.
 | **Valheim**                 | Vanilla dedicated · BepInEx mods                                                                                |
 
 Adding a game usually means writing a **manifest** — a declarative description
-of how the server installs, launches and logs, with no code at all. Games that
-need real logic (Minecraft resolves versions across several publishers' APIs
-and unpacks modpacks) are written as adapters instead. Either way nothing in
-the API, the workers, or the dashboard changes —
+of how the server installs, launches and logs, with no code at all. Drop one in
+`data/games/`, restart, and it is in the deploy wizard. Games that need real
+logic (Minecraft resolves versions across several publishers' APIs and unpacks
+modpacks) are written as adapters instead. Either way nothing in the API, the
+workers, or the dashboard changes —
 see [docs/adding-a-game.md](docs/adding-a-game.md).
 
 ## Features
@@ -258,11 +259,10 @@ Early. The core is built and tested, and the pieces below are the honest gaps:
   key, per their terms. Paste one into **Panel settings → Integrations** and
   browsing turns on; without a key the panel says so plainly rather than
   failing oddly
-- **Game breadth** — three games. The manifest format now covers the common
-  case and Valheim runs on it, but Palworld is still a hand-written adapter and
-  the catalogue is small. Manifests are loaded from the source tree; picking
-  them up from `data/games/` so operators can add one without rebuilding is the
-  next step
+- **Game breadth** — three games out of the box. The manifest format covers the
+  common case, Valheim runs on it, and you can add your own by dropping a
+  `.json` file in `data/games/`. But the shipped catalogue is still small, and
+  Palworld and Minecraft remain hand-written adapters
 - **Console transport** — panel commands are written to the container's stdin.
   Games that only accept RCON can stream their logs but cannot be commanded
   from the console yet

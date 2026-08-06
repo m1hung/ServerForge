@@ -52,6 +52,12 @@ function detect() {
  * both sides the same absolute path regardless of where compose was invoked
  * from. Shell variables outrank `--env-file` in Compose, so these win over
  * .env; a value already set in either is kept, only made absolute.
+ *
+ * Every HOST_* root the compose file marks required belongs in this list.
+ * Compose interpolates the whole document before it filters by profile, so a
+ * required variable missing from an older .env fails even `stack:up`, which
+ * touches none of these mounts. Supplying a resolved default here is what
+ * stops adding a mount from breaking upgrades.
  */
 function hostRoots() {
   const fromEnvFile = readEnvFile();
@@ -60,6 +66,8 @@ function hostRoots() {
     [
       ["HOST_DATA_ROOT", "data/servers"],
       ["HOST_BACKUP_ROOT", "data/backups"],
+      ["HOST_THEMES_ROOT", "data/themes"],
+      ["HOST_GAMES_ROOT", "data/games"],
     ].map(([key, fallback]) => {
       const configured = (process.env[key] ?? fromEnvFile[key] ?? "").trim();
       return [

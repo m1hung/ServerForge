@@ -21,17 +21,43 @@ import { palworldAdapter } from './palworld/index.js';
  *     expressing that as data would mean inventing a programming language.
  *
  * Reach for a manifest first. See docs/adding-a-game.md.
+ *
+ * Operator-supplied manifests are added to this at startup by the API, from
+ * the games directory — see `registerAdapter`.
  */
-const ADAPTERS: GameAdapter[] = [
+const BUILT_IN: GameAdapter[] = [
   minecraftAdapter,
   palworldAdapter,
   compileManifest(valheimManifest),
 ];
 
-const byId = new Map(ADAPTERS.map((adapter) => [adapter.id, adapter]));
+const builtInIds = new Set(BUILT_IN.map((adapter) => adapter.id));
+const byId = new Map(BUILT_IN.map((adapter) => [adapter.id, adapter]));
+
+/**
+ * Adds a game discovered at runtime.
+ *
+ * Registering over an existing id is refused rather than allowed to shadow it.
+ * Overriding a built-in has one good use — patching a bug locally without
+ * waiting for a release — and one much more likely cause: a file copied from
+ * an example whose `id` was never changed. Shadowing silently would make that
+ * mistake look like the panel losing a game, and would let a stale local copy
+ * quietly outlive every upstream fix. Renaming the id costs one line.
+ */
+export function registerAdapter(adapter: GameAdapter): void {
+  const existing = byId.get(adapter.id);
+  if (existing) {
+    throw new Error(
+      builtInIds.has(adapter.id)
+        ? `"${adapter.id}" is already a game this panel ships with. Change the "id" in your manifest to something else — it is what servers are stored against, so it has to be unique.`
+        : `Two game manifests both use the id "${adapter.id}". Ids have to be unique; rename one of them.`,
+    );
+  }
+  byId.set(adapter.id, adapter);
+}
 
 export function listAdapters(): GameAdapter[] {
-  return [...ADAPTERS];
+  return [...byId.values()];
 }
 
 export function getAdapter(gameId: string): GameAdapter {
@@ -68,7 +94,9 @@ export interface CatalogueEntry {
 }
 
 export function buildCatalogue(): CatalogueEntry[] {
-  return ADAPTERS.map((adapter) => ({
+  // Built from the live registry rather than the built-in list, so a game
+  // added from the games directory shows up in the deploy wizard.
+  return listAdapters().map((adapter) => ({
     id: adapter.id,
     name: adapter.name,
     summary: adapter.summary,
