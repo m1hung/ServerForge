@@ -70,7 +70,51 @@ function hostRoots() {
   );
 }
 
-/** Minimal .env reader — only the two path keys above are ever consulted. */
+/**
+ * Refuses the tls profile without a domain to get a certificate for.
+ *
+ * This cannot be `${PANEL_DOMAIN:?...}` in the compose file: Compose
+ * interpolates the whole document before it filters by profile, so a required
+ * variable on a `tls`-only service breaks plain `--profile full` for everyone
+ * who has no domain. Checking here keeps the error attached to the command
+ * that needs the value, and lets it say what to do about it.
+ */
+function assertTlsConfigured(argv) {
+  const wantsTls = argv.some(
+    (arg, index) => arg === "tls" && argv[index - 1] === "--profile",
+  );
+  if (!wantsTls) return;
+
+  const domain = (process.env.PANEL_DOMAIN ?? readEnvFile().PANEL_DOMAIN ?? "").trim();
+  if (domain !== "") return;
+
+  console.error(
+    [
+      "",
+      "PANEL_DOMAIN is not set, and HTTPS needs a hostname to get a",
+      "certificate for.",
+      "",
+      "  Set it in .env, along with the values that have to match it:",
+      "",
+      '    PANEL_DOMAIN="panel.example.com"',
+      '    BIND_HOST="127.0.0.1"',
+      '    NEXT_PUBLIC_API_URL="https://panel.example.com"',
+      '    CORS_ORIGINS="https://panel.example.com"',
+      '    COOKIE_SECURE="true"',
+      "",
+      "  The domain must already resolve to this machine, and ports 80 and",
+      "  443 must reach it. See docs/setup.md for the walkthrough.",
+      "",
+      "  For a LAN-only panel you do not want this at all — use:",
+      "",
+      "    npm run stack:full",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+/** Minimal .env reader — only a few known keys are ever consulted. */
 function readEnvFile() {
   if (!existsSync(envFile)) return {};
 
@@ -83,6 +127,7 @@ function readEnvFile() {
 }
 
 assertDockerAccess();
+assertTlsConfigured(process.argv.slice(2));
 
 const tool = detect();
 

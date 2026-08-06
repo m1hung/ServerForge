@@ -319,7 +319,6 @@ Set these in `.env`:
 
 ```bash
 PANEL_DOMAIN="panel.example.com"
-TLS_EMAIL="you@example.com"          # optional, for expiry warnings
 BIND_HOST="127.0.0.1"
 NEXT_PUBLIC_API_URL="https://panel.example.com"
 CORS_ORIGINS="https://panel.example.com"

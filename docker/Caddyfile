@@ -10,11 +10,12 @@
 # and the panel signs you out at random. Everything the API serves lives under
 # /api, plus /health, which makes the split exact.
 
-{
-	# Blank is fine: Caddy still issues certificates, you just get no expiry
-	# warnings by mail.
-	email {$TLS_EMAIL}
-}
+# No global `email` option for the ACME account. A Caddyfile cannot make a
+# directive conditional, so `email {$TLS_EMAIL}` with the variable unset
+# expands to a bare `email` and Caddy refuses to parse the file at all — the
+# TLS profile would fail to start for everyone who did not set an address.
+# Caddy renews on its own, so the expiry mail it buys is worth less than the
+# failure mode it costs.
 
 {$PANEL_DOMAIN} {
 	encode zstd gzip

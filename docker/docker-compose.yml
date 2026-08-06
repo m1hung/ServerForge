@@ -178,8 +178,13 @@ services:
       - api
       - web
     environment:
-      PANEL_DOMAIN: ${PANEL_DOMAIN:?set PANEL_DOMAIN in .env — the tls profile needs a hostname to get a certificate for}
-      TLS_EMAIL: ${TLS_EMAIL:-}
+      # Not `${PANEL_DOMAIN:?...}`, however much this wants to be required:
+      # Compose interpolates the whole file before it filters by profile, so a
+      # required-variable marker here fails `--profile full` too, for everyone
+      # who has no domain and never asked for TLS. The check lives in
+      # scripts/compose.mjs instead, where it can say so at the command the
+      # user actually typed.
+      PANEL_DOMAIN: ${PANEL_DOMAIN:-}
     ports:
       # 80 is not optional: it is how the HTTP-01 challenge proves the domain
       # is yours, and how a plain-http visit gets redirected to https.
