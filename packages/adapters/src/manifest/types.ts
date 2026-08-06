@@ -107,6 +107,15 @@ export interface ManifestRuntime {
   workingDir: string;
   /** argv. Never a shell string — there is no shell to inject into. */
   command: ManifestArg[];
+  /**
+   * Replaces the image's ENTRYPOINT; `[]` clears it.
+   *
+   * Set this when the image's entrypoint is a tool rather than a launcher —
+   * the SteamCMD image is used for its libraries, but its entrypoint is
+   * steamcmd, so without this the command becomes arguments to steamcmd and
+   * the game never runs.
+   */
+  entrypoint?: string[];
   /** Extra environment, templated. Merged under the server's own env. */
   env?: Record<string, string>;
   /**

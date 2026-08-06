@@ -27,6 +27,11 @@ export default tseslint.config(
       '**/.next/**',
       'packages/db/generated/**',
       'apps/api/dist/**',
+      // Runtime data: game servers, backups, caches, operator manifests. Not
+      // ours, and a game's own shipped JavaScript would otherwise be linted —
+      // which turns `npm run lint` into hundreds of errors from somebody
+      // else's code the moment a server is deployed.
+      'data/**',
     ],
   },
 

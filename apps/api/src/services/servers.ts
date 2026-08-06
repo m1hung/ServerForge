@@ -259,6 +259,7 @@ export async function startServer(serverUid: string, actor?: { id: string; displ
       name: `${brand.resourcePrefix}-${server.uid}`,
       image: plan.image,
       command: plan.command,
+      ...(plan.entrypoint ? { entrypoint: plan.entrypoint } : {}),
       workingDir: plan.workingDir,
       env: plan.env,
       // Docker binds are resolved on the host, not inside the API container.

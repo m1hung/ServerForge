@@ -287,6 +287,19 @@ describe('manifest validation', () => {
   });
 });
 
+/**
+ * Compares startup plans while setting `entrypoint` aside.
+ *
+ * The manifests clear the SteamCMD image's entrypoint and the hand-written
+ * adapters never did — which is why no Steam game could actually run: the
+ * command arrived as arguments to steamcmd. The difference is the fix, and it
+ * is asserted on its own below rather than smuggled through here.
+ */
+function samePlan(a: StartupPlan, b: StartupPlan) {
+  const strip = ({ entrypoint: _entrypoint, ...rest }: StartupPlan) => rest;
+  expect(strip(a)).toEqual(strip(b));
+}
+
 // ────────────────────────────────────────────── equivalence with the oracle ──
 
 /**
@@ -322,7 +335,7 @@ describe('valheim manifest matches the hand-written adapter', () => {
   it('produces the same startup plan on defaults', () => {
     for (const variantId of variants) {
       const ctx = contextFor(variantId);
-      expect(compiled.startup(ctx)).toEqual(valheimAdapter.startup(ctx));
+      samePlan(compiled.startup(ctx), valheimAdapter.startup(ctx));
     }
   });
 
@@ -332,7 +345,7 @@ describe('valheim manifest matches the hand-written adapter', () => {
       ...ctx,
       settings: { ...ctx.settings, Password: 'hunter2', Public: false, ServerName: 'Midgard' },
     };
-    expect(compiled.startup(custom)).toEqual(valheimAdapter.startup(custom));
+    samePlan(compiled.startup(custom), valheimAdapter.startup(custom));
   });
 
   it('produces the same startup plan on a non-default port', () => {
@@ -342,7 +355,7 @@ describe('valheim manifest matches the hand-written adapter', () => {
         { ip: '0.0.0.0', port: 27016, purpose: 'query', primary: false },
       ],
     });
-    expect(compiled.startup(ctx)).toEqual(valheimAdapter.startup(ctx));
+    samePlan(compiled.startup(ctx), valheimAdapter.startup(ctx));
   });
 
   it('classifies the same log lines the same way', () => {
@@ -367,6 +380,21 @@ describe('valheim manifest matches the hand-written adapter', () => {
 
   it('makes the same claim about reporting players', () => {
     expect(compiled.reportsPlayers).toBe(valheimAdapter.reportsPlayers);
+  });
+
+  /**
+   * The divergence `samePlan` sets aside, asserted on its own.
+   *
+   * The SteamCMD image is used for its runtime libraries, but its entrypoint
+   * is steamcmd. The hand-written adapter left that in place, so the command
+   * became arguments to steamcmd and the game never started — a Steam server
+   * would install and then sit there running an idle SteamCMD prompt. The
+   * manifests clear it.
+   */
+  it('clears the SteamCMD entrypoint, which the hand-written adapter did not', () => {
+    const ctx = contextFor('valheim-vanilla');
+    expect(compiled.startup(ctx).entrypoint).toEqual([]);
+    expect(valheimAdapter.startup(ctx).entrypoint).toBeUndefined();
   });
 
   /**
@@ -522,10 +550,10 @@ describe('palworld manifest matches the hand-written adapter', () => {
   it('produces the same startup plan on defaults and with perf threads off', () => {
     for (const variantId of variants) {
       const ctx = pwContext(variantId);
-      expect(compiled.startup(ctx)).toEqual(palworldAdapter.startup(ctx));
+      samePlan(compiled.startup(ctx), palworldAdapter.startup(ctx));
 
       const off = { ...ctx, settings: { ...ctx.settings, sf_use_perf_threads: false } };
-      expect(compiled.startup(off)).toEqual(palworldAdapter.startup(off));
+      samePlan(compiled.startup(off), palworldAdapter.startup(off));
       expect(compiled.startup(off).command).not.toContain('-useperfthreads');
     }
   });
@@ -540,7 +568,7 @@ describe('palworld manifest matches the hand-written adapter', () => {
     });
     const custom = { ...ctx, settings: { ...ctx.settings, ServerPlayerMaxNum: 24 } };
 
-    expect(compiled.startup(custom)).toEqual(palworldAdapter.startup(custom));
+    samePlan(compiled.startup(custom), palworldAdapter.startup(custom));
     expect(compiled.startup(custom).command).toContain('-port=25600');
     expect(compiled.startup(custom).command).toContain('-players=24');
   });
@@ -575,6 +603,12 @@ describe('palworld manifest matches the hand-written adapter', () => {
     expect(compiled.consoleGlossary?.('palworld-vanilla')).toEqual(
       palworldAdapter.consoleGlossary?.('palworld-vanilla'),
     );
+  });
+
+  it('clears the SteamCMD entrypoint, which the hand-written adapter did not', () => {
+    const ctx = pwContext('palworld-vanilla');
+    expect(compiled.startup(ctx).entrypoint).toEqual([]);
+    expect(palworldAdapter.startup(ctx).entrypoint).toBeUndefined();
   });
 });
 

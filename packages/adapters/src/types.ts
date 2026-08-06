@@ -111,6 +111,20 @@ export interface StartupPlan {
   image: string;
   /** argv. Never a shell string — no shell injection surface. */
   command: string[];
+  /**
+   * Replaces the image's ENTRYPOINT. `[]` clears it.
+   *
+   * Needed whenever an image's entrypoint is a *tool* rather than a launcher.
+   * The SteamCMD image is the case in point: it is used for Steam games
+   * because it carries the right runtime libraries, but its entrypoint is
+   * steamcmd itself — so `command` arrives as arguments to steamcmd and the
+   * game never starts.
+   *
+   * Left alone by default, because some images do real work in their
+   * entrypoint before exec'ing the command: eclipse-temurin installs CA
+   * certificates there, and clearing it would quietly break Java's TLS.
+   */
+  entrypoint?: string[];
   /** Working directory inside the container. */
   workingDir: string;
   env: Record<string, string>;

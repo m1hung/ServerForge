@@ -128,8 +128,11 @@ export class DockerRuntime implements RuntimeDriver {
       name: spec.name,
       Image: spec.image,
       Cmd: spec.command,
+      // Only when the adapter asks: an image's entrypoint may be doing setup
+      // the command depends on. See StartupPlan.entrypoint.
+      ...(spec.entrypoint ? { Entrypoint: spec.entrypoint } : {}),
       WorkingDir: spec.workingDir,
-      Env: Object.entries(spec.env).map(([k, v]) => `${k}=${v}`),
+      Env: toEnv(spec.env),
       ExposedPorts: exposed,
       Labels: spec.labels,
       // stdin stays open so console commands can be written to the process.
@@ -359,7 +362,7 @@ export class DockerRuntime implements RuntimeDriver {
       Image: options.image,
       Cmd: options.command,
       WorkingDir: options.workingDir ?? '/home/container',
-      Env: Object.entries(options.env ?? {}).map(([k, v]) => `${k}=${v}`),
+      Env: toEnv(options.env ?? {}),
       User: '1000:1000',
       Tty: false,
       Labels: {
@@ -489,6 +492,28 @@ export class DockerRuntime implements RuntimeDriver {
 }
 
 // ────────────────────────────────────────────────────────────────── helpers ──
+
+/** Where every container's writable data is mounted, and so where HOME is. */
+const CONTAINER_HOME = '/home/container';
+
+/**
+ * Builds the env list, defaulting HOME to the one writable directory.
+ *
+ * Containers run as uid 1000 with the server's data bind-mounted at
+ * /home/container, but images carry whatever HOME their author set — usually
+ * /root, which uid 1000 cannot write. Anything that consults HOME then fails
+ * on a path it has no business touching. SteamCMD is the loud case: it exits
+ * with `mkdir: cannot create directory '/root': Permission denied`, reported
+ * as a Steam outage because that is what a non-zero exit usually means.
+ *
+ * Set here rather than in each adapter because the pairing is the runtime's:
+ * this is the code that chooses both the user and the mount point, so it is
+ * the code that knows they have to agree. An adapter passing its own HOME
+ * still wins.
+ */
+function toEnv(env: Record<string, string>): string[] {
+  return Object.entries({ HOME: CONTAINER_HOME, ...env }).map(([key, value]) => `${key}=${value}`);
+}
 
 interface DockerStats {
   cpu_stats?: {

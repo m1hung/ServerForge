@@ -202,6 +202,25 @@ postInstall: [
 ]
 ```
 
+### Entrypoints
+
+`command` is the argv to run — but Docker prepends the image's `ENTRYPOINT` to
+it, and for some images that entrypoint is a *tool* rather than a launcher.
+The SteamCMD image is the case in point: it is used for Steam games because it
+carries the right runtime libraries, but its entrypoint is steamcmd, so the
+command arrives as arguments to steamcmd and the game never starts.
+
+```ts
+runtime: {
+  entrypoint: [],   // clears the image's own
+  command: ['./start_server.sh', '-port', '{{port.game}}'],
+}
+```
+
+Leave it unset otherwise. Some images do real work in their entrypoint before
+exec'ing the command — eclipse-temurin installs CA certificates there, and
+clearing it would quietly break Java's TLS.
+
 ### Typed commands
 
 By default a command typed in the panel console is written to the game's

@@ -151,6 +151,10 @@ export const valheimManifest: GameManifest = {
   runtime: {
     image: STEAMCMD_IMAGE,
     workingDir: '/home/container',
+    // The SteamCMD image is used for its runtime libraries, but its own
+    // entrypoint is steamcmd — without clearing it the command below
+    // arrives as arguments to steamcmd and the game never starts.
+    entrypoint: [],
     command: [
       './start_server.sh',
       '-name',

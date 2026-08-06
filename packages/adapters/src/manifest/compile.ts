@@ -163,6 +163,7 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
       return {
         image: manifest.runtime.image,
         command: renderArgs(manifest.runtime.command, ctx),
+        ...(manifest.runtime.entrypoint ? { entrypoint: manifest.runtime.entrypoint } : {}),
         workingDir: manifest.runtime.workingDir,
         env: {
           ...renderEnv(manifest.runtime.env, ctx),

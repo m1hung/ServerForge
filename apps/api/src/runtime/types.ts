@@ -14,6 +14,8 @@ export interface ContainerSpec {
   name: string;
   image: string;
   command: string[];
+  /** Replaces the image's ENTRYPOINT; `[]` clears it. See StartupPlan. */
+  entrypoint?: string[];
   workingDir: string;
   env: Record<string, string>;
   /** Host path mounted at /home/container. */
