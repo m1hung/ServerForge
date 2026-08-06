@@ -114,6 +114,23 @@ export interface ManifestRuntime {
    * `StartupPlan.ports` for why `fixed` is almost never what you want.
    */
   ports: { containerPort: number; purpose: string; protocol: 'tcp' | 'udp'; fixed?: boolean }[];
+  /**
+   * How a typed command reaches the game. Absent means stdin.
+   *
+   * Set this for a game whose process ignores stdin — its console is RCON or
+   * nothing, and without it the panel can show the log but not command the
+   * server. See `StartupPlan.console`.
+   */
+  console?: {
+    transport: 'rcon';
+    /** Allocation purpose carrying the RCON port. Must be one of `ports`. */
+    portPurpose: string;
+    /** Settings key holding the password. Empty means "not configured". */
+    passwordSetting: string;
+    /** Boolean settings key gating it. Absent means always on. */
+    enabledSetting?: string;
+  };
+
   /** Written to stdin for a graceful stop, e.g. "stop\n". */
   stopCommand?: string;
   stopTimeoutSeconds: number;

@@ -323,6 +323,22 @@ export const minecraftAdapter: GameAdapter = {
         { containerPort: 25565, purpose: 'game', protocol: 'tcp' },
         { containerPort: 25575, purpose: 'rcon', protocol: 'tcp' },
       ],
+      /**
+       * Minecraft reads stdin perfectly well, so RCON is an upgrade rather
+       * than a requirement: it hands back what the command printed, which
+       * stdin cannot. `list` in the panel console then shows the player list
+       * as a reply instead of relying on the server also logging it.
+       *
+       * Gated on the user's own settings, so this changes nothing until they
+       * turn RCON on and set a password — at which point commands start
+       * answering.
+       */
+      console: {
+        transport: 'rcon',
+        portPurpose: 'rcon',
+        enabledSetting: 'enable-rcon',
+        passwordSetting: 'rcon.password',
+      },
       // Minecraft flushes chunks on `stop`; killing it instead risks
       // corrupting the region files the player just built in.
       stopCommand: 'stop\n',

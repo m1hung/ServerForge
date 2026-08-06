@@ -177,6 +177,7 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
           protocol: port.protocol,
           ...(port.fixed ? { fixed: true } : {}),
         })),
+        ...(manifest.runtime.console ? { console: manifest.runtime.console } : {}),
         ...(manifest.runtime.stopCommand ? { stopCommand: manifest.runtime.stopCommand } : {}),
         stopTimeoutSeconds: manifest.runtime.stopTimeoutSeconds,
         ...(manifest.runtime.readyPattern ? { readyPattern: manifest.runtime.readyPattern } : {}),

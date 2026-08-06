@@ -15,7 +15,9 @@ import { getAdapter, getVariant, type ServerContext } from '@serverforge/adapter
 import { prisma, uid as makeUid, type Server, type ServerWithRelations } from '@serverforge/db';
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
-import { recordActivity, setServerState } from '../lib/events.js';
+import { publishConsoleLine, recordActivity, setServerState } from '../lib/events.js';
+import { RconError, rconCommand } from '../lib/rcon.js';
+import { rconPassword, resolveRconTarget } from '../lib/rcon-target.js';
 import { hostDataPath, localDataPath } from '../lib/storage-paths.js';
 import { claimAllocations, releaseAllocations } from './allocations.js';
 import { getRuntime } from '../runtime/index.js';
@@ -364,6 +366,18 @@ export async function restartServer(serverUid: string, actor?: { id: string; dis
   await startServer(serverUid, actor);
 }
 
+/**
+ * Delivers a typed command to the game.
+ *
+ * Two transports. stdin is the default and works for any game whose process
+ * reads it; RCON is used when the adapter declares it *and* the server's owner
+ * has configured it. Games that only speak RCON are the reason it exists —
+ * without it the panel can show their log but never command them.
+ *
+ * RCON also answers, which stdin cannot, so the reply is written back into the
+ * console stream. Previously a command's output only appeared if the game
+ * happened to also log it.
+ */
 export async function sendConsoleCommand(serverUid: string, command: string): Promise<void> {
   const server = await loadServer(serverUid);
   if (server.state !== 'running' && server.state !== 'starting') {
@@ -371,8 +385,51 @@ export async function sendConsoleCommand(serverUid: string, command: string): Pr
   }
   if (!server.containerId) throw conflict('This server has no running container.');
 
-  const runtime = getRuntime(server.node);
-  await runtime.writeStdin(server.containerId, `${command}\n`);
+  const adapter = getAdapter(server.gameId);
+  const plan = adapter.startup(buildContext(server));
+  const target = resolveRconTarget({
+    plan,
+    containerName: `${brand.resourcePrefix}-${server.uid}`,
+    allocations: server.allocations,
+    settings: (server.settings ?? {}) as Record<string, unknown>,
+  });
+
+  if (!target) {
+    // No RCON configured. For a game that reads stdin this is the normal
+    // path; for one that does not, the adapter's console glossary already
+    // tells the user typed commands go nowhere.
+    const runtime = getRuntime(server.node);
+    await runtime.writeStdin(server.containerId, `${command}\n`);
+    return;
+  }
+
+  const reply = await rconCommand(
+    { ...target, password: rconPassword(plan, (server.settings ?? {}) as Record<string, unknown>) },
+    command,
+  ).catch((error: unknown) => {
+    if (error instanceof RconError) {
+      throw conflict(
+        error.message,
+        error.authFailed
+          ? 'Check the RCON password in Settings, and restart the server if you changed it.'
+          : undefined,
+      );
+    }
+    throw error;
+  });
+
+  // Echoed as `system` rather than stdout: it did not come from the game's own
+  // output stream, and conflating the two would make the log a poor record of
+  // what the server actually printed.
+  for (const line of reply.split('\n')) {
+    if (line.trim() === '') continue;
+    await publishConsoleLine(serverUid, {
+      seq: Date.now(),
+      at: Date.now(),
+      stream: 'system',
+      text: line,
+    });
+  }
 }
 
 // ───────────────────────────────────────────────────────────────── deletion ──

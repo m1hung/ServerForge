@@ -54,6 +54,8 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
   deleting, or upload your own
 - **Steam branches** — run a game's public test build, or pin an older one
   while your mods catch up, with a password for the locked ones
+- **RCON console** — for games that never read stdin, and for the ones that do:
+  commands answer with their output instead of hoping the server logs it
 - **Multi-user** — panel roles, per-server sub-users with granular permissions,
   scoped API keys, audit log
 - **Access roles** — named permission sets you define once and hand out per
@@ -262,9 +264,6 @@ Early. The core is built and tested, and the pieces below are the honest gaps:
 - **Game breadth** — three games out of the box. Valheim and Palworld both run
   on the manifest format, and you can add your own by dropping a `.json` file
   in `data/games/`, but the shipped catalogue is still small
-- **Console transport** — panel commands are written to the container's stdin.
-  Games that only accept RCON can stream their logs but cannot be commanded
-  from the console yet
 
 ## Licence
 

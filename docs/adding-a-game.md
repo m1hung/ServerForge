@@ -202,6 +202,37 @@ postInstall: [
 ]
 ```
 
+### Typed commands
+
+By default a command typed in the panel console is written to the game's
+stdin. Plenty of games never read it — their console is RCON or nothing, and
+without this the panel can stream their log but not command the server.
+
+```ts
+runtime: {
+  // …
+  console: {
+    transport: 'rcon',
+    portPurpose: 'rcon',            // must be one of `ports`
+    passwordSetting: 'rcon.password',
+    enabledSetting: 'enable-rcon',  // optional
+  },
+}
+```
+
+RCON also returns what the command printed, which stdin cannot, so the reply
+is written back into the console.
+
+It degrades rather than fails: with no password set — or the enabling setting
+off — the panel falls back to stdin, so a game that supports both keeps
+working before RCON is configured. Minecraft is set up this way, which is why
+`list` starts answering in the panel once you turn RCON on.
+
+Reaching the port is handled for you in both deployment shapes. A panel
+running on the host dials the published port on loopback; one running in a
+container joins the game network at startup and dials the container by name,
+because published ports are not routable between containers.
+
 ### Log rules
 
 Ordered; first match wins, so put specific rules above catch-alls. Patterns are

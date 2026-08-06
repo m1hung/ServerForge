@@ -252,7 +252,7 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
       key: 'enable-rcon',
       type: 'boolean',
       label: 'Enable remote console (RCON)',
-      help: 'Lets external tools send console commands. The panel does not need this — it talks to the server directly.',
+      help: 'Lets external tools send console commands, and makes the panel console show what a command replied instead of only what the server logs. Not required — without it the panel still sends commands, it just cannot read the answer. Set a password below.',
       tier: 'expert',
       group: 'Access',
       default: false,

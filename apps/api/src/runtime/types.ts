@@ -101,6 +101,15 @@ export interface RuntimeDriver {
   listManaged(): Promise<{ id: string; name: string; running: boolean }[]>;
 
   /**
+   * Makes game containers reachable from this process, if that takes anything.
+   *
+   * Needed for RCON, which is the only console some games have. Optional
+   * because it is a property of how the runtime is deployed, not of the
+   * contract: a remote agent would already be beside its own containers.
+   */
+  joinGameNetwork?(): Promise<void>;
+
+  /**
    * Mount table of the container this process is running in, or null when it
    * is not running in one (or the runtime cannot say). Startup uses it to
    * prove HOST_DATA_ROOT names the real host side of the data directory

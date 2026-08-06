@@ -32,6 +32,17 @@ async function main(): Promise<void> {
   // registry, so a game added here has to be in it before anything is served.
   reportManifestLoad(await loadGameManifests());
 
+  // Best effort. Failing here costs RCON for games that need it, which is
+  // worth a warning and not worth refusing to manage anybody's servers over.
+  await localRuntime()
+    .joinGameNetwork?.()
+    .catch((error: unknown) =>
+      logger.warn(
+        { error },
+        'could not join the game network — RCON commands may not reach game servers',
+      ),
+    );
+
   const app = await buildApp();
   const workers = runWorkers ? createWorkers() : [];
   let scheduler: NodeJS.Timeout | null = null;

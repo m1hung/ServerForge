@@ -133,6 +133,32 @@ export interface StartupPlan {
     protocol: 'tcp' | 'udp';
     fixed?: boolean;
   }[];
+  /**
+   * How a command typed in the panel console reaches the game.
+   *
+   * Absent means stdin, which is the default because it needs no setup and
+   * works for every game whose process reads it. Plenty do not: their console
+   * is RCON or nothing, and for those the panel could stream logs but never
+   * command the server.
+   *
+   * RCON also returns what the command printed, which stdin cannot — the
+   * panel echoes that back instead of hoping the server logs it.
+   *
+   * The password comes from the server's own settings rather than the plan so
+   * it is never held in a startup spec, a container label or a log line.
+   * When it is empty the panel falls back to stdin rather than failing: a game
+   * that supports both should keep working before RCON is configured.
+   */
+  console?: {
+    transport: 'rcon';
+    /** Allocation purpose carrying the RCON port, e.g. "rcon". */
+    portPurpose: string;
+    /** Settings key holding the password. Empty means "not configured". */
+    passwordSetting: string;
+    /** Boolean settings key gating it. Absent means always on. */
+    enabledSetting?: string;
+  };
+
   /** Written to stdin to request a graceful shutdown, e.g. "stop\n". */
   stopCommand?: string;
   /** Seconds to wait after `stopCommand` before SIGKILL. */

@@ -444,6 +444,39 @@ export class DockerRuntime implements RuntimeDriver {
     }
   }
 
+  /**
+   * Puts this process's own container on the game network.
+   *
+   * RCON is the only console some games have, and reaching it means reaching
+   * the game container: published host ports are not routable from inside
+   * another container on any platform worth relying on, while a shared Docker
+   * network resolves container names.
+   *
+   * Done here rather than in the compose file on purpose. The network is
+   * created by `ensureNetwork` the first time a server is deployed, so on any
+   * panel that has ever run a game it already exists *without* Compose's
+   * ownership labels — and a compose file that suddenly claims it fails the
+   * next `npm start` with a label mismatch. Attaching at runtime upgrades
+   * cleanly, and a panel running on the host has nothing to do.
+   */
+  async joinGameNetwork(): Promise<void> {
+    let self;
+    try {
+      self = await this.docker.getContainer(hostname()).inspect();
+    } catch {
+      // Not in a container, or the daemon cannot identify us. Either way the
+      // host-side address is the right one and there is nothing to attach.
+      return;
+    }
+
+    const network = config.DOCKER_NETWORK;
+    if (self.NetworkSettings?.Networks?.[network]) return;
+
+    await this.ensureNetwork(network);
+    await this.docker.getNetwork(network).connect({ Container: self.Id });
+    logger.info({ network }, 'joined the game network so RCON can reach game containers');
+  }
+
   private async ensureNetwork(name: string): Promise<void> {
     const networks = await this.docker.listNetworks({ filters: { name: [name] } });
     if (networks.some((n) => n.Name === name)) return;

@@ -129,6 +129,31 @@ export function validateManifest(manifest: GameManifest): string[] {
     }
 
     if (runtime.readyPattern) checkRegex(runtime.readyPattern, 'runtime.readyPattern', issues);
+
+    // A console that names a port or a setting the game does not have would
+    // fail only when someone first types a command, which is the worst moment
+    // to find out.
+    if (runtime.console) {
+      const c = runtime.console;
+      if (c.transport !== 'rcon') {
+        issues.push(`runtime.console.transport must be "rcon" — stdin is the default and needs no declaration.`);
+      }
+      if (!purposes.has(c.portPurpose)) {
+        issues.push(
+          `runtime.console.portPurpose is "${c.portPurpose}", which is not one of the ports this game reserves (${[...purposes].join(', ')}). Add it to "ports".`,
+        );
+      }
+      if (!settingKeys.has(c.passwordSetting)) {
+        issues.push(
+          `runtime.console.passwordSetting is "${c.passwordSetting}", which this manifest does not define as a setting.`,
+        );
+      }
+      if (c.enabledSetting && !settingKeys.has(c.enabledSetting)) {
+        issues.push(
+          `runtime.console.enabledSetting is "${c.enabledSetting}", which this manifest does not define as a setting.`,
+        );
+      }
+    }
   }
 
   // ── Install ─────────────────────────────────────────────────────────────
