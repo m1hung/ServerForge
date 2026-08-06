@@ -9,7 +9,6 @@ import {
   Badge,
   Button,
   Card,
-  CardBody,
   EmptyState,
   Field,
   Input,

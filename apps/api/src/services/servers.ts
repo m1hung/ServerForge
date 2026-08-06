@@ -157,6 +157,9 @@ export async function createServer(
     const { chownForGame } = await import('../lib/ownership.js');
     await chownForGame(localPath);
   } catch (error) {
+    // The user gets a message they can act on; the actual errno only exists
+    // here, and without this line it is lost for good.
+    logger.error({ error, serverUid: server.uid }, 'could not create the server directory');
     await prisma.server.delete({ where: { id: server.id } }).catch(() => undefined);
     throw conflict(
       'Could not create the server folder on disk.',

@@ -75,7 +75,6 @@ const AVATAR_COLORS = [
 ];
 
 export default function AccountPage() {
-  const toast = useToast();
   const queryClient = useQueryClient();
 
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/api/auth/me') });

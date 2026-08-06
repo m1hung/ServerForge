@@ -42,6 +42,9 @@ export function truncateLine(line: string, max = 4096): string {
   return line.length <= max ? line : `${line.slice(0, max)}… [truncated]`;
 }
 
+// The control character is the point: this exists to strip ANSI escapes out
+// of game console output before it reaches the browser.
+// eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 export function stripAnsi(value: string): string {

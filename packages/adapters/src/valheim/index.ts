@@ -3,7 +3,6 @@ import type {
   GameVariant,
   InstallTools,
   LogInsight,
-  ServerContext,
   StartupPlan,
   VersionInfo,
 } from '../types.js';

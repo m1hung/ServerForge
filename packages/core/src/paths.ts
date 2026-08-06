@@ -44,7 +44,10 @@ export function relativeTo(root: string, absolute: string): string {
 }
 
 // Control characters plus separators and Windows-reserved characters.
+// Matching them is the entire purpose: a filename containing a control
+// character is exactly what this exists to reject.
 // Dots, spaces and dashes stay legal — `server.properties` must pass.
+// eslint-disable-next-line no-control-regex
 const UNSAFE_NAME = /[\u0000-\u001f/\\:*?"<>|]/;
 
 /** Validates a single path segment for create/rename operations. */

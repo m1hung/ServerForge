@@ -466,7 +466,7 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
   /** Duplicate settings + files onto a new server with fresh ports. */
   app.post('/api/servers/:uid/clone', async (request, reply) => {
     const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
+    const { user } = await requireServerAccess(request, uid, 'server.settings');
     const input = cloneServerSchema.parse(request.body);
 
     const cloned = await cloneServer(uid, input, {

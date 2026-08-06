@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { HardDrive, MemoryStick, Network, Pencil, Server, Wrench } from 'lucide-react';
+import { HardDrive, MemoryStick, Network, Pencil, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { cn, formatMib } from '@/lib/utils';

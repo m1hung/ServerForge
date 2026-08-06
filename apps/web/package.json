@@ -6,7 +6,7 @@
     "dev": "node ../../scripts/run-web.mjs dev",
     "build": "next build",
     "start": "node ../../scripts/run-web.mjs start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "clean": "node ../../scripts/clean.mjs .next"
   },
   "dependencies": {

@@ -5,7 +5,6 @@ import {
   Check,
   Globe,
   House,
-  Loader2,
   RefreshCw,
   Settings2,
   Shield,

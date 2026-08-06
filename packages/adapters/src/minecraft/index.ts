@@ -3,7 +3,6 @@ import type {
   EulaRequirement,
   GameAdapter,
   GameVariant,
-  InstallReporter,
   InstallTools,
   LogInsight,
   ServerContext,

@@ -175,6 +175,7 @@ tests/          Unit tests
 | `npm run build`                   | Build every package                               |
 | `npm test`                        | Run the test suite                                |
 | `npm run typecheck`               | Typecheck the whole workspace                     |
+| `npm run lint`                    | Lint the whole workspace (warnings fail)          |
 | `npm run stack:up` / `stack:down` | Postgres and Redis                                |
 | `npm run stack:full`              | Everything, in containers                         |
 | `npm run stack:tls`               | Everything, behind HTTPS on `PANEL_DOMAIN`        |

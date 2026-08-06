@@ -48,7 +48,7 @@ function classify(text: string, stream: string): string {
 
 /** Prefer the part before the first placeholder so insert leaves the cursor useful. */
 function insertableCommand(command: string): string {
-  const cut = command.search(/[<\[]/);
+  const cut = command.search(/[<[]/);
   return (cut === -1 ? command : command.slice(0, cut)).trimEnd();
 }
 
