@@ -5,6 +5,7 @@ import { getAdapter } from '@serverforge/adapters';
 import { prisma } from '@serverforge/db';
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
+import { curseForgeApiKey } from '../lib/settings.js';
 import { localDataPath } from '../lib/storage-paths.js';
 import { getRuntime } from '../runtime/index.js';
 import { createInstallTools } from './install-tools.js';
@@ -126,10 +127,11 @@ export async function searchCurseForge(input: {
   variantId: string;
   gameVersion?: string;
 }) {
-  if (!config.CURSEFORGE_API_KEY) {
+  const apiKey = await curseForgeApiKey();
+  if (!apiKey) {
     throw conflict(
       'CurseForge browsing is not set up on this panel.',
-      'CurseForge requires each host to use their own API key. An administrator can add one in Settings, or you can download the mod from curseforge.com and upload the .jar in the Files tab.',
+      'CurseForge requires each host to use their own API key. An administrator can add one under Panel settings → Integrations, or you can download the mod from curseforge.com and upload the .jar in the Files tab.',
     );
   }
 
@@ -143,7 +145,7 @@ export async function searchCurseForge(input: {
 
   return fetchJson<{ data: unknown[] }>(url.toString(), {
     service: 'CurseForge',
-    headers: { 'x-api-key': config.CURSEFORGE_API_KEY, Accept: 'application/json' },
+    headers: { 'x-api-key': apiKey, Accept: 'application/json' },
   });
 }
 

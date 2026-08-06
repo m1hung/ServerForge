@@ -234,8 +234,15 @@ CurseForge requires each host to use their own API key under their terms, so
 none is bundled. Without a key, modpack import still works: download the
 modpack's **server pack** `.zip`, upload it in the Files tab, and unpack it.
 
-With a key from <https://console.curseforge.com/>, set `CURSEFORGE_API_KEY` and
-in-panel browsing becomes available.
+With a key from <https://console.curseforge.com/>, in-panel browsing becomes
+available. Paste it into **Panel settings → CurseForge**, where it is stored
+encrypted with `ENCRYPTION_KEY` and never shown again — no restart, and no
+editing `.env` on the server.
+
+`CURSEFORGE_API_KEY` in the environment still works and is the better choice
+for a deployment configured from a file. A key saved in the panel takes
+precedence; clearing the field in the panel hands control back to the
+environment.
 
 Modrinth needs no key and works out of the box.
 
@@ -292,4 +299,63 @@ Postgres and Redis. Bootstrap fills `HOST_DATA_ROOT` and `HOST_BACKUP_ROOT`
 with absolute paths automatically so sibling game containers and the API use
 the same files.
 
-Put TLS in front of both services and read [security.md](security.md).
+Put TLS in front of both services — see below — and read
+[security.md](security.md).
+
+## HTTPS
+
+For a LAN-only panel, skip this: plain HTTP on your own network is fine and
+`COOKIE_SECURE="false"` is the correct setting for it.
+
+For a panel with a domain name pointing at it, the `tls` profile puts Caddy in
+front and handles certificates itself. There is no certbot step and nothing to
+renew.
+
+**Before you start**, the domain's A (or AAAA) record must already resolve to
+this machine, and ports 80 and 443 must reach it. Port 80 is not optional —
+it is how Let's Encrypt verifies you control the name.
+
+Set these in `.env`:
+
+```bash
+PANEL_DOMAIN="panel.example.com"
+TLS_EMAIL="you@example.com"          # optional, for expiry warnings
+BIND_HOST="127.0.0.1"
+NEXT_PUBLIC_API_URL="https://panel.example.com"
+CORS_ORIGINS="https://panel.example.com"
+COOKIE_SECURE="true"
+```
+
+Then:
+
+```bash
+npm run stack:tls
+```
+
+The dashboard and the API are served from the same hostname, split by path:
+everything under `/api` goes to the API, everything else to the dashboard.
+That is why `NEXT_PUBLIC_API_URL` is the panel's own URL rather than a separate
+`api.` subdomain.
+
+### Things that go wrong here
+
+**`NEXT_PUBLIC_API_URL` is baked into the web image at build time.** Next.js
+inlines `NEXT_PUBLIC_*` variables during the build, so changing it afterwards
+does nothing until the image is rebuilt. `npm run stack:tls` passes `--build`,
+but if you edit the value later, run it again rather than restarting.
+
+**Signed out at random, or "Cannot reach the API".** Almost always
+`CORS_ORIGINS` still naming `http://localhost:3000`, or `COOKIE_SECURE` left
+`false` while the browser is on HTTPS. Both must name the https origin.
+
+**Certificate never issues.** Caddy logs the reason:
+
+```bash
+npm run stack:logs -- caddy
+```
+
+The usual causes are the DNS record not having propagated yet, port 80 blocked
+upstream, or another process already holding 80/443 on the host.
+
+**Losing the certificate on every restart.** The `caddy-data` volume holds
+them. Let's Encrypt rate-limits re-issuance, so do not prune it casually.

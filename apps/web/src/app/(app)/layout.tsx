@@ -12,6 +12,7 @@ import {
   Settings,
   Plus,
   Server,
+  SlidersHorizontal,
   Sun,
   Users,
 } from "lucide-react";
@@ -54,6 +55,10 @@ function describeRoute(pathname: string): { label: string; path: string } {
     return { label: "People", path: "~/people" };
   if (pathname.startsWith("/machines"))
     return { label: "Machines", path: "~/machines" };
+  if (pathname.startsWith("/network"))
+    return { label: "Network", path: "~/network" };
+  if (pathname.startsWith("/settings"))
+    return { label: "Panel settings", path: "~/settings" };
   if (pathname.startsWith("/audit"))
     return { label: "Audit log", path: "~/audit" };
   if (pathname === "/servers/new")
@@ -148,6 +153,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           { href: "/people", label: "People", icon: Users },
           { href: "/machines", label: "Machines", icon: HardDrive, mobile: false },
           { href: "/network", label: "Network", icon: Globe },
+          {
+            href: "/settings",
+            label: "Panel settings",
+            icon: SlidersHorizontal,
+            mobile: false,
+          },
           { href: "/audit", label: "Audit log", icon: ScrollText, mobile: false },
         ]
       : []),

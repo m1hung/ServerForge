@@ -195,22 +195,33 @@ your reverse proxy's. CORS is an explicit allowlist with credentials enabled —
 
 ## Deploying safely
 
-**Put TLS in front of it.** Caddy is two lines:
+**Put TLS in front of it.** The stack ships a `tls` profile that does this for
+you — Caddy, a Let's Encrypt certificate it renews by itself, and both services
+behind one hostname. Point a domain at the machine, then in `.env`:
 
-```
-panel.example.com {
-  reverse_proxy localhost:3000
-}
-```
-
-```
-api.example.com {
-  reverse_proxy localhost:8080
-}
+```bash
+PANEL_DOMAIN="panel.example.com"
+BIND_HOST="127.0.0.1"
+NEXT_PUBLIC_API_URL="https://panel.example.com"
+CORS_ORIGINS="https://panel.example.com"
+COOKIE_SECURE="true"
 ```
 
-Then set `NEXT_PUBLIC_API_URL=https://api.example.com` and
-`CORS_ORIGINS=https://panel.example.com`.
+```bash
+npm run stack:tls
+```
+
+`BIND_HOST` is the part people forget. Without it the dashboard and API stay
+published on `0.0.0.0:3000` and `0.0.0.0:8080`, so anyone who knows the IP can
+skip the certificate entirely and sign in over plain HTTP. Setting it to
+`127.0.0.1` leaves Caddy as the only way in from off the machine.
+
+`COOKIE_SECURE="true"` matters for the same reason: a session cookie without
+the `Secure` flag will be sent over plain HTTP if anything ever downgrades the
+connection.
+
+See [setup.md](setup.md#https) for the full walkthrough, including why
+`NEXT_PUBLIC_API_URL` has to be right *before* the image is built.
 
 **Do not expose the game port range to the internet unless you mean to.** Only
 publish the ports for servers people should be able to reach.

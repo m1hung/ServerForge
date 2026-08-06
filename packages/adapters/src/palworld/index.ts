@@ -8,7 +8,7 @@ import type {
   VersionInfo,
 } from '../types.js';
 import { parseIni, parseTuple, quoteUnreal, stringifyIni, stringifyTuple, unrealBool, unrealFloat } from '../util/ini.js';
-import { STEAMCMD_IMAGE, steamAppUpdate } from '../util/steamcmd.js';
+import { STEAMCMD_IMAGE, steamAppUpdate, steamBranchFrom } from '../util/steamcmd.js';
 import { palworldConsoleGlossary } from './console-commands.js';
 import { palworldSettingsSchema } from './settings.js';
 
@@ -101,6 +101,7 @@ export const palworldAdapter: GameAdapter = {
     await steamAppUpdate(tools, {
       appId: STEAM_APP_ID,
       validate: true,
+      ...steamBranchFrom(ctx.settings),
       report: (msg) => report.log(msg),
     });
 

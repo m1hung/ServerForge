@@ -1,0 +1,52 @@
+# TLS front door for the panel.
+#
+# Used only by the `tls` compose profile. Caddy obtains and renews a
+# Let's Encrypt certificate for PANEL_DOMAIN on its own — there is no certbot
+# step, no cron job and no renewal to forget.
+#
+# The dashboard and the API are served from the *same* origin here, split by
+# path. That is not cosmetic: the session cookie is SameSite=Lax, so putting
+# the API on a different hostname makes the browser drop it on some requests
+# and the panel signs you out at random. Everything the API serves lives under
+# /api, plus /health, which makes the split exact.
+
+{
+	# Blank is fine: Caddy still issues certificates, you just get no expiry
+	# warnings by mail.
+	email {$TLS_EMAIL}
+}
+
+{$PANEL_DOMAIN} {
+	encode zstd gzip
+
+	# Uploads come through here and a modpack is routinely hundreds of
+	# megabytes. Caddy has no limit by default; this one is a safety valve
+	# against a runaway upload, not a considered maximum — raise it if you
+	# restore worlds larger than this.
+	request_body {
+		max_size 8GB
+	}
+
+	# The console and the dashboard's live tiles are WebSockets under /api.
+	# Caddy upgrades them automatically and applies no read timeout of its
+	# own, so a console nobody is typing in stays connected.
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	handle /health {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		# HSTS is deliberately *not* set here. It is a one-way door for the
+		# whole domain, and someone trying this on a subdomain of a site they
+		# care about should opt in themselves rather than discover it later.
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+}

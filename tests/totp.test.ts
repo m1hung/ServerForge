@@ -7,6 +7,7 @@ import {
   generateSecret,
   hotp,
   normaliseRecoveryCode,
+  otpauthQr,
   otpauthUri,
   totp,
   verifyTotp,
@@ -155,6 +156,29 @@ describe('otpauthUri', () => {
     const uri = otpauthUri({ secret: 'ABCD', account: 'a b/c', issuer: 'My Panel' });
     expect(uri).not.toContain(' ');
     expect(() => new URL(uri)).not.toThrow();
+  });
+});
+
+describe('otpauthQr', () => {
+  it('renders the uri as a png data uri', async () => {
+    const uri = otpauthUri({ secret: 'JBSWY3DPEHPK3PXP', account: 'will', issuer: 'ServerForge' });
+    const data = await otpauthQr(uri);
+
+    expect(data.startsWith('data:image/png;base64,')).toBe(true);
+
+    // Decodes to a real PNG rather than an error string rendered as text.
+    const png = Buffer.from(data.slice('data:image/png;base64,'.length), 'base64');
+    expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  });
+
+  it('encodes a long uri without throwing', async () => {
+    // Version bumps with content length; a long issuer must not exceed capacity.
+    const uri = otpauthUri({
+      secret: generateSecret(),
+      account: 'someone-with-a-fairly-long-username',
+      issuer: 'A Panel With A Deliberately Long Rebranded Name',
+    });
+    await expect(otpauthQr(uri)).resolves.toContain('data:image/png;base64,');
   });
 });
 

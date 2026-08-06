@@ -14,6 +14,12 @@ import { recordAudit } from '../lib/events.js';
 import { countFreePorts } from '../services/allocations.js';
 import { getRuntime } from '../runtime/index.js';
 import { config } from '../config.js';
+import {
+  CURSEFORGE_API_KEY,
+  clearSetting,
+  getSecretSetting,
+  setSecretSetting,
+} from '../lib/settings.js';
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ── API keys (any user, for their own automation) ─────────────────────
@@ -248,13 +254,62 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const settings = await prisma.setting.findMany({ where: { encrypted: false } });
     const map = Object.fromEntries(settings.map((s) => [s.key, s.value]));
 
+    const storedCurseForge = await getSecretSetting<string>(CURSEFORGE_API_KEY, '');
+
     return {
       settings: map,
       integrations: {
-        // Whether a key exists, never the key itself.
-        curseforge: Boolean(config.CURSEFORGE_API_KEY),
+        // Whether a key exists, never the key itself. `source` lets the UI
+        // explain why a key it cannot edit is nonetheless in effect: one set
+        // in the environment outranks nothing, but the panel should not
+        // pretend the field is empty.
+        curseforge: {
+          configured: Boolean(storedCurseForge || config.CURSEFORGE_API_KEY),
+          source: storedCurseForge ? 'panel' : config.CURSEFORGE_API_KEY ? 'environment' : null,
+        },
       },
     };
+  });
+
+  /**
+   * Integration credentials.
+   *
+   * Separate from the settings endpoint above because these are write-only:
+   * they go in encrypted and never come back out, so the generic
+   * read-modify-write shape would be misleading. An empty string clears the
+   * stored key and lets `CURSEFORGE_API_KEY` from the environment apply again.
+   */
+  app.put('/api/admin/integrations/curseforge', async (request) => {
+    const actor = await requireRole(request, ['owner', 'admin']);
+    const body = request.body as { apiKey?: unknown };
+
+    if (typeof body.apiKey !== 'string') throw badRequest('Provide the API key as text.');
+    const apiKey = body.apiKey.trim();
+
+    // CurseForge keys are long opaque strings. The check is deliberately loose
+    // — rejecting a key format they change later would be worse than letting
+    // the first search return their own error message.
+    if (apiKey && apiKey.length < 20) {
+      throw badRequest(
+        'That does not look like a CurseForge API key — they come from console.curseforge.com and are much longer than this.',
+      );
+    }
+
+    if (apiKey) {
+      await setSecretSetting(CURSEFORGE_API_KEY, apiKey);
+    } else {
+      await clearSetting(CURSEFORGE_API_KEY);
+    }
+
+    await recordAudit({
+      actorId: actor.id,
+      action: apiKey ? 'settings.integration_set' : 'settings.integration_cleared',
+      targetType: 'system',
+      targetId: 'curseforge',
+      ip: request.ip,
+    });
+
+    return { ok: true, configured: Boolean(apiKey) };
   });
 
   app.put('/api/admin/settings/:key', async (request) => {

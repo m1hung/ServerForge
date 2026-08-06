@@ -35,7 +35,8 @@
     "stack:up": "node scripts/compose.mjs up -d",
     "stack:down": "node scripts/compose.mjs down",
     "stack:logs": "node scripts/compose.mjs logs -f",
-    "stack:full": "node scripts/compose.mjs --profile full up -d --build"
+    "stack:full": "node scripts/compose.mjs --profile full up -d --build",
+    "stack:tls": "node scripts/compose.mjs --profile full --profile tls up -d --build"
   },
   "devDependencies": {
     "@types/node": "22.10.7",

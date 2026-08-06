@@ -45,6 +45,8 @@ const ACTION_TEXT: Record<string, string> = {
   'apikey.create': 'created an API key',
   'node.update': 'changed a machine',
   'settings.update': 'changed a panel setting',
+  'settings.integration_set': 'set an integration key',
+  'settings.integration_cleared': 'removed an integration key',
   'server.create': 'created a server',
   'server.delete': 'deleted a server',
   'auth.login': 'signed in',

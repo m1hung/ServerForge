@@ -131,6 +131,26 @@ async install(ctx, tools, report) {
 All `tools` paths are relative to the server directory and containment-checked.
 You cannot escape it, even with a path that came from a remote manifest.
 
+For a SteamCMD game, do not hand-roll the command above — use the shared
+helper, which already handles branch selection, argument ordering and an error
+message that distinguishes a bad branch name from a Steam outage:
+
+```ts
+import { steamAppUpdate, steamBranchFrom, steamBranchSettings } from '../util/steamcmd.js';
+
+// In settingsSchema(), so the game gets the branch fields every other
+// SteamCMD game has:
+return [...yourSettings, ...steamBranchSettings()];
+
+// In install():
+await steamAppUpdate(tools, {
+  appId: '896660',
+  validate: true,
+  ...steamBranchFrom(ctx.settings),
+  report: (msg) => report.log(msg),
+});
+```
+
 ### `applySettings`
 
 Runs after install and before every start, so saving a setting and restarting is

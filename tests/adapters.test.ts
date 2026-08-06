@@ -6,6 +6,13 @@ import { buildCatalogue, getAdapter, getVariant, listAdapters } from '../package
 import { buildJavaFlags, heapForMemoryLimit, isCalendarVersion, javaImageFor, javaMajorFor, tokenizeFlags } from '../packages/adapters/src/minecraft/java.js';
 import { mergeProperties, parseProperties } from '../packages/adapters/src/util/properties.js';
 import { parseIni, parseTuple, stringifyTuple } from '../packages/adapters/src/util/ini.js';
+import {
+  STEAM_BRANCH_KEY,
+  STEAM_BRANCH_PASSWORD_KEY,
+  isValidSteamBranch,
+  steamBranchArgs,
+  steamBranchFrom,
+} from '../packages/adapters/src/util/steamcmd.js';
 import { compareMinecraftVersions } from '../packages/adapters/src/minecraft/versions.js';
 import { normalizeModrinthProject, parseModrinthRef } from '../packages/adapters/src/minecraft/modpacks.js';
 import { defaultsFor } from '../packages/core/src/settings-schema.js';
@@ -523,5 +530,68 @@ describe('java runtime selection', () => {
     expect(insight?.level).toBe('error');
     expect(insight?.hint).toContain('Java 25');
     expect(insight?.hint).toMatch(/reinstall/i);
+  });
+});
+
+describe('steam branches', () => {
+  it('passes nothing for the default branch', () => {
+    // Both spellings mean "the released build", and SteamCMD is happiest
+    // being given no -beta at all for it.
+    expect(steamBranchArgs({ branch: '' })).toEqual([]);
+    expect(steamBranchArgs({ branch: '   ' })).toEqual([]);
+    expect(steamBranchArgs({ branch: 'public' })).toEqual([]);
+    expect(steamBranchArgs({ branch: null })).toEqual([]);
+    expect(steamBranchArgs({})).toEqual([]);
+  });
+
+  it('builds the -beta flag for a named branch', () => {
+    expect(steamBranchArgs({ branch: 'public-test' })).toEqual(['-beta', 'public-test']);
+    expect(steamBranchArgs({ branch: 'public-test', branchPassword: 'hunter2' })).toEqual([
+      '-beta',
+      'public-test',
+      '-betapassword',
+      'hunter2',
+    ]);
+  });
+
+  it('ignores a password with no branch to attach it to', () => {
+    expect(steamBranchArgs({ branch: '', branchPassword: 'hunter2' })).toEqual([]);
+  });
+
+  it('refuses a branch name that would read as a SteamCMD flag', () => {
+    // The value becomes its own argv entry, so there is no shell to escape —
+    // the risk is a "branch" that SteamCMD parses as an option instead.
+    expect(() => steamBranchArgs({ branch: '-validate' })).toThrow(/not a valid Steam branch/i);
+    expect(() => steamBranchArgs({ branch: '+app_update' })).toThrow(/not a valid Steam branch/i);
+    expect(() => steamBranchArgs({ branch: 'a b' })).toThrow(/not a valid Steam branch/i);
+    expect(() => steamBranchArgs({ branch: 'Beta' })).toThrow(/not a valid Steam branch/i);
+    expect(() => steamBranchArgs({ branch: 'x'.repeat(65) })).toThrow(/not a valid Steam branch/i);
+  });
+
+  it('accepts the shapes Steam actually uses', () => {
+    for (const branch of ['public', 'public-test', 'beta_1', 'v1.2.3', 'legacy-0']) {
+      expect(isValidSteamBranch(branch)).toBe(true);
+    }
+  });
+
+  it('reads the branch out of a settings map, defaulting to empty', () => {
+    expect(steamBranchFrom({})).toEqual({ branch: '', branchPassword: '' });
+    expect(
+      steamBranchFrom({ [STEAM_BRANCH_KEY]: 'public-test', [STEAM_BRANCH_PASSWORD_KEY]: 'pw' }),
+    ).toEqual({ branch: 'public-test', branchPassword: 'pw' });
+  });
+
+  it('gives every SteamCMD game the branch fields, defaulted off', () => {
+    for (const adapter of [palworldAdapter, valheimAdapter]) {
+      for (const variant of adapter.variants) {
+        const defaults = defaultsFor(adapter.settingsSchema(variant.id));
+        expect(defaults[STEAM_BRANCH_KEY]).toBe('');
+        expect(defaults[STEAM_BRANCH_PASSWORD_KEY]).toBe('');
+
+        // Defaults must produce a plain install — a game that silently
+        // installed a beta build would be very hard to diagnose.
+        expect(steamBranchArgs(steamBranchFrom(defaults))).toEqual([]);
+      }
+    }
   });
 });

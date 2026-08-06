@@ -1,4 +1,5 @@
 import type { SettingsSchema } from '@serverforge/core';
+import { steamBranchSettings } from '../util/steamcmd.js';
 
 /**
  * Palworld settings.
@@ -328,6 +329,7 @@ export function palworldSettingsSchema(variantId: string): SettingsSchema {
       restartRequired: true,
       target: ini('RESTAPIEnabled'),
     },
+    ...steamBranchSettings(),
   ];
 
   if (variantId === 'palworld-modded') {

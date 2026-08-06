@@ -7,7 +7,7 @@ import type {
   StartupPlan,
   VersionInfo,
 } from '../types.js';
-import { STEAMCMD_IMAGE, steamAppUpdate } from '../util/steamcmd.js';
+import { STEAMCMD_IMAGE, steamAppUpdate, steamBranchFrom } from '../util/steamcmd.js';
 import { valheimConsoleGlossary } from './console-commands.js';
 import { valheimSettingsSchema } from './settings.js';
 
@@ -92,6 +92,7 @@ export const valheimAdapter: GameAdapter = {
     await steamAppUpdate(tools, {
       appId: STEAM_APP_ID,
       validate: true,
+      ...steamBranchFrom(ctx.settings),
       report: (msg) => report.log(msg),
     });
 

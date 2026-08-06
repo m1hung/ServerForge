@@ -156,6 +156,26 @@ export function formatSecret(secret: string): string {
   return (secret.match(/.{1,4}/g) ?? []).join(' ');
 }
 
+/**
+ * The same `otpauth://` URI as a scannable PNG, base64 in a data URI.
+ *
+ * Every authenticator app accepts a typed setup key, so this is a convenience
+ * rather than a requirement — but "point your camera at this" is the whole
+ * difference between enrolling and giving up for someone who has never done
+ * it. Rendered server-side so the browser never needs a QR library, and the
+ * colours are fixed black-on-white because scanners want contrast, not theme
+ * consistency.
+ */
+export async function otpauthQr(uri: string): Promise<string> {
+  const { toDataURL } = await import('qrcode');
+  return toDataURL(uri, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 232,
+    color: { dark: '#000000', light: '#ffffff' },
+  });
+}
+
 // ────────────────────────────────────────────────────────── recovery codes ──
 
 /** Excludes characters that are misread on paper: 0/O, 1/I/L, U/V. */

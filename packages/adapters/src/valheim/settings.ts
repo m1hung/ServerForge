@@ -1,4 +1,5 @@
 import type { SettingsSchema } from '@serverforge/core';
+import { steamBranchSettings } from '../util/steamcmd.js';
 
 /**
  * Valheim settings.
@@ -60,5 +61,6 @@ export function valheimSettingsSchema(_variantId: string): SettingsSchema {
       restartRequired: true,
       target: internal,
     },
+    ...steamBranchSettings(),
   ];
 }

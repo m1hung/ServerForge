@@ -10,6 +10,13 @@ export {
   normalizeModrinthProject,
   parseModrinthRef,
 } from './minecraft/modpacks.js';
+export {
+  DEFAULT_STEAM_BRANCH,
+  isValidSteamBranch,
+  steamBranchArgs,
+  steamBranchFrom,
+  steamBranchSettings,
+} from './util/steamcmd.js';
 export { mergeProperties, parseProperties, stringifyProperties } from './util/properties.js';
 export { parseIni, parseTuple, stringifyIni, stringifyTuple } from './util/ini.js';
 export { minecraftConsoleGlossary } from './minecraft/console-commands.js';

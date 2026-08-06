@@ -26,7 +26,7 @@ import {
 import { hashPassword, verifyPassword } from '../lib/crypto.js';
 import { keys, redis } from '../lib/redis.js';
 import { recordAudit } from '../lib/events.js';
-import { formatSecret, generateSecret, otpauthUri } from '../lib/totp.js';
+import { formatSecret, generateSecret, otpauthQr, otpauthUri } from '../lib/totp.js';
 import {
   beginEnrolment,
   completeEnrolment,
@@ -373,10 +373,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const secret = generateSecret();
     await beginEnrolment(user.id, secret);
 
+    const uri = otpauthUri({ secret, account: record.username, issuer: brand.name });
+
+    // A failed QR render must not block enrolment: the setup key below it is
+    // the authoritative path and works in every app.
+    const qr = await otpauthQr(uri).catch(() => null);
+
     return {
       secret,
       formattedSecret: formatSecret(secret),
-      otpauthUri: otpauthUri({ secret, account: record.username, issuer: brand.name }),
+      otpauthUri: uri,
+      qrDataUri: qr,
     };
   });
 

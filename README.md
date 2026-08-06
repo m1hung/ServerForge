@@ -48,17 +48,21 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
   against private address space and never follow redirects
 - **Mods and plugins** — browse and install from Modrinth, toggle without
   deleting, or upload your own
+- **Steam branches** — run a game's public test build, or pin an older one
+  while your mods catch up, with a password for the locked ones
 - **Multi-user** — panel roles, per-server sub-users with granular permissions,
   scoped API keys, audit log
 - **Access roles** — named permission sets you define once and hand out per
   server, with allow / neutral / **deny**, where a deny overrides everything
   short of the panel owner
-- **Two-factor auth** — TOTP from any authenticator app, with single-use
-  recovery codes for when the phone is gone
+- **Two-factor auth** — TOTP from any authenticator app: scan the QR or type
+  the key, with single-use recovery codes for when the phone is gone
 - **Custom CSS themes** — drop a `.css` file in `data/themes/` and pick it under
   Account → Appearance (see `themes/README.md`)
 - **Crash handling** — auto-restart with a crash-loop guard, OOM detection,
   and an explanation instead of a stack trace
+- **HTTPS without the yak shave** — point a domain at the box, set one variable
+  and run `npm run stack:tls`; Caddy gets and renews the certificate itself
 
 ---
 
@@ -173,6 +177,7 @@ tests/          Unit tests
 | `npm run typecheck`               | Typecheck the whole workspace                     |
 | `npm run stack:up` / `stack:down` | Postgres and Redis                                |
 | `npm run stack:full`              | Everything, in containers                         |
+| `npm run stack:tls`               | Everything, behind HTTPS on `PANEL_DOMAIN`        |
 | `npm run db:push`                 | Apply the schema (development)                    |
 | `npm run db:migrate`              | Create and apply a migration                      |
 | `npm run db:seed`                 | Create the local node and its port allocations    |
@@ -246,11 +251,15 @@ Early. The core is built and tested, and the pieces below are the honest gaps:
   node needs a storage driver that does not exist yet
 - **CurseForge** — modpack import works via uploaded server-pack `.zip`.
   Direct API browsing requires each host to supply their own CurseForge API
-  key, per their terms; without one the panel says so plainly rather than
+  key, per their terms. Paste one into **Panel settings → Integrations** and
+  browsing turns on; without a key the panel says so plainly rather than
   failing oddly
-- **Two-factor QR codes** — enrolment works by pasting the setup key into your
-  authenticator app, which every app supports. Scanning a QR would mean adding
-  a QR-rendering dependency, which has not been done
+- **Game breadth** — three games, each a hand-written adapter. Adding a fourth
+  is a day of TypeScript, not a config file, so the catalogue grows at the
+  speed of one person. A declarative manifest format is the intended fix
+- **Console transport** — panel commands are written to the container's stdin.
+  Games that only accept RCON can stream their logs but cannot be commanded
+  from the console yet
 
 ## Licence
 

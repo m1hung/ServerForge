@@ -464,7 +464,7 @@ function TwoFactorCard({ user, onChanged }: { user: Me['user']; onChanged: () =>
 
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [enrolling, setEnrolling] = useState<{ secret: string; formattedSecret: string; otpauthUri: string } | null>(null);
+  const [enrolling, setEnrolling] = useState<{ secret: string; formattedSecret: string; otpauthUri: string; qrDataUri: string | null } | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [disabling, setDisabling] = useState(false);
 
@@ -483,7 +483,7 @@ function TwoFactorCard({ user, onChanged }: { user: Me['user']; onChanged: () =>
 
   const setup = useMutation({
     mutationFn: () =>
-      api.post<{ secret: string; formattedSecret: string; otpauthUri: string }>(
+      api.post<{ secret: string; formattedSecret: string; otpauthUri: string; qrDataUri: string | null }>(
         '/api/auth/2fa/setup',
         { password },
       ),
@@ -597,34 +597,58 @@ function TwoFactorCard({ user, onChanged }: { user: Me['user']; onChanged: () =>
                 enable.mutate();
               }}
             >
-              <div className="space-y-2">
-                <p className="text-[13px] text-ink">
-                  Add this key to your authenticator app.
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="readout flex-1 px-3 py-2 text-[13px] tracking-[0.12em]">
-                    {enrolling.formattedSecret}
-                  </code>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      void copyToClipboard(enrolling.secret);
-                      toast.push({ tone: 'ok', message: 'Setup key copied.' });
-                    }}
-                  >
-                    <Copy className="h-4 w-4" aria-hidden />
-                    Copy
-                  </Button>
+              <div className="space-y-3">
+                {enrolling.qrDataUri && (
+                  <div className="space-y-2">
+                    <p className="text-[13px] text-ink">
+                      Scan this with your authenticator app.
+                    </p>
+                    {/* White plate regardless of theme: a scanner wants
+                        contrast and a quiet zone, not our palette. */}
+                    <div className="flex justify-center rounded-md border border-line bg-white p-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={enrolling.qrDataUri}
+                        alt="QR code containing your two-factor setup key"
+                        width={232}
+                        height={232}
+                        className="h-[232px] w-[232px] max-w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-[13px] text-ink">
+                    {enrolling.qrDataUri
+                      ? 'Cannot scan it? Type this key in instead.'
+                      : 'Add this key to your authenticator app.'}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="readout flex-1 px-3 py-2 text-[13px] tracking-[0.12em]">
+                      {enrolling.formattedSecret}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        void copyToClipboard(enrolling.secret);
+                        toast.push({ tone: 'ok', message: 'Setup key copied.' });
+                      }}
+                    >
+                      <Copy className="h-4 w-4" aria-hidden />
+                      Copy
+                    </Button>
+                  </div>
+                  <p className="text-[12.5px] leading-relaxed text-ink-subtle">
+                    Choose &ldquo;enter a setup key&rdquo; in your app and paste
+                    it in. If you are reading this on the same phone,{' '}
+                    <a className="text-accent underline" href={enrolling.otpauthUri}>
+                      this link
+                    </a>{' '}
+                    opens the app directly.
+                  </p>
                 </div>
-                <p className="text-[12.5px] leading-relaxed text-ink-subtle">
-                  Choose &ldquo;enter a setup key&rdquo; in your app and paste it
-                  in. On a phone,{' '}
-                  <a className="text-accent underline" href={enrolling.otpauthUri}>
-                    this link
-                  </a>{' '}
-                  opens the app directly.
-                </p>
               </div>
 
               <Field

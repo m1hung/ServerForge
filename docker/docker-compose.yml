@@ -1,15 +1,18 @@
 # ServerForge stack.
 #
-# Two profiles:
+# Three profiles:
 #   (default)  Postgres + Redis only — for running the panel from source.
 #   full       Adds the API and dashboard containers, for a real deployment.
+#   tls        Adds Caddy in front, terminating HTTPS for PANEL_DOMAIN.
 #
 #   npm run stack:up                          # dependencies only
-#   docker compose --profile full up -d       # everything
+#   docker compose --profile full up -d       # everything, plain HTTP
+#   npm run stack:tls                         # everything, behind HTTPS
 #
 # The API container needs the Docker socket: that is how it creates game
 # containers. Treat access to this panel as equivalent to root on the host,
-# and never expose it to the internet without a TLS reverse proxy in front.
+# and never expose it to the internet without the tls profile or an equivalent
+# reverse proxy in front.
 
 name: serverforge
 
@@ -115,7 +118,11 @@ services:
       UPNP_LEASE_SECONDS: ${UPNP_LEASE_SECONDS:-0}
       UPNP_INTERNAL_IP: ${UPNP_INTERNAL_IP:-}
     ports:
-      - '${API_PORT:-8080}:8080'
+      # BIND_HOST exists for the tls profile: set it to 127.0.0.1 and the only
+      # way in from outside the machine is through Caddy on 443. Left at
+      # 0.0.0.0 the port is reachable directly, which is what a LAN install
+      # wants and what an internet-facing one must not have.
+      - '${BIND_HOST:-0.0.0.0}:${API_PORT:-8080}:8080'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Same variables as the environment block above, on purpose — see there.
@@ -151,7 +158,40 @@ services:
       NODE_ENV: production
       PORT: 3000
     ports:
-      - '${WEB_PORT:-3000}:3000'
+      # See the API's ports block for why the bind address is a variable.
+      - '${BIND_HOST:-0.0.0.0}:${WEB_PORT:-3000}:3000'
+
+  # ── TLS front door ────────────────────────────────────────────────────────
+  #
+  # Opt-in, because it only makes sense once the panel has a domain name
+  # pointing at it. Caddy gets and renews the certificate itself, so this is
+  # the whole of the HTTPS setup — there is no second step.
+  #
+  # Requires PANEL_DOMAIN, and NEXT_PUBLIC_API_URL set to the same https URL
+  # *before the web image is built*, since Next.js bakes it in. See
+  # docs/setup.md.
+  caddy:
+    profiles: ['tls']
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN:?set PANEL_DOMAIN in .env — the tls profile needs a hostname to get a certificate for}
+      TLS_EMAIL: ${TLS_EMAIL:-}
+    ports:
+      # 80 is not optional: it is how the HTTP-01 challenge proves the domain
+      # is yours, and how a plain-http visit gets redirected to https.
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing this volume means re-issuing on the next
+      # start, which Let's Encrypt rate-limits — keep it.
+      - caddy-data:/data
+      - caddy-config:/config
 
 networks:
   # Game containers join this network. Declared here so it exists with a
@@ -164,3 +204,5 @@ volumes:
   postgres-data:
   redis-data:
   serverforge-cache:
+  caddy-data:
+  caddy-config:

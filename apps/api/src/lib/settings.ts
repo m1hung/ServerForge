@@ -13,6 +13,7 @@ export const SETUP_COMPLETED = 'setup.completed';
 export const NETWORK_FORWARDING = 'network.forwarding';
 export const DDNS_CONFIG = 'ddns.config';
 export const DDNS_STATUS = 'ddns.status';
+export const CURSEFORGE_API_KEY = 'integrations.curseforge.apiKey';
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const row = await prisma.setting.findUnique({ where: { key } }).catch(() => null);
@@ -58,4 +59,26 @@ export async function getSecretSetting<T>(key: string, fallback: T): Promise<T> 
     // it as absent so the caller re-prompts instead of failing forever.
     return fallback;
   }
+}
+
+/** Removes a setting entirely, so the environment default applies again. */
+export async function clearSetting(key: string): Promise<void> {
+  await prisma.setting.deleteMany({ where: { key } });
+}
+
+/**
+ * The CurseForge API key, from the panel first and the environment second.
+ *
+ * CurseForge requires every host to use their own key, so there is no shipped
+ * default and the panel has to ask for one. It is read fresh on each call
+ * rather than cached: someone who has just pasted a key into Settings expects
+ * the next search to work, and the cost is one indexed lookup on a screen a
+ * human drives by hand.
+ */
+export async function curseForgeApiKey(): Promise<string> {
+  const stored = await getSecretSetting<string>(CURSEFORGE_API_KEY, '');
+  if (stored) return stored;
+
+  const { config } = await import('../config.js');
+  return config.CURSEFORGE_API_KEY;
 }
