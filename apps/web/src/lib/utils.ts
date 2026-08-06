@@ -9,6 +9,11 @@ export const BRAND = {
   name: process.env.NEXT_PUBLIC_BRAND_NAME ?? 'ServerForge',
   tagline: process.env.NEXT_PUBLIC_BRAND_TAGLINE ?? 'Launch a game server in minutes, not hours.',
   accent: process.env.NEXT_PUBLIC_BRAND_ACCENT ?? '#f97316',
+  /**
+   * Baked in at build time from the root package.json — see next.config.mjs.
+   * "0.0.0" means the build could not read it, not a real release.
+   */
+  version: process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0',
 };
 
 /**

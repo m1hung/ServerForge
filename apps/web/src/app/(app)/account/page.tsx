@@ -5,7 +5,7 @@ import { Check, Copy, KeyRound, Plus, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
-import { copyToClipboard, inkOn, timeAgo } from '@/lib/utils';
+import { BRAND, copyToClipboard, inkOn, timeAgo } from '@/lib/utils';
 import {
   DEFAULT_CSS_THEME,
   readStoredCssTheme,
@@ -113,7 +113,12 @@ export default function AccountPage() {
       />
       <ApiKeysCard />
 
-      <p className="text-[12px] text-ink-subtle">Account created {timeAgo(user.createdAt)}.</p>
+      {/* Repeated from the sidebar because the sidebar is desktop-only, and
+          someone reporting a problem from their phone needs to be able to
+          answer "which version?" too. */}
+      <p className="text-[12px] text-ink-subtle">
+        Account created {timeAgo(user.createdAt)} · {BRAND.name} v{BRAND.version}
+      </p>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { AppError, brand, isAppError } from '@serverforge/core';
 import { config } from './config.js';
 import { logger } from './lib/logger.js';
 import { redis } from './lib/redis.js';
+import { PANEL_VERSION } from './lib/version.js';
 import { authRoutes } from './routes/auth.js';
 import { serverRoutes } from './routes/servers.js';
 import { fileRoutes } from './routes/files.js';
@@ -119,7 +120,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return {
       status: healthy ? 'ok' : 'degraded',
       brand: brand.name,
-      version: process.env.npm_package_version ?? '0.1.0',
+      version: PANEL_VERSION,
       checks: { database, cache },
     };
   });

@@ -287,6 +287,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* The first thing anyone is asked when they report a problem.
+              Kept at the very bottom, quiet enough to ignore until needed. */}
+          <p className="legend mt-2.5 text-center" data-sf-version>
+            {BRAND.name} v{BRAND.version}
+          </p>
         </div>
       </aside>
 

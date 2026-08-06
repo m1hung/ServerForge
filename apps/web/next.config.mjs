@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,7 +12,22 @@ import { fileURLToPath } from 'node:url';
  * `process.env` before this config is evaluated. Values already set in the
  * real environment win, which keeps Docker build args working.
  */
-const rootEnv = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env');
+const appDir = path.dirname(fileURLToPath(import.meta.url));
+const rootEnv = path.resolve(appDir, '../../.env');
+
+/**
+ * The version shown in the dashboard, from the repo's root package.json —
+ * the same file the API reads, so the two can never disagree about what is
+ * running. Inlined at build time like the branding values below.
+ */
+function panelVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(path.resolve(appDir, '../../package.json'), 'utf8'));
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
 try {
   const explicit = { ...process.env };
@@ -47,6 +63,7 @@ const nextConfig = {
       'Launch a game server in minutes, not hours.',
     NEXT_PUBLIC_BRAND_ACCENT:
       process.env.NEXT_PUBLIC_BRAND_ACCENT ?? process.env.BRAND_ACCENT ?? '#f97316',
+    NEXT_PUBLIC_APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION ?? panelVersion(),
   },
 };
 
