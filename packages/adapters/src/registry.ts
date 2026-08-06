@@ -1,16 +1,32 @@
 import { notFound } from '@serverforge/core';
 import type { GameAdapter, GameVariant } from './types.js';
+import { compileManifest } from './manifest/compile.js';
+import { valheimManifest } from './manifest/games/valheim.js';
 import { minecraftAdapter } from './minecraft/index.js';
 import { palworldAdapter } from './palworld/index.js';
-import { valheimAdapter } from './valheim/index.js';
 
 /**
  * The adapter registry.
  *
- * This array is the complete list of games the platform supports. Adding one
- * is: write the adapter, import it, push it here. No other file changes.
+ * This array is the complete list of games the platform supports. Games come
+ * from one of two places and nothing downstream can tell which:
+ *
+ *   - A **manifest**: a declarative description compiled into an adapter.
+ *     This is the path for the common case — a dedicated server that installs
+ *     from Steam, is configured through a file or its command line, and says
+ *     something recognisable when it is ready. Adding one is data, not code.
+ *
+ *   - A **coded adapter**: for games that need real logic. Minecraft resolves
+ *     versions against several publishers' APIs and unpacks modpacks;
+ *     expressing that as data would mean inventing a programming language.
+ *
+ * Reach for a manifest first. See docs/adding-a-game.md.
  */
-const ADAPTERS: GameAdapter[] = [minecraftAdapter, palworldAdapter, valheimAdapter];
+const ADAPTERS: GameAdapter[] = [
+  minecraftAdapter,
+  palworldAdapter,
+  compileManifest(valheimManifest),
+];
 
 const byId = new Map(ADAPTERS.map((adapter) => [adapter.id, adapter]));
 

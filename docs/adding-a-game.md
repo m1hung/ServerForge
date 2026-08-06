@@ -3,6 +3,150 @@
 One file, one line in the registry. Nothing in the API, the workers or the
 dashboard needs to change.
 
+There are two ways to write that file, and **most games should use the first**:
+
+| | When to use it | What you write |
+|---|---|---|
+| **Manifest** | The server installs from Steam (or one zip), is configured by a file or its command line, and prints something recognisable when ready | Data — no code |
+| **Coded adapter** | The game needs real logic: resolving versions against a publisher's API, unpacking modpacks, anything conditional | TypeScript implementing `GameAdapter` |
+
+A manifest is compiled into a `GameAdapter`, so nothing downstream can tell the
+difference — and a manifest that outgrows the format can be rewritten as a
+coded adapter later without touching anything else.
+
+Valheim is a manifest
+([`manifest/games/valheim.ts`](../packages/adapters/src/manifest/games/valheim.ts)).
+Minecraft is code, because resolving Paper/Fabric/Forge builds and importing
+modpacks is a program, not a table.
+
+---
+
+## Writing a manifest
+
+Create `packages/adapters/src/manifest/games/<game>.ts`:
+
+```ts
+import type { GameManifest } from '../types.js';
+
+export const exampleManifest: GameManifest = {
+  manifestVersion: 1,
+  id: 'example',
+  name: 'Example',
+  summary: 'One sentence for the game picker.',
+  icon: 'Gamepad2',                        // any lucide-react icon name
+
+  limits: { memoryMib: 4096, cpuCores: 2, diskMib: 10240 },
+  variants: [{ id: 'example-vanilla', name: 'Example', summary: '…', order: 1,
+               recommended: true, supportsMods: false }],
+  ports: [{ purpose: 'game', protocol: 'udp' }],
+
+  settings: [ /* the same schema described under settingsSchema below */ ],
+
+  install: { kind: 'steam', appId: '896660' },
+
+  runtime: {
+    image: 'steamcmd/steamcmd:ubuntu-24',
+    workingDir: '/home/container',
+    command: ['./start_server.sh', '-port', '{{port.game}}'],
+    ports: [{ containerPort: 2456, purpose: 'game', protocol: 'udp' }],
+    stopTimeoutSeconds: 60,
+    readyPattern: 'Game server connected',
+  },
+};
+```
+
+Register it in `registry.ts`:
+
+```ts
+const ADAPTERS: GameAdapter[] = [/* … */, compileManifest(exampleManifest)];
+```
+
+### Templates
+
+Strings in `command`, `env`, `install.url` and `writeFile.contents` may
+reference values:
+
+| Token | Resolves to |
+|---|---|
+| `{{setting.KEY}}` | A value from `settings` |
+| `{{port.PURPOSE}}` | The allocated host port for that purpose |
+| `{{env.NAME}}` | An environment variable on the server |
+| `{{serverName}}` `{{serverUid}}` `{{version}}` `{{variantId}}` | Server facts |
+| `{{memoryMib}}` `{{cpuCores}}` `{{dataPath}}` | Resource limits and paths |
+
+Add `|number` to render a checkbox as `1`/`0`, which is what command lines
+almost always want — `|lower`, `|upper` and `|json` are also available.
+
+This is not an expression language, and should not become one. Anything
+conditional is expressed structurally:
+
+```ts
+// Omitted entirely when the field is empty. Passing `-password ""` is not the
+// same as leaving it out, and several games treat it as a real password.
+{ when: { ref: 'setting.Password', isSet: true },
+  args: ['-password', '{{setting.Password}}'] }
+```
+
+`when` also takes `equals: [...]` to match specific values, and `isSet: false`
+for the inverse. An empty string and an unticked checkbox both count as unset.
+
+### Settings need no code to be written out
+
+Each setting's `target` says where its value belongs, and the panel writes it
+there — reading the existing file, overwriting only the keys you model, and
+writing it back, so anything a game update adds to its own config survives.
+There is no `applySettings` to write.
+
+Use `{ kind: 'internal' }` for values your `command` template reads instead.
+
+### Install steps
+
+`install` is `{ kind: 'steam', appId }` or `{ kind: 'download', url, strip }`.
+Steam games get the branch/beta settings automatically — set
+`branchSettings: false` to opt out.
+
+`postInstall` runs afterwards, optionally per variant:
+
+```ts
+postInstall: [
+  { variants: ['example-modded'], mkdir: 'plugins',
+    message: 'Setting up the plugins folder…' },
+]
+```
+
+### Log rules
+
+Ordered; first match wins, so put specific rules above catch-alls. Patterns are
+matched case-insensitively.
+
+```ts
+logRules: [
+  { pattern: 'Done \\(', level: 'success', ready: true,
+    hint: 'Server is accepting players.' },
+  { pattern: '(\\w+) joined the game', level: 'info',
+    playerEvent: { type: 'join', nameGroup: 1 } },
+]
+```
+
+`reportsPlayers` is derived from whether any rule actually produces a
+`playerEvent`, so the claim cannot drift from the behaviour. A rule that
+matches but captures an empty name falls through to the next rule rather than
+reporting a nameless player.
+
+### Validation
+
+Manifests are validated when they load, not when a field is first used — a typo
+in a settings key should fail at startup, not three minutes into an install.
+`validateManifest` catches references to settings and ports that do not exist,
+unknown filters, invalid regular expressions, and player rules whose capture
+group is missing.
+
+---
+
+## Writing a coded adapter
+
+Only when the format genuinely does not fit.
+
 ## The contract
 
 Create `packages/adapters/src/<game>/index.ts` exporting a `GameAdapter`:

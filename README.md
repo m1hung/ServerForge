@@ -19,8 +19,11 @@ lives in one.
 | **Palworld**                | Vanilla dedicated · Modded (UE4SS workflow)                                                                     |
 | **Valheim**                 | Vanilla dedicated · BepInEx mods                                                                                |
 
-Adding a game means writing one adapter file and adding it to a list. Nothing
-in the API, the workers, or the dashboard needs to change —
+Adding a game usually means writing a **manifest** — a declarative description
+of how the server installs, launches and logs, with no code at all. Games that
+need real logic (Minecraft resolves versions across several publishers' APIs
+and unpacks modpacks) are written as adapters instead. Either way nothing in
+the API, the workers, or the dashboard changes —
 see [docs/adding-a-game.md](docs/adding-a-game.md).
 
 ## Features
@@ -255,9 +258,11 @@ Early. The core is built and tested, and the pieces below are the honest gaps:
   key, per their terms. Paste one into **Panel settings → Integrations** and
   browsing turns on; without a key the panel says so plainly rather than
   failing oddly
-- **Game breadth** — three games, each a hand-written adapter. Adding a fourth
-  is a day of TypeScript, not a config file, so the catalogue grows at the
-  speed of one person. A declarative manifest format is the intended fix
+- **Game breadth** — three games. The manifest format now covers the common
+  case and Valheim runs on it, but Palworld is still a hand-written adapter and
+  the catalogue is small. Manifests are loaded from the source tree; picking
+  them up from `data/games/` so operators can add one without rebuilding is the
+  next step
 - **Console transport** — panel commands are written to the container's stdin.
   Games that only accept RCON can stream their logs but cannot be commanded
   from the console yet

@@ -1,5 +1,18 @@
 export * from './types.js';
 export * from './registry.js';
+export { compileManifest } from './manifest/compile.js';
+export { ManifestError, assertValidManifest, validateManifest } from './manifest/validate.js';
+export { MANIFEST_VERSION } from './manifest/types.js';
+export type {
+  GameManifest,
+  ManifestArg,
+  ManifestCondition,
+  ManifestInstall,
+  ManifestInstallStep,
+  ManifestLogRule,
+  ManifestRuntime,
+  ManifestVariant,
+} from './manifest/types.js';
 export { minecraftAdapter } from './minecraft/index.js';
 export { palworldAdapter } from './palworld/index.js';
 export { valheimAdapter } from './valheim/index.js';
