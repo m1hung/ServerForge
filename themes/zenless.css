@@ -1,152 +1,140 @@
 /*
  * theme: Zenless
- * description: New Eridu street comic — flat black, Proxy yellow, sticker chrome.
+ * description: New Eridu web concept — acid lime on soft black, pill chrome, ghost lettering.
  *
- * Inspired by Zenless Zone Zero's graphic UI: bold yellow blocks, thick ink
- * outlines, and poster/sticker energy — not Night City neon cyberpunk.
+ * Tuned to the "Zenless Website UI Concept" layout language: near-black
+ * panels (#131416), a single acid-lime accent (#d7fa00), generously rounded
+ * plates and pill controls, letterspaced techno labels, and huge low-contrast
+ * outline lettering behind the content. Flat and graphic — no comic outlines,
+ * no offset sticker shadows.
  * Scope redesign rules with [data-sf-theme="zenless"].
  */
 
-@import url("https://fonts.googleapis.com/css2?family=Exo+2:wght@600;700;800&family=Nunito:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Chakra+Petch:wght@500;600;700&display=swap");
 
 /* ── Tokens ─────────────────────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"],
 html[data-sf-theme="zenless"].dark {
-  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Exo 2", "Nunito", sans-serif;
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Chakra Petch", "Archivo", sans-serif;
 
-  /* Warm-black canvas — comic page, not OLED noir. */
-  --canvas: 40 8% 8%;
-  --surface: 40 6% 11%;
-  --surface-raised: 40 5% 15%;
-  --line: 40 5% 22%;
-  --line-strong: 48 95% 48%;
+  /* Soft black, very slightly cool — the concept's panel colour, not OLED. */
+  --canvas: 220 7% 6%;
+  --surface: 220 7% 9%;
+  --surface-raised: 220 6% 13%;
+  --line: 220 6% 18%;
+  --line-strong: 220 5% 34%;
 
-  --ink: 40 20% 97%;
-  --ink-muted: 40 8% 72%;
-  --ink-subtle: 40 6% 55%;
+  --ink: 0 0% 94%;
+  --ink-muted: 220 5% 66%;
+  --ink-subtle: 220 5% 48%;
 
-  /* Bangboo / Proxy yellow — flat and loud. */
-  --accent: 48 100% 50%;
-  --accent-soft: 48 70% 14%;
-  --accent-ink: 40 30% 8%;
+  /* Acid lime — the only chromatic colour in the concept. */
+  --accent: 68 100% 49%;
+  --accent-soft: 68 55% 12%;
+  --accent-ink: 220 10% 6%;
 
-  --ok: 145 55% 48%;
-  --warn: 32 95% 52%;
-  --danger: 2 78% 55%;
-  --info: 210 70% 58%;
+  --ok: 92 65% 52%;
+  --warn: 44 96% 56%;
+  --danger: 355 82% 62%;
+  --info: 200 20% 72%;
 
-  --focus: 48 100% 50%;
-  --shadow-overlay: 0 12px 40px -10px rgb(0 0 0 / 0.55);
+  --focus: 68 100% 49%;
+  --shadow-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.75);
 
-  --zz-yellow: #ffd000;
-  --zz-ink: #14120f;
-  --zz-paper: #f4f0e6;
-  --zz-stripe: #ffd000;
-  --zz-cut: 14px;
+  /* The concept's two literal colours: the lime block and the panel black.
+     Kept outside the HSL tokens because they stay fixed in both modes. */
+  --zz-lime: #d7fa00;
+  --zz-black: #131416;
+
+  --zz-r-plate: 24px;
+  --zz-r-inset: 14px;
+  --zz-ghost: hsl(0 0% 100% / 0.055);
 }
 
 html[data-sf-theme="zenless"].light {
-  --canvas: 42 45% 95%;
-  --surface: 40 50% 99%;
-  --surface-raised: 42 40% 92%;
-  --line: 40 12% 82%;
-  --line-strong: 48 90% 42%;
+  --canvas: 72 24% 93%;
+  --surface: 0 0% 100%;
+  --surface-raised: 72 20% 96%;
+  --line: 80 10% 85%;
+  --line-strong: 80 6% 62%;
 
-  --ink: 40 25% 10%;
-  --ink-muted: 40 10% 38%;
-  --ink-subtle: 40 8% 46%;
+  --ink: 220 8% 10%;
+  --ink-muted: 220 6% 38%;
+  --ink-subtle: 220 5% 46%;
 
-  --accent: 46 100% 42%;
-  --accent-soft: 48 90% 90%;
-  --accent-ink: 40 30% 8%;
+  --accent: 72 92% 26%;
+  --accent-soft: 68 80% 88%;
+  --accent-ink: 0 0% 100%;
 
-  --ok: 145 60% 28%;
-  --warn: 32 90% 32%;
-  --danger: 2 72% 40%;
-  --info: 210 70% 36%;
+  --ok: 105 70% 24%;
+  --warn: 38 95% 30%;
+  --danger: 355 72% 42%;
+  --info: 210 12% 34%;
 
-  --focus: 46 100% 42%;
-  --shadow-overlay: 0 12px 36px -12px rgb(40 30 10 / 0.18);
+  --focus: 72 92% 26%;
+  --shadow-overlay: 0 24px 56px -22px rgb(30 34 20 / 0.22);
 
-  --zz-yellow: #f0b400;
-  --zz-ink: #1a1612;
-  --zz-paper: #fffdf8;
+  --zz-lime: #cbe800;
+  --zz-black: #131416;
+
+  --zz-ghost: hsl(220 8% 10% / 0.06);
 }
 
-/* ── Motion (comic / sticker, not glitch) ───────────────────────────────── */
+/* ── Motion (smooth graphic UI, not comic bounce) ───────────────────────── */
 
-@keyframes sf-zz-stripe-scroll {
+@keyframes sf-zz-rise {
   from {
-    background-position: 0 0;
+    opacity: 0;
+    transform: translateY(10px);
   }
   to {
-    background-position: 56px 0;
-  }
-}
-
-@keyframes sf-zz-pop {
-  0% {
-    transform: scale(0.96) rotate(-0.4deg);
-    opacity: 0;
-  }
-  70% {
-    transform: scale(1.02) rotate(0.3deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@keyframes sf-zz-wiggle {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  25% {
-    transform: rotate(-1.2deg);
-  }
-  75% {
-    transform: rotate(1.2deg);
-  }
-}
-
-@keyframes sf-zz-bounce-in {
-  0% {
-    transform: translateY(8px) scale(0.92);
-    opacity: 0;
-  }
-  60% {
-    transform: translateY(-3px) scale(1.03);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes sf-zz-tab-fill {
+@keyframes sf-zz-rail {
   from {
-    transform: translateX(-100%);
+    background-position: -50% 0;
   }
   to {
-    transform: translateX(0);
+    background-position: 150% 0;
   }
 }
 
-@keyframes sf-zz-sticker-float {
+@keyframes sf-zz-sweep {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+
+@keyframes sf-zz-ghost-drift {
   0%,
   100% {
-    transform: translateY(0) rotate(-2deg);
+    transform: translate3d(0, 0, 0);
   }
   50% {
-    transform: translateY(-3px) rotate(2deg);
+    transform: translate3d(-1.2%, -1.6%, 0);
   }
 }
 
-/* ── Atmosphere: poster paper + hazard stripes ──────────────────────────── */
+@keyframes sf-zz-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Atmosphere: flat black + ghost lettering ───────────────────────────── */
 
 html[data-sf-theme="zenless"] body {
   font-family: var(--font-sans);
@@ -154,52 +142,46 @@ html[data-sf-theme="zenless"] body {
   position: relative;
 }
 
-/* Soft paper grain — not a neon grid. */
+/* A single soft lime wash from the top-left — the concept's only gradient. */
 html[data-sf-theme="zenless"] body::before {
   content: "";
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 0;
-  opacity: 0.55;
-  background-image:
-    radial-gradient(circle at 1px 1px, hsl(40 10% 100% / 0.04) 1px, transparent 0),
-    linear-gradient(165deg, hsl(48 100% 50% / 0.07), transparent 42%),
-    linear-gradient(345deg, hsl(2 70% 45% / 0.05), transparent 40%);
-  background-size:
-    12px 12px,
-    100% 100%,
-    100% 100%;
+  background-image: radial-gradient(
+      90rem 50rem at 8% -10%,
+      hsl(68 100% 49% / 0.09),
+      transparent 62%
+    ),
+    radial-gradient(
+      60rem 40rem at 100% 100%,
+      hsl(68 100% 49% / 0.05),
+      transparent 60%
+    );
 }
 
-/* Top hazard / Proxy stripe — ZZZ marketing staple. */
+/* Oversized outline wordmark bleeding off the bottom-right — the signature
+   background element of the concept. */
 html[data-sf-theme="zenless"] body::after {
-  content: "";
+  content: "ZONE ZERO";
   pointer-events: none;
   position: fixed;
-  top: 0;
-  left: 0;
   right: 0;
-  height: 6px;
-  z-index: 60;
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--zz-ink),
-    var(--zz-ink) 8px,
-    var(--zz-stripe) 8px,
-    var(--zz-stripe) 16px
-  );
-  background-size: 56px 56px;
-  animation: sf-zz-stripe-scroll 1.8s linear infinite;
-  box-shadow: 0 2px 0 var(--zz-yellow);
-}
-
-html[data-sf-theme="zenless"].light body::before {
-  opacity: 0.4;
-  background-image:
-    radial-gradient(circle at 1px 1px, hsl(40 30% 20% / 0.05) 1px, transparent 0),
-    linear-gradient(165deg, hsl(48 100% 50% / 0.1), transparent 45%),
-    linear-gradient(345deg, hsl(2 70% 50% / 0.04), transparent 40%);
+  bottom: -0.14em;
+  z-index: 0;
+  max-width: 100vw;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(3.5rem, 17vw, 18rem);
+  line-height: 0.78;
+  letter-spacing: -0.01em;
+  text-align: right;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-stroke: 2px var(--zz-ghost);
+  animation: sf-zz-ghost-drift 22s ease-in-out infinite;
 }
 
 html[data-sf-theme="zenless"] [data-sf-shell],
@@ -209,304 +191,330 @@ html[data-sf-theme="zenless"] [data-sf-main] {
   z-index: 1;
 }
 
-html[data-sf-theme="zenless"] [data-sf-shell] {
-  padding-top: 6px;
-}
-
-/* ── Typography: bold anime-UI titles ───────────────────────────────────── */
+/* ── Typography ─────────────────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] .display,
-html[data-sf-theme="zenless"] .engraved,
 html[data-sf-theme="zenless"] h1,
 html[data-sf-theme="zenless"] h2 {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: -0.015em;
+  text-transform: uppercase;
+}
+
+html[data-sf-theme="zenless"] .engraved {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 html[data-sf-theme="zenless"] .eyebrow {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: var(--zz-yellow);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: hsl(var(--accent));
 }
 
 html[data-sf-theme="zenless"] .legend {
   font-family: var(--font-display);
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 html[data-sf-theme="zenless"] [data-sf-sidebar] .engraved {
-  color: var(--zz-yellow);
-  text-shadow: 2px 2px 0 var(--zz-ink);
+  color: hsl(var(--accent));
 }
 
-/* ── Shell / sidebar — sticker panel ────────────────────────────────────── */
+/* ── Shell: bezel + rail ────────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] [data-sf-sidebar] {
-  border-right: 3px solid var(--zz-yellow);
-  background: hsl(var(--surface));
-  box-shadow: inset 0 0 0 1px hsl(40 5% 100% / 0.04);
+  border-right: 1px solid hsl(var(--line));
+  background: hsl(var(--surface) / 0.86);
+  backdrop-filter: blur(14px);
 }
 
+/* Lime rail down the sidebar's edge — the concept's numbered strip, reduced to
+   the one part of it that cannot collide with nav labels. */
 html[data-sf-theme="zenless"] [data-sf-sidebar]::before {
-  content: "PROXY";
+  content: "";
   position: absolute;
-  top: 4.75rem;
-  right: -1.35rem;
+  right: -1px;
+  top: 0;
   z-index: 2;
-  padding: 0.2rem 0.55rem;
-  font-family: var(--font-display);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  color: var(--zz-ink);
-  background: var(--zz-yellow);
-  border: 2px solid var(--zz-ink);
-  transform: rotate(90deg);
-  transform-origin: center;
-  animation: sf-zz-sticker-float 3.5s ease-in-out infinite;
-  box-shadow: 2px 2px 0 var(--zz-ink);
+  width: 2px;
+  height: 140px;
+  background: linear-gradient(180deg, var(--zz-lime), transparent);
+  pointer-events: none;
 }
 
 html[data-sf-theme="zenless"] [data-sf-topbar] {
   position: relative;
-  border-bottom: 3px solid var(--zz-ink);
-  background: hsl(var(--surface));
+  border-bottom: 1px solid hsl(var(--line));
+  background: hsl(var(--surface) / 0.86);
+  backdrop-filter: blur(14px);
 }
 
+/* Lime hairline with a slow travelling highlight. */
 html[data-sf-theme="zenless"] [data-sf-topbar]::after {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -3px;
-  height: 3px;
-  background: var(--zz-yellow);
+  bottom: -1px;
+  height: 2px;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--zz-lime) 18%,
+    var(--zz-lime) 26%,
+    transparent 46%
+  );
+  background-size: 220% 100%;
+  animation: sf-zz-rail 9s linear infinite;
+  opacity: 0.75;
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a {
-  border: 2px solid transparent;
-  border-radius: 999px 8px 999px 8px;
-  font-weight: 700;
+  position: relative;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  overflow: hidden;
   transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.15s ease,
-    color 0.15s ease;
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a:hover {
-  transform: translateX(4px) rotate(-0.5deg);
-  border-color: hsl(48 100% 50% / 0.35);
+  background: hsl(var(--ink) / 0.06);
+  border-color: hsl(var(--ink) / 0.1);
   color: hsl(var(--ink));
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"] {
-  background: var(--zz-yellow);
-  color: var(--zz-ink);
-  border-color: var(--zz-ink);
-  box-shadow: 3px 3px 0 var(--zz-ink);
-  font-weight: 800;
+  background: var(--zz-lime);
+  border-color: var(--zz-lime);
+  color: var(--zz-black);
+  font-weight: 700;
+  box-shadow: 0 10px 28px -14px var(--zz-lime);
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"] svg {
-  color: var(--zz-ink) !important;
+  color: var(--zz-black) !important;
 }
 
 html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, hsl(40 30% 100% / 0.35), transparent 45%);
-  transform-origin: left center;
-  animation: sf-zz-tab-fill 0.35s cubic-bezier(0.2, 1.2, 0.4, 1);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(0 0% 100% / 0.5),
+    transparent
+  );
+  animation: sf-zz-sweep 0.7s cubic-bezier(0.3, 0.8, 0.3, 1);
   pointer-events: none;
 }
 
 html[data-sf-theme="zenless"] [data-sf-mobile-nav] {
-  border-top: 3px solid var(--zz-yellow);
-  background: hsl(var(--surface));
+  border-top: 1px solid hsl(var(--line));
+  background: hsl(var(--surface) / 0.92);
+  backdrop-filter: blur(14px);
 }
 
 html[data-sf-theme="zenless"] [data-sf-main] > * {
-  animation: sf-zz-pop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation: sf-zz-rise 0.45s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
-/* ── Cards: comic stickers ──────────────────────────────────────────────── */
+/* ── Plates ─────────────────────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] .card,
 html[data-sf-theme="zenless"] .panel {
-  border: 3px solid var(--zz-ink);
-  border-radius: 18px 4px 16px 4px;
+  border: 1px solid hsl(var(--line));
+  border-radius: var(--zz-r-plate);
   background: hsl(var(--surface));
-  box-shadow: 5px 5px 0 var(--zz-yellow);
   transition:
-    transform 0.18s cubic-bezier(0.2, 1.2, 0.4, 1),
-    box-shadow 0.18s ease;
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.3, 1),
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 html[data-sf-theme="zenless"] .card:hover,
 html[data-sf-theme="zenless"] .panel:hover {
-  transform: translate(-2px, -2px) rotate(-0.35deg);
-  box-shadow: 8px 8px 0 var(--zz-yellow);
+  transform: translateY(-2px);
+  border-color: hsl(var(--accent) / 0.5);
+  box-shadow: 0 20px 44px -28px rgb(0 0 0 / 0.9);
 }
 
+/* Lime index tab on the leading edge, echoing the concept's rail markers. */
 html[data-sf-theme="zenless"] .card::before,
 html[data-sf-theme="zenless"] .panel::before {
   content: "";
   position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--zz-yellow);
-  border: 2px solid var(--zz-ink);
-  box-shadow: -14px 0 0 0 hsl(2 78% 55%);
+  left: -1px;
+  top: 22px;
+  width: 3px;
+  height: 26px;
+  border-radius: 0 999px 999px 0;
+  background: var(--zz-lime);
   z-index: 1;
 }
 
 html[data-sf-theme="zenless"] .readout,
 html[data-sf-theme="zenless"] .inset-well {
-  border: 2px solid var(--zz-ink);
-  border-radius: 10px 2px 10px 2px;
-  background: hsl(var(--canvas));
+  border-radius: var(--zz-r-inset);
 }
 
-/* ── Controls: chunky street UI ─────────────────────────────────────────── */
+html[data-sf-theme="zenless"] .readout {
+  border: 1px solid hsl(var(--line));
+  letter-spacing: 0.02em;
+}
+
+/* ── Controls: pill chrome ──────────────────────────────────────────────── */
 
 html[data-sf-theme="zenless"] [data-sf-control="button"] {
-  border-radius: 999px 6px 999px 6px;
+  border-radius: 999px;
+  border-width: 1px;
   font-family: var(--font-display);
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  border-width: 2px;
   transition:
-    transform 0.15s cubic-bezier(0.2, 1.3, 0.4, 1),
-    box-shadow 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.15s ease;
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.3, 1),
+    box-shadow 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
 }
 
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"] {
-  background: var(--zz-yellow);
-  color: var(--zz-ink);
-  border: 2px solid var(--zz-ink);
-  box-shadow: 3px 3px 0 var(--zz-ink);
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="primary"] {
+  background: var(--zz-lime);
+  border-color: var(--zz-lime);
+  color: var(--zz-black);
+  box-shadow: 0 12px 30px -16px var(--zz-lime);
 }
 
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
-  transform: translate(-1px, -1px) scale(1.03);
-  box-shadow: 5px 5px 0 var(--zz-ink);
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px -14px var(--zz-lime);
   filter: none;
-  animation: sf-zz-wiggle 0.35s ease;
 }
 
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:active {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 var(--zz-ink);
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="primary"]:active {
+  transform: translateY(0) scale(0.985);
 }
 
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="secondary"],
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="outline"] {
-  border: 2px solid var(--zz-ink);
-  background: hsl(var(--surface-raised));
-  box-shadow: 2px 2px 0 hsl(48 100% 50% / 0.35);
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="secondary"],
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="outline"] {
+  background: hsl(var(--ink) / 0.04);
+  border-color: hsl(var(--ink) / 0.18);
 }
 
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="secondary"]:hover,
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="outline"]:hover {
-  background: var(--zz-yellow);
-  color: var(--zz-ink);
-  border-color: var(--zz-ink);
-  box-shadow: 3px 3px 0 var(--zz-ink);
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="secondary"]:hover,
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="outline"]:hover {
+  background: hsl(var(--accent) / 0.12);
+  border-color: var(--zz-lime);
+  color: hsl(var(--accent));
 }
 
-html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="danger"] {
-  border: 2px solid var(--zz-ink);
-  box-shadow: 2px 2px 0 hsl(2 78% 55%);
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="danger"] {
+  border-color: hsl(var(--danger) / 0.45);
+}
+
+html[data-sf-theme="zenless"]
+  [data-sf-control="button"][data-sf-variant="danger"]:hover {
+  border-color: hsl(var(--danger));
+  box-shadow: 0 12px 30px -18px hsl(var(--danger));
 }
 
 html[data-sf-theme="zenless"] input,
 html[data-sf-theme="zenless"] select,
 html[data-sf-theme="zenless"] textarea {
-  border-radius: 10px 2px 10px 2px !important;
-  border-width: 2px !important;
-  border-color: var(--zz-ink) !important;
-  font-weight: 600;
+  border-radius: var(--zz-r-inset) !important;
+  border-width: 1px !important;
+  border-color: hsl(var(--line)) !important;
+  font-weight: 500;
 }
 
 html[data-sf-theme="zenless"] input:focus,
 html[data-sf-theme="zenless"] select:focus,
 html[data-sf-theme="zenless"] textarea:focus {
-  border-color: var(--zz-yellow) !important;
-  box-shadow: 3px 3px 0 var(--zz-yellow);
+  border-color: var(--zz-lime) !important;
+  box-shadow: 0 0 0 3px hsl(var(--accent) / 0.22);
   outline: none;
 }
 
 /* ── Status / misc ──────────────────────────────────────────────────────── */
 
+/* Status dots keep a soft halo in their own colour — no border, no pulse. */
 html[data-sf-theme="zenless"] .lamp {
-  border: 2px solid var(--zz-ink);
-  box-shadow: 1px 1px 0 var(--zz-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
 
 html[data-sf-theme="zenless"] .meter {
-  border: 2px solid var(--zz-ink);
-  border-radius: 999px 4px;
-  background: var(--zz-ink);
+  border-radius: 999px;
+  background: hsl(var(--ink) / 0.09);
 }
 
 html[data-sf-theme="zenless"] ::selection {
-  background: var(--zz-yellow);
-  color: var(--zz-ink);
+  background: var(--zz-lime);
+  color: var(--zz-black);
 }
 
 html[data-sf-theme="zenless"] .scrollbar-thin {
-  scrollbar-color: var(--zz-yellow) transparent;
+  scrollbar-color: hsl(var(--accent) / 0.7) transparent;
 }
 
 html[data-sf-theme="zenless"] .scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: var(--zz-yellow);
-  border: 2px solid var(--zz-ink);
-  border-radius: 4px;
+  background-color: hsl(var(--accent) / 0.7);
+  border-radius: 999px;
 }
 
-html[data-sf-theme="zenless"] .inset-well {
-  animation: none;
-}
-
-/* Brand mark in sidebar gets a Bangboo-ish badge bounce on load */
-html[data-sf-theme="zenless"] [data-sf-sidebar] .inset-well {
-  border: 2px solid var(--zz-ink);
-  border-radius: 10px 3px;
-  background: var(--zz-yellow);
-  color: var(--zz-ink) !important;
-  animation: sf-zz-bounce-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+/* Brand mark becomes the lime rail badge from the concept's left strip. */
+html[data-sf-theme="zenless"] [data-sf-sidebar] > div:first-child .inset-well,
+html[data-sf-theme="zenless"] [data-sf-topbar] .inset-well {
+  border-radius: var(--zz-r-inset);
+  background: var(--zz-lime);
+  color: var(--zz-black) !important;
+  animation: sf-zz-mark-in 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
   html[data-sf-theme="zenless"] body::after,
-  html[data-sf-theme="zenless"] [data-sf-sidebar]::before,
+  html[data-sf-theme="zenless"] [data-sf-topbar]::after,
   html[data-sf-theme="zenless"] [data-sf-main] > *,
   html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before,
-  html[data-sf-theme="zenless"] [data-sf-sidebar] .inset-well,
-  html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  html[data-sf-theme="zenless"] [data-sf-sidebar] > div:first-child .inset-well,
+  html[data-sf-theme="zenless"] [data-sf-topbar] .inset-well {
     animation: none !important;
+  }
+
+  html[data-sf-theme="zenless"] [data-sf-nav] a[aria-current="page"]::before {
+    display: none;
   }
 
   html[data-sf-theme="zenless"] .card:hover,
   html[data-sf-theme="zenless"] .panel:hover,
-  html[data-sf-theme="zenless"] [data-sf-nav] a:hover,
-  html[data-sf-theme="zenless"] [data-sf-control="button"][data-sf-variant="primary"]:hover {
+  html[data-sf-theme="zenless"]
+    [data-sf-control="button"][data-sf-variant="primary"]:hover {
     transform: none;
   }
 }

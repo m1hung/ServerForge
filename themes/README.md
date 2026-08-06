@@ -122,7 +122,7 @@ motion.
 
 | Theme | Vibe |
 | ----- | ---- |
-| `zenless` | ZZZ street comic — flat Proxy yellow, stickers, hazard stripes |
+| `zenless` | New Eridu web concept — acid lime, pill chrome, ghost lettering |
 | `blueprint` | Drafting table — cyan grids, plate titles, crosshairs |
 | `phosphor` | Green CRT — scan sweep, flicker, terminal type |
 | `arcade` | Coin-op cabinet — pixel titles, marquee, insert-coin |
