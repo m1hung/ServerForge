@@ -2,7 +2,13 @@ import { stripAnsi, truncateLine, type ConsoleLine } from '@serverforge/core';
 import { getAdapter } from '@serverforge/adapters';
 import { prisma } from '@serverforge/db';
 import { logger } from '../lib/logger.js';
-import { publishConsoleLine, publishStats, recordActivity, setServerState } from '../lib/events.js';
+import {
+  publishConsoleLine,
+  publishServerEvent,
+  publishStats,
+  recordActivity,
+  setServerState,
+} from '../lib/events.js';
 import { keys, redis } from '../lib/redis.js';
 import { getRuntime } from '../runtime/index.js';
 import type { LogStreamHandle } from '../runtime/types.js';
@@ -33,6 +39,9 @@ const DISK_INTERVAL_MS = 60_000;
 const RECONCILE_INTERVAL_MS = 15_000;
 const LEADER_RENEW_MS = 10_000;
 const LEADER_TTL_MS = 30_000;
+/** Long enough to survive a slow stats tick, short enough that a dead worker's
+    player list disappears rather than going stale on screen. */
+const PLAYER_TTL_SECONDS = 300;
 
 /**
  * Only one supervisor may run at a time.
@@ -197,6 +206,11 @@ async function attach(server: {
   };
   attachments.set(server.uid, attachment);
 
+  // The in-memory set starts empty, so Redis has to as well. Without this a
+  // worker restart would leave whoever was online before the restart listed
+  // forever, since their "left" line was consumed by the previous process.
+  await redis.del(keys.players(server.uid)).catch(() => undefined);
+
   attachment.handle = await runtime.streamLogs(
     server.containerId,
     {
@@ -224,7 +238,13 @@ async function attach(server: {
           const { type, name } = insight.playerEvent;
           if (type === 'join') attachment.playersOnline.add(name);
           else attachment.playersOnline.delete(name);
-          void redis.set(keys.playerCount(server.uid), attachment.playersOnline.size, 'EX', 300);
+          void syncPlayers(server.uid, attachment.playersOnline);
+          void publishServerEvent({
+            serverUid: server.uid,
+            type: type === 'join' ? 'player.join' : 'player.leave',
+            at: Date.now(),
+            playerName: name,
+          });
         }
       },
       onEnd: () => detach(server.uid),
@@ -240,6 +260,31 @@ function detach(serverUid: string): void {
   if (!attachment) return;
   attachment.handle.close();
   attachments.delete(serverUid);
+  // A server nobody is watching has nobody connected to it.
+  void redis.del(keys.players(serverUid)).catch(() => undefined);
+}
+
+/**
+ * Mirrors the worker's player set into Redis.
+ *
+ * The whole set is rewritten rather than the one name that changed, so the two
+ * cannot drift after a dropped command — player counts are small enough that
+ * correctness is worth more than the saved round trip. The TTL means a worker
+ * that dies stops claiming people are online a few minutes later; `sampleStats`
+ * refreshes it while the worker is alive.
+ */
+async function syncPlayers(serverUid: string, players: Set<string>): Promise<void> {
+  const key = keys.players(serverUid);
+  try {
+    if (players.size === 0) {
+      // SADD with no members is an error, so an empty set is just a delete.
+      await redis.del(key);
+      return;
+    }
+    await redis.multi().del(key).sadd(key, ...players).expire(key, PLAYER_TTL_SECONDS).exec();
+  } catch (error) {
+    logger.debug({ error, serverUid }, 'could not sync the player list');
+  }
 }
 
 /**
@@ -361,6 +406,10 @@ async function sampleStats(): Promise<void> {
     if (!usage) continue;
 
     const diskBytes = Number((await redis.get(keys.diskUsage(server.uid))) ?? 0);
+
+    // Doubles as the heartbeat for the player list: while this worker is alive
+    // the key keeps being refreshed, and when it is not the TTL takes over.
+    await syncPlayers(server.uid, attachment.playersOnline);
     const players = attachment.playersOnline.size;
     const uptimeSeconds = server.lastStartAt
       ? Math.floor((Date.now() - server.lastStartAt.getTime()) / 1000)
@@ -415,6 +464,23 @@ async function sampleDisk(): Promise<void> {
 
 /** Live player count for the dashboard card. */
 export async function playerCount(serverUid: string): Promise<number> {
-  const value = await redis.get(keys.playerCount(serverUid));
-  return value ? Number(value) : 0;
+  return redis.scard(keys.players(serverUid)).catch(() => 0);
+}
+
+/**
+ * Who is connected right now, alphabetically.
+ *
+ * Derived from console output, so it is as good as the adapter's log parsing:
+ * accurate while the supervisor has been watching from the start, and a best
+ * effort after a restart, where only the replayed tail is available. Callers
+ * are expected to say so rather than present it as authoritative.
+ */
+export async function playersOnline(serverUid: string): Promise<string[]> {
+  const names = await redis.smembers(keys.players(serverUid)).catch(() => []);
+  return names.sort((a, b) => a.localeCompare(b));
+}
+
+/** True while this process is the supervisor that has been watching a server. */
+export function isWatching(serverUid: string): boolean {
+  return attachments.has(serverUid);
 }

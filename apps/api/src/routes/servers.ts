@@ -13,12 +13,15 @@ import {
   startupPatchSchema,
   updateServerSchema,
   validateSettings,
-  OWNER_PERMISSIONS,
+  canAccessServer,
+  effectiveServerPermissions,
+  sanitisePermissionMap,
+  type Role,
   type ServerPermission,
 } from '@serverforge/core';
 import { buildCatalogue, getAdapter } from '@serverforge/adapters';
-import { prisma, serializeBigInts } from '@serverforge/db';
-import { apiKeyAllows, requireAuth, requireServerAccess } from '../lib/auth.js';
+import { prisma, serializeBigInts, type ServerWithAccess } from '@serverforge/db';
+import { accessInputFor, apiKeyAllows, requireAuth, requireServerAccess } from '../lib/auth.js';
 import { readConsoleBuffer, recordActivity } from '../lib/events.js';
 import { installQueue } from '../queue/index.js';
 import {
@@ -31,7 +34,7 @@ import {
   stopServer,
 } from '../services/servers.js';
 import { changePrimaryPort } from '../services/allocations.js';
-import { playerCount } from '../services/monitor.js';
+import { isWatching, playerCount, playersOnline } from '../services/monitor.js';
 import { getRuntime } from '../runtime/index.js';
 
 export async function serverRoutes(app: FastifyInstance): Promise<void> {
@@ -78,13 +81,26 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
     }
     const isAdmin = user.role === 'owner' || user.role === 'admin';
 
-    const servers = await prisma.server.findMany({
+    const rows = await prisma.server.findMany({
       where: isAdmin
         ? {}
         : { OR: [{ ownerId: user.id }, { subusers: { some: { userId: user.id } } }] },
-      include: { allocations: { where: { primary: true } }, node: true, owner: true },
+      include: {
+        allocations: { where: { primary: true } },
+        node: true,
+        owner: true,
+        subusers: { include: { roles: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+
+    // A role that denies `server.view` has to remove the server from the list
+    // as well as from the detail route. Otherwise it appears on the dashboard
+    // and 403s the moment it is opened, which reads as a bug rather than as a
+    // permission.
+    const servers = rows.filter((server) =>
+      canAccessServer(accessInputFor(user, server), 'server.view'),
+    );
 
     const withCounts = await Promise.all(
       servers.map(async (server) => ({
@@ -517,27 +533,81 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
     return { samples: serializeBigInts(samples) };
   });
 
+  /**
+   * Who is connected.
+   *
+   * `supported` is the honest part: a game whose adapter cannot parse join and
+   * leave lines would otherwise return an empty array that reads as "nobody is
+   * playing" rather than "the panel cannot tell".
+   */
+  app.get('/api/servers/:uid/players', async (request) => {
+    const { uid } = request.params as { uid: string };
+    const { server } = await requireServerAccess(request, uid, 'server.view');
+
+    const adapter = getAdapter(server.gameId);
+    if (!adapter.reportsPlayers) {
+      return { supported: false, players: [], online: 0, live: false };
+    }
+
+    const players = await playersOnline(server.uid);
+    return {
+      supported: true,
+      players,
+      online: players.length,
+      // False when this process has not been watching the container from the
+      // start — the list is then whatever the replayed log tail revealed.
+      live: isWatching(server.uid),
+    };
+  });
+
   // ── Sub-users ─────────────────────────────────────────────────────────
   app.get('/api/servers/:uid/subusers', async (request) => {
     const { uid } = request.params as { uid: string };
     const { server } = await requireServerAccess(request, uid, 'server.subusers');
-    const subusers = await prisma.serverUser.findMany({
+    const rows = await prisma.serverUser.findMany({
       where: { serverId: server.id },
       include: {
-        user: { select: { uid: true, username: true, displayName: true, avatarColor: true } },
+        user: { select: { uid: true, username: true, displayName: true, avatarColor: true, role: true } },
+        roles: true,
       },
     });
+
+    // The effective list is what the screen should show: "has the Operators
+    // role" does not tell you whether they can restart the server once another
+    // role denies it. Working that out in the UI would be a second copy of the
+    // rules, so it is resolved here.
+    const subusers = rows.map((row) => ({
+      ...row,
+      roles: row.roles.map((role) => ({
+        uid: role.uid,
+        name: role.name,
+        permissions: sanitisePermissionMap(role.permissions),
+      })),
+      effectivePermissions: effectiveServerPermissions(
+        accessInputFor({ id: row.userId, role: row.user.role }, server),
+      ),
+    }));
+
     return { subusers };
   });
 
   app.post('/api/servers/:uid/subusers', async (request) => {
     const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.subusers');
-    const body = request.body as { username?: string; permissions?: ServerPermission[] };
+    const { user, server } = await requireServerAccess(request, uid, 'server.subusers');
+    const body = request.body as {
+      username?: string;
+      permissions?: ServerPermission[];
+      roleUids?: string[];
+    };
     const handle = body.username?.trim().toLowerCase();
+    const permissions = body.permissions ?? [];
+    const roleUids = body.roleUids ?? [];
 
-    if (!handle || !body.permissions?.length) {
-      throw badRequest('Choose a person and at least one permission.');
+    // A membership needs *something* to define it. Roles alone are fine — that
+    // is the point of having them — so this is no longer "at least one
+    // permission".
+    if (!handle || (permissions.length === 0 && roleUids.length === 0)) {
+      throw badRequest('Choose a person, and give them a role or at least one permission.');
     }
 
     const target = await prisma.user.findUnique({ where: { username: handle } });
@@ -549,10 +619,37 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
     }
     if (target.id === server.ownerId) throw conflict('That person already owns this server.');
 
+    const roles = roleUids.length
+      ? await prisma.accessRole.findMany({ where: { uid: { in: roleUids } } })
+      : [];
+    if (roles.length !== roleUids.length) {
+      throw badRequest('One of those roles no longer exists.', 'Reload the page and try again.');
+    }
+
     const membership = await prisma.serverUser.upsert({
       where: { serverId_userId: { serverId: server.id, userId: target.id } },
-      create: { serverId: server.id, userId: target.id, permissions: body.permissions },
-      update: { permissions: body.permissions },
+      create: {
+        serverId: server.id,
+        userId: target.id,
+        permissions,
+        roles: { connect: roles.map((role) => ({ id: role.id })) },
+      },
+      update: {
+        permissions,
+        // `set` rather than `connect`: the request carries the whole list, so
+        // removing a role has to mean removing it.
+        roles: { set: roles.map((role) => ({ id: role.id })) },
+      },
+      include: { roles: true },
+    });
+
+    await recordActivity({
+      serverId: server.id,
+      actorId: user.id,
+      actorName: user.displayName,
+      action: 'server.subuser_changed',
+      message: `Access for ${target.displayName} was updated.`,
+      metadata: { permissions, roles: roles.map((role) => role.name) },
     });
 
     return { subuser: membership };
@@ -579,18 +676,14 @@ function connectAddress(host: string, port?: number): string | null {
 /**
  * The caller's effective permissions on a server.
  *
- * Mirrors `requireServerAccess`: the server's owner and panel administrators
- * hold every permission; everyone else holds exactly what their sub-user
- * record grants. Keeping this in one place means the UI cannot disagree with
- * what the API will enforce.
+ * Runs the same resolver as `requireServerAccess` over the same inputs, so the
+ * tabs the dashboard shows and the requests the API accepts cannot drift
+ * apart. Anything else here — a second copy of the rules, a shortcut for
+ * admins — is how you end up with a tab that 403s when you click it.
  */
 function effectivePermissions(
-  user: { id: string; role: string },
-  server: { ownerId: string; subusers: { permissions: string[] }[] },
+  user: { id: string; role: Role },
+  server: { ownerId: string; subusers: ServerWithAccess['subusers'] },
 ): ServerPermission[] {
-  const isOwner = server.ownerId === user.id;
-  const isAdmin = user.role === 'owner' || user.role === 'admin';
-  if (isOwner || isAdmin) return [...OWNER_PERMISSIONS];
-
-  return (server.subusers[0]?.permissions ?? []) as ServerPermission[];
+  return effectiveServerPermissions(accessInputFor(user, server));
 }

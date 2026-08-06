@@ -787,6 +787,99 @@ function Stat({
   );
 }
 
+interface PlayersResponse {
+  supported: boolean;
+  players: string[];
+  online: number;
+  /** False when the supervisor did not watch this container from the start. */
+  live: boolean;
+}
+
+/**
+ * Who is connected.
+ *
+ * The list is read out of the console, so it is only ever as good as the log
+ * parsing — and after a panel restart it is whatever the replayed tail showed.
+ * Every one of those cases says so rather than presenting a number as fact,
+ * because a player list that is quietly wrong is worse than none at all.
+ */
+function PlayersCard({
+  server,
+  state,
+}: {
+  server: ServerDetail["server"];
+  state: ServerState;
+}) {
+  const running = state === "running";
+
+  const players = useQuery({
+    queryKey: ["players", server.uid],
+    queryFn: () =>
+      api.get<PlayersResponse>(`/api/servers/${server.uid}/players`),
+    // Names arrive on the console stream, not the stats stream, so this polls.
+    // Only while running: a stopped server has nothing to report.
+    refetchInterval: running ? 10_000 : false,
+  });
+
+  const data = players.data;
+
+  return (
+    <Card>
+      <CardBody className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="eyebrow">Players online</h2>
+          {data?.supported && running && (
+            <Badge tone={data.online > 0 ? "ok" : "neutral"}>{data.online}</Badge>
+          )}
+        </div>
+
+        {players.isLoading && <Skeleton className="h-16 w-full" />}
+
+        {data && !data.supported && (
+          <p className="text-[13px] leading-relaxed text-ink-subtle">
+            This game does not announce who joins and leaves in a way the panel
+            can read, so it cannot show a player list.
+          </p>
+        )}
+
+        {data?.supported && !running && (
+          <p className="text-[13px] text-ink-subtle">
+            The server is not running.
+          </p>
+        )}
+
+        {data?.supported && running && data.players.length === 0 && (
+          <p className="text-[13px] text-ink-subtle">
+            Nobody is connected right now.
+          </p>
+        )}
+
+        {data?.supported && running && data.players.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5">
+            {data.players.map((name) => (
+              <li
+                key={name}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-2.5 py-1 text-[12.5px] text-ink"
+              >
+                <span className="lamp h-1.5 w-1.5 text-ok" aria-hidden />
+                {name}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {data?.supported && running && !data.live && (
+          <p className="text-[12px] leading-relaxed text-ink-subtle">
+            The panel restarted while this server was running, so anyone who
+            joined before that may be missing. It corrects itself as people come
+            and go.
+          </p>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
 function Overview({
   server,
   state,
@@ -804,6 +897,8 @@ function Overview({
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <PlayersCard server={server} state={state} />
+
       <Card>
         <CardBody className="space-y-3">
           <h2 className="eyebrow">

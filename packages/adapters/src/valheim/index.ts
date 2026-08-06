@@ -154,6 +154,8 @@ export const valheimAdapter: GameAdapter = {
     };
   },
 
+  reportsPlayers: true,
+
   inspectLog(line): LogInsight | null {
     if (/Game server connected/i.test(line)) {
       return { level: 'success', ready: true, hint: 'Server is accepting players.' };
@@ -170,10 +172,14 @@ export const valheimAdapter: GameAdapter = {
         hint: 'Valheim ran out of memory. Try raising the memory limit, or ask fewer players to explore different areas at once.',
       };
     }
-    if (/ got character .+ from /i.test(line)) {
-      const match = / got character (.+?) from /.exec(line);
+    // "Got character ZDOID from Erik : 1234567890:1" — ZDOID is a literal
+    // token, so the name is the part *after* "from", up to the id suffix.
+    // The guard and the extraction must agree on case or the branch is entered
+    // and then silently produces nothing.
+    {
+      const match = /got character\s+\S+\s+from\s+(.+?)(?:\s+:\s|\s*$)/i.exec(line);
       if (match?.[1]) {
-        return { level: 'info', playerEvent: { type: 'join', name: match[1] } };
+        return { level: 'info', playerEvent: { type: 'join', name: match[1].trim() } };
       }
     }
     if (/Closing connection to .+/i.test(line)) {

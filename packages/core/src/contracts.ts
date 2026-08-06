@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SERVER_PERMISSIONS, ROLES } from './types.js';
+import { SERVER_PERMISSIONS, ROLES, SCHEDULE_TRIGGERS } from './types.js';
 
 /**
  * Wire contracts. The API validates every request body against these and the
@@ -43,6 +43,31 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   username: usernameSchema,
   password: z.string().min(1, 'Enter your password.'),
+});
+
+/**
+ * Second step of a sign-in that needs two-factor.
+ *
+ * Either a six-digit app code or a recovery code — one field rather than two,
+ * because asking someone to pick which kind they are holding is a question
+ * they should not have to answer.
+ */
+export const twoFactorLoginSchema = z.object({
+  ticket: z.string().min(1).max(256),
+  code: z.string().trim().min(1, 'Enter the code from your authenticator app.').max(32),
+});
+
+export const twoFactorSetupSchema = z.object({
+  password: z.string().min(1, 'Enter your password to continue.'),
+});
+
+export const twoFactorEnableSchema = z.object({
+  code: z.string().trim().min(1, 'Enter the six-digit code from your app.').max(32),
+});
+
+export const twoFactorDisableSchema = z.object({
+  password: z.string().min(1, 'Enter your password to continue.'),
+  code: z.string().trim().min(1, 'Enter a code from your app, or a recovery code.').max(32),
 });
 
 export const serverNameSchema = z
@@ -131,28 +156,78 @@ export const createBackupSchema = z.object({
   ignore: z.array(z.string().max(256)).max(64).default([]),
 });
 
-export const scheduleSchema = z.object({
+export const scheduleActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('power'), action: z.enum(['start', 'stop', 'restart']) }),
+  z.object({ type: z.literal('command'), command: z.string().min(1).max(1024) }),
+  z.object({ type: z.literal('backup'), retain: z.number().int().min(1).max(50).default(5) }),
+  z.object({
+    type: z.literal('update'),
+    /** Restart after the update finishes. */
+    startAfter: z.boolean().default(true),
+  }),
+  z.object({
+    type: z.literal('webhook'),
+    /**
+     * Where to POST. Validated for shape here; whether it points somewhere on
+     * the public internet is decided by the API, which can resolve it.
+     */
+    url: z.string().url().max(2048),
+    /** Message body, with {server} {player} {event} {task} placeholders. */
+    template: z.string().min(1).max(1024).default('{server}: {event}'),
+    /** `discord` sends {content}; `json` sends the event fields. */
+    format: z.enum(['discord', 'json']).default('discord'),
+  }),
+]);
+
+const scheduleFields = z.object({
   name: z.string().trim().min(1).max(64),
   /** Standard 5-field cron in the server's configured timezone. */
-  cron: z.string().min(9).max(128),
+  cron: z.string().min(9).max(128).nullish(),
+  /** A server event, for schedules that react instead of repeat. */
+  triggerType: z.enum(SCHEDULE_TRIGGERS).nullish(),
+  /** Suppresses a re-fire within this window. Only meaningful with a trigger. */
+  cooldownSeconds: z.number().int().min(0).max(86_400).default(0),
   timezone: z.string().max(64).default('UTC'),
   enabled: z.boolean().default(true),
   onlyWhenOnline: z.boolean().default(true),
-  actions: z
-    .array(
-      z.discriminatedUnion('type', [
-        z.object({ type: z.literal('power'), action: z.enum(['start', 'stop', 'restart']) }),
-        z.object({ type: z.literal('command'), command: z.string().min(1).max(1024) }),
-        z.object({ type: z.literal('backup'), retain: z.number().int().min(1).max(50).default(5) }),
-        z.object({
-          type: z.literal('update'),
-          /** Restart after the update finishes. */
-          startAfter: z.boolean().default(true),
-        }),
-      ]),
-    )
-    .min(1)
-    .max(10),
+  actions: z.array(scheduleActionSchema).min(1).max(10),
+});
+
+/** A schedule runs on a clock or in response to an event, never both. */
+export const scheduleSchema = scheduleFields.superRefine((value, ctx) => {
+  if (value.cron && value.triggerType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['triggerType'],
+      message: 'A schedule runs either on a repeating time or on an event, not both.',
+    });
+  }
+});
+
+/**
+ * PATCH body. Deliberately not refined: a patch that only renames a schedule
+ * carries neither timing field, so the either/or rule can only be applied once
+ * the body has been merged over the stored row — which the route does with
+ * `scheduleTimingIsValid`.
+ */
+export const scheduleUpdateSchema = scheduleFields.partial();
+
+/** The either/or rule, applied to a fully merged row rather than a patch. */
+export function scheduleTimingIsValid(value: {
+  cron?: string | null;
+  triggerType?: string | null;
+}): boolean {
+  return Boolean(value.cron) !== Boolean(value.triggerType);
+}
+
+export const accessRoleSchema = z.object({
+  name: z.string().trim().min(1, 'Give the role a name.').max(48),
+  description: z.string().trim().max(200).nullish(),
+  /**
+   * A permission left out of this map is neutral. Only `allow` and `deny` are
+   * representable, so there is exactly one way to say "no opinion".
+   */
+  permissions: z.record(z.enum(SERVER_PERMISSIONS), z.enum(['allow', 'deny'])).default({}),
 });
 
 export const subuserSchema = z.object({

@@ -1,5 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { apiKeySchema, badRequest, conflict, inviteUserSchema } from '@serverforge/core';
+import {
+  accessRoleSchema,
+  apiKeySchema,
+  badRequest,
+  conflict,
+  inviteUserSchema,
+  sanitisePermissionMap,
+} from '@serverforge/core';
 import { prisma, serializeBigInts, uid as makeUid } from '@serverforge/db';
 import { issueApiKey, requireAuth, requireRole } from '../lib/auth.js';
 import { hashPassword } from '../lib/crypto.js';
@@ -269,6 +276,130 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       action: 'settings.update',
       targetType: 'system',
       targetId: key,
+      ip: request.ip,
+    });
+
+    return { ok: true };
+  });
+
+  // ── Access roles ──────────────────────────────────────────────────────
+  //
+  // Panel-wide definitions, assigned per server on the sub-user screen. Only
+  // owners and admins may write them: a role is how permission is handed out,
+  // so being able to edit one is equivalent to being able to grant it.
+
+  app.get('/api/admin/roles', async (request) => {
+    await requireAuth(request);
+    const roles = await prisma.accessRole.findMany({
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { members: true } } },
+    });
+
+    return {
+      roles: roles.map((role) => ({
+        uid: role.uid,
+        name: role.name,
+        description: role.description,
+        permissions: sanitisePermissionMap(role.permissions),
+        assignments: role._count.members,
+        createdAt: role.createdAt,
+      })),
+    };
+  });
+
+  app.post('/api/admin/roles', async (request, reply) => {
+    const actor = await requireRole(request, ['owner', 'admin']);
+    const input = accessRoleSchema.parse(request.body);
+
+    const existing = await prisma.accessRole.findUnique({ where: { name: input.name } });
+    if (existing) throw conflict('A role with that name already exists.');
+
+    const role = await prisma.accessRole.create({
+      data: {
+        uid: makeUid(),
+        name: input.name,
+        description: input.description ?? null,
+        permissions: sanitisePermissionMap(input.permissions) as never,
+      },
+    });
+
+    await recordAudit({
+      actorId: actor.id,
+      action: 'role.create',
+      targetType: 'role',
+      targetId: role.uid,
+      metadata: { name: role.name },
+      ip: request.ip,
+    });
+
+    return reply.code(201).send({ role });
+  });
+
+  app.patch('/api/admin/roles/:roleUid', async (request) => {
+    const actor = await requireRole(request, ['owner', 'admin']);
+    const { roleUid } = request.params as { roleUid: string };
+    const input = accessRoleSchema.partial().parse(request.body);
+
+    const existing = await prisma.accessRole.findUnique({ where: { uid: roleUid } });
+    if (!existing) throw badRequest('That role could not be found.');
+
+    if (input.name && input.name !== existing.name) {
+      const clash = await prisma.accessRole.findUnique({ where: { name: input.name } });
+      if (clash) throw conflict('A role with that name already exists.');
+    }
+
+    const role = await prisma.accessRole.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined ? { description: input.description ?? null } : {}),
+        ...(input.permissions !== undefined
+          ? { permissions: sanitisePermissionMap(input.permissions) as never }
+          : {}),
+      },
+    });
+
+    // Worth an audit line on its own: editing a role changes what everyone
+    // holding it may do, on every server, without touching a single membership.
+    await recordAudit({
+      actorId: actor.id,
+      action: 'role.update',
+      targetType: 'role',
+      targetId: role.uid,
+      metadata: { name: role.name },
+      ip: request.ip,
+    });
+
+    return { role };
+  });
+
+  app.delete('/api/admin/roles/:roleUid', async (request) => {
+    const actor = await requireRole(request, ['owner', 'admin']);
+    const { roleUid } = request.params as { roleUid: string };
+
+    const existing = await prisma.accessRole.findUnique({
+      where: { uid: roleUid },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!existing) throw badRequest('That role could not be found.');
+
+    // Deleting a role that denies something would silently *restore* access,
+    // which is the opposite of what someone tidying up expects. Make them
+    // unassign it first so the consequence is visible.
+    if (existing._count.members > 0) {
+      throw conflict(
+        `That role is still assigned to ${existing._count.members} ${existing._count.members === 1 ? 'person' : 'people'}.`,
+        'Remove it from them first — deleting it now would change what they can do.',
+      );
+    }
+
+    await prisma.accessRole.delete({ where: { id: existing.id } });
+    await recordAudit({
+      actorId: actor.id,
+      action: 'role.delete',
+      targetType: 'role',
+      targetId: roleUid,
+      metadata: { name: existing.name },
       ip: request.ip,
     });
 

@@ -7,7 +7,7 @@ import { logger } from './lib/logger.js';
 import { closeRedis } from './lib/redis.js';
 import { describeMountMismatch } from './lib/storage-paths.js';
 import { closeQueues } from './queue/index.js';
-import { createWorkers, startScheduler } from './queue/workers.js';
+import { createWorkers, startScheduler, startTriggerListener } from './queue/workers.js';
 import { startMonitor, stopMonitor } from './services/monitor.js';
 import { startPortForwarding, stopPortForwarding } from './services/upnp.js';
 import { startDdns, stopDdns } from './services/ddns.js';
@@ -30,6 +30,7 @@ async function main(): Promise<void> {
   const app = await buildApp();
   const workers = runWorkers ? createWorkers() : [];
   let scheduler: NodeJS.Timeout | null = null;
+  let stopTriggers: (() => void) | null = null;
   let sessionPrune: NodeJS.Timeout | null = null;
 
   if (runWorkers) {
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
     await startPortForwarding();
     await startDdns();
     scheduler = startScheduler();
+    stopTriggers = startTriggerListener();
     sessionPrune = setInterval(
       () => void pruneSessions().catch((error) => logger.warn({ error }, 'session prune failed')),
       3_600_000,
@@ -55,6 +57,7 @@ async function main(): Promise<void> {
     // Order matters: stop accepting work, finish what is in flight, then
     // close connections. A backup killed mid-tar leaves a corrupt archive.
     if (scheduler) clearInterval(scheduler);
+    if (stopTriggers) stopTriggers();
     if (sessionPrune) clearInterval(sessionPrune);
     stopMonitor();
     // Mappings are left in place on purpose: a panel restart should not drop

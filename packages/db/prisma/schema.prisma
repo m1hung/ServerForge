@@ -41,6 +41,15 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  /// AES-256-GCM encrypted base32 TOTP secret. Present but unconfirmed during
+  /// enrolment, which is why `totpEnabledAt` — not this — decides whether a
+  /// sign-in is challenged.
+  totpSecret         String?
+  /// Set when enrolment was confirmed with a working code.
+  totpEnabledAt      DateTime?
+  /// SHA-256 of each *unused* recovery code. Using one removes it.
+  recoveryCodeHashes String[]  @default([])
+
   sessions     Session[]
   apiKeys      ApiKey[]
   ownedServers Server[]     @relation("ServerOwner")
@@ -236,11 +245,34 @@ model ServerUser {
   server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Direct allow grants. Predates roles and still works, so a small panel
+  /// never has to define a role just to share one server.
   permissions String[]
   createdAt   DateTime @default(now())
 
+  roles       AccessRole[] @relation("ServerUserRoles")
+
   @@unique([serverId, userId])
   @@index([userId])
+}
+
+/// A named, reusable set of server permissions.
+///
+/// Named `AccessRole` rather than `Role` because that name is already the
+/// panel-wide enum (owner/admin/user). The two are different things: the enum
+/// says what someone is on the panel, this says what they may do on a server.
+model AccessRole {
+  id          String   @id @default(cuid())
+  uid         String   @unique
+  name        String   @unique
+  description String?
+  /// { "server.power": "allow" | "deny" }. A permission that is absent is
+  /// neutral — it neither grants nor blocks, so another source decides.
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     ServerUser[] @relation("ServerUserRoles")
 }
 
 // ────────────────────────────────────────────────────────────────── backups ──
@@ -277,17 +309,27 @@ model Backup {
 
 // ──────────────────────────────────────────────────────────────── schedules ──
 
+/// A set of actions run either on a clock (`cron`) or in response to something
+/// the server did (`triggerType`). Exactly one of the two is set — the API
+/// enforces it, because a row with neither would never run and a row with both
+/// would fire from two directions with no way to reason about the order.
 model Schedule {
   id             String    @id @default(cuid())
   uid            String    @unique
   serverId       String
   server         Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
   name           String
-  cron           String
+  /// Five-field cron. Null on an event-triggered schedule.
+  cron           String?
+  /// Server event that fires this, e.g. "player.join". Null on a cron schedule.
+  triggerType    String?
+  /// Ignores a repeat trigger within this many seconds. Stops five players
+  /// joining at once from queueing five backups.
+  cooldownSeconds Int      @default(0)
   timezone       String    @default("UTC")
   enabled        Boolean   @default(true)
   onlyWhenOnline Boolean   @default(true)
-  /// Array of {type:"power"|"command"|"backup", ...}
+  /// Array of {type:"power"|"command"|"backup"|"update"|"webhook", ...}
   actions        Json
   lastRunAt      DateTime?
   lastRunOk      Boolean?
@@ -298,6 +340,7 @@ model Schedule {
 
   @@index([serverId])
   @@index([enabled, nextRunAt])
+  @@index([triggerType, enabled])
 }
 
 // ───────────────────────────────────────────────────────────────────── mods ──

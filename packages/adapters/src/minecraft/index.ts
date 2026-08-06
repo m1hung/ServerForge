@@ -332,6 +332,8 @@ export const minecraftAdapter: GameAdapter = {
     };
   },
 
+  reportsPlayers: true,
+
   inspectLog(line): LogInsight | null {
     if (/Done \([0-9.]+s\)! For help/.test(line)) {
       return { level: 'success', ready: true, hint: 'Server is accepting players.' };

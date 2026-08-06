@@ -30,6 +30,8 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
   explanations of common errors ("the server ran out of memory — raise the
   limit in Settings")
 - **Live resource graphs** — CPU, memory, disk, players, uptime
+- **Who's online** — player names read from the console, for the games whose
+  logs announce them; the panel says so plainly for the ones that don't
 - **Settings that explain themselves** — one declarative schema per game drives
   the UI, validation and the game's own config files
 - **Progressive disclosure** — beginners see 8 settings, experts see all of them
@@ -37,11 +39,22 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
   containment
 - **Backups** — plain `.tar.gz` you can open with any tool, plus scheduled
   backups with retention
-- **Scheduled tasks** — cron-based restarts, commands and backups
+- **Scheduled tasks** — cron-based restarts, commands, backups and webhooks, or
+  the same actions triggered by something the server did (a player joins, it
+  finishes starting, it crashes), with a cooldown so a busy server does not fire
+  them repeatedly
+- **Webhook alerts** — post to Discord or any JSON endpoint when a task runs,
+  with `{player}` and `{server}` filled in. Outbound requests are checked
+  against private address space and never follow redirects
 - **Mods and plugins** — browse and install from Modrinth, toggle without
   deleting, or upload your own
-- **Multi-user** — roles, per-server sub-users with granular permissions,
+- **Multi-user** — panel roles, per-server sub-users with granular permissions,
   scoped API keys, audit log
+- **Access roles** — named permission sets you define once and hand out per
+  server, with allow / neutral / **deny**, where a deny overrides everything
+  short of the panel owner
+- **Two-factor auth** — TOTP from any authenticator app, with single-use
+  recovery codes for when the phone is gone
 - **Custom CSS themes** — drop a `.css` file in `data/themes/` and pick it under
   Account → Appearance (see `themes/README.md`)
 - **Crash handling** — auto-restart with a crash-loop guard, OOM detection,
@@ -227,12 +240,17 @@ restyles.
 Early. The core is built and tested, and the pieces below are the honest gaps:
 
 - **Remote nodes** — the `RuntimeDriver` interface is shaped for it and the
-  database models it, but only the local Docker driver is implemented
+  database models it, but only the local Docker driver is implemented. Note
+  that container operations are the *only* thing it abstracts: the file
+  manager, backups and installs all reach the filesystem directly, so a remote
+  node needs a storage driver that does not exist yet
 - **CurseForge** — modpack import works via uploaded server-pack `.zip`.
   Direct API browsing requires each host to supply their own CurseForge API
   key, per their terms; without one the panel says so plainly rather than
   failing oddly
-- **Two-factor auth** — schema is in place, flow is not built
+- **Two-factor QR codes** — enrolment works by pasting the setup key into your
+  authenticator app, which every app supports. Scanning a QR would mean adding
+  a QR-rendering dependency, which has not been done
 
 ## Licence
 

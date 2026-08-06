@@ -63,6 +63,31 @@ export const OWNER_PERMISSIONS: ServerPermission[] = [...SERVER_PERMISSIONS];
 export const API_KEY_SCOPES = ['*', 'admin', ...SERVER_PERMISSIONS] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
+/**
+ * Things a server can do that a schedule may react to.
+ *
+ * Every one of these is already detected: player events come from the
+ * adapter's `inspectLog`, the rest from the single writer for server state.
+ * Nothing here requires a game to be polled.
+ */
+export const SCHEDULE_TRIGGERS = [
+  'player.join',
+  'player.leave',
+  'server.ready',
+  'server.crashed',
+  'server.stopped',
+] as const;
+export type ScheduleTrigger = (typeof SCHEDULE_TRIGGERS)[number];
+
+/** An event emitted by a running server, and the payload a trigger matches. */
+export interface ServerEvent {
+  serverUid: string;
+  type: ScheduleTrigger;
+  at: number;
+  /** Present on player events. */
+  playerName?: string;
+}
+
 export interface ResourceLimits {
   /** Container memory ceiling in MiB. 0 = unlimited (not recommended). */
   memoryMib: number;

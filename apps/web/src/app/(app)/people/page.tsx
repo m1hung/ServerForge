@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, ShieldAlert, UserPlus, Users } from 'lucide-react';
+import { KeyRound, Plus, ShieldAlert, UserPlus, Users } from 'lucide-react';
 import { useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { inkOn, timeAgo } from '@/lib/utils';
@@ -279,7 +279,302 @@ export default function PeoplePage() {
           )}
         </div>
       </Modal>
+
+      <RolesCard canManage={isOwner || me.data?.user.role === 'admin'} onError={onError} />
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────── roles ──
+
+const SERVER_PERMISSIONS = [
+  'server.view',
+  'server.power',
+  'server.console',
+  'server.settings',
+  'server.files',
+  'server.backups',
+  'server.schedules',
+  'server.mods',
+  'server.subusers',
+  'server.delete',
+] as const;
+type ServerPermission = (typeof SERVER_PERMISSIONS)[number];
+type PermissionState = 'allow' | 'deny';
+type PermissionMap = Partial<Record<ServerPermission, PermissionState>>;
+
+interface AccessRole {
+  uid: string;
+  name: string;
+  description: string | null;
+  permissions: PermissionMap;
+  assignments: number;
+}
+
+function permissionLabel(permission: ServerPermission): string {
+  return permission.replace('server.', '').replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/**
+ * Reusable permission sets, assigned per server on a server's Access tab.
+ *
+ * The three-way control is the whole point. "Neutral" is not the same as "no":
+ * it leaves the decision to whatever else the person has, while "deny" takes
+ * the permission away even from a panel admin or the server's own owner.
+ */
+function RolesCard({
+  canManage,
+  onError,
+}: {
+  canManage: boolean;
+  onError: (error: unknown) => void;
+}) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState<AccessRole | 'new' | null>(null);
+
+  const roles = useQuery({
+    queryKey: ['access-roles'],
+    queryFn: () => api.get<{ roles: AccessRole[] }>('/api/admin/roles'),
+    retry: false,
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['access-roles'] });
+
+  const remove = useMutation({
+    mutationFn: (role: AccessRole) => api.delete(`/api/admin/roles/${role.uid}`),
+    onSuccess: (_result, role) => {
+      toast.push({ tone: 'ok', message: `"${role.name}" deleted.` });
+      refresh();
+    },
+    onError,
+  });
+
+  const list = roles.data?.roles ?? [];
+
+  return (
+    <>
+      <Card>
+        <CardBody className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="engraved text-[15px]">Access roles</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
+                Named sets of server permissions. Define one here, then hand it
+                out on a server&apos;s Access tab — changing the role changes
+                what everyone holding it can do, everywhere, at once.
+              </p>
+            </div>
+            {canManage && (
+              <Button variant="secondary" onClick={() => setEditing('new')}>
+                <Plus className="h-4 w-4" aria-hidden />
+                New role
+              </Button>
+            )}
+          </div>
+
+          {roles.isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : list.length === 0 ? (
+            <p className="text-[13px] text-ink-subtle">
+              No roles yet. Direct permissions on each server still work — roles
+              are for when you are repeating yourself.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {list.map((role) => {
+                const allowed = SERVER_PERMISSIONS.filter((p) => role.permissions[p] === 'allow');
+                const denied = SERVER_PERMISSIONS.filter((p) => role.permissions[p] === 'deny');
+                return (
+                  <li key={role.uid} className="flex flex-wrap items-center gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] font-medium text-ink">{role.name}</span>
+                        <Badge tone="neutral">
+                          {role.assignments} assignment{role.assignments === 1 ? '' : 's'}
+                        </Badge>
+                      </div>
+                      {role.description && (
+                        <p className="mt-0.5 text-[12.5px] text-ink-muted">{role.description}</p>
+                      )}
+                      <p className="mt-1 text-[12px] text-ink-subtle">
+                        {allowed.length > 0 && `Allows ${allowed.map(permissionLabel).join(', ')}`}
+                        {allowed.length > 0 && denied.length > 0 && ' · '}
+                        {denied.length > 0 && (
+                          <span className="text-danger">
+                            Denies {denied.map(permissionLabel).join(', ')}
+                          </span>
+                        )}
+                        {allowed.length === 0 && denied.length === 0 && 'Grants nothing yet.'}
+                      </p>
+                    </div>
+                    {canManage && (
+                      <div className="flex shrink-0 gap-1.5">
+                        <Button variant="ghost" size="sm" onClick={() => setEditing(role)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={remove.isPending}
+                          onClick={() => remove.mutate(role)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
+
+      {editing && (
+        <RoleEditor
+          role={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            refresh();
+          }}
+          onError={onError}
+        />
+      )}
+    </>
+  );
+}
+
+function RoleEditor({
+  role,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  role: AccessRole | null;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (error: unknown) => void;
+}) {
+  const [name, setName] = useState(role?.name ?? '');
+  const [description, setDescription] = useState(role?.description ?? '');
+  const [permissions, setPermissions] = useState<PermissionMap>(role?.permissions ?? {});
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = {
+        name: name.trim(),
+        description: description.trim() || null,
+        permissions,
+      };
+      return role
+        ? api.patch(`/api/admin/roles/${role.uid}`, body)
+        : api.post('/api/admin/roles', body);
+    },
+    onSuccess: onSaved,
+    onError,
+  });
+
+  const setState = (permission: ServerPermission, next: PermissionState | null) =>
+    setPermissions((current) => {
+      const copy = { ...current };
+      // Neutral is expressed by absence, so it deletes rather than storing a
+      // third value — one representation, one meaning.
+      if (next === null) delete copy[permission];
+      else copy[permission] = next;
+      return copy;
+    });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={role ? `Edit "${role.name}"` : 'New access role'}
+      description="Neutral leaves the decision to whatever else the person has. Deny takes the permission away even from an admin."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            loading={save.isPending}
+            disabled={name.trim() === ''}
+            onClick={() => save.mutate()}
+          >
+            {role ? 'Save changes' : 'Create role'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <Field label="Name" required>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={48}
+            placeholder="Moderators"
+            data-autofocus
+          />
+        </Field>
+
+        <Field label="Description" help="Optional. What this role is for.">
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={200}
+            placeholder="Console and restarts, nothing destructive"
+          />
+        </Field>
+
+        <div className="space-y-1.5">
+          <p className="legend text-ink-muted">Permissions</p>
+          <ul className="divide-y divide-line">
+            {SERVER_PERMISSIONS.map((permission) => {
+              const state = permissions[permission] ?? null;
+              return (
+                <li key={permission} className="flex items-center justify-between gap-3 py-2">
+                  <span className="text-[13px] text-ink">{permissionLabel(permission)}</span>
+                  <div className="flex shrink-0 gap-1" role="group" aria-label={permission}>
+                    {(
+                      [
+                        { value: null, label: 'Neutral' },
+                        { value: 'allow', label: 'Allow' },
+                        { value: 'deny', label: 'Deny' },
+                      ] as const
+                    ).map((option) => {
+                      const active = state === option.value;
+                      const tone =
+                        option.value === 'deny'
+                          ? 'border-danger bg-danger/10 text-danger'
+                          : option.value === 'allow'
+                            ? 'border-ok bg-ok/10 text-ok'
+                            : 'border-accent bg-accent/10 text-accent';
+                      return (
+                        <button
+                          key={option.label}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setState(permission, option.value)}
+                          className={
+                            active
+                              ? `rounded-md border px-2 py-1 text-[12px] ${tone}`
+                              : 'rounded-md border border-line bg-surface-raised px-2 py-1 text-[12px] text-ink-subtle hover:text-ink'
+                          }
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

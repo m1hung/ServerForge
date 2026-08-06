@@ -240,6 +240,16 @@ export interface GameAdapter {
   /** Classifies a console line. Pure and fast: runs on every line. */
   inspectLog?(line: string): LogInsight | null;
 
+  /**
+   * Whether `inspectLog` reports player joins and leaves by name.
+   *
+   * Absent means no, which is the honest default: the panel can then say "this
+   * game does not tell us who is connected" instead of showing an empty list
+   * that reads as "nobody is playing". Set it only when `inspectLog` actually
+   * returns `playerEvent` — `tests/adapters.test.ts` checks the two agree.
+   */
+  reportsPlayers?: boolean;
+
   /** Where mods/plugins are dropped, relative to the server dir. */
   modDirectory?(variantId: string): string | null;
 

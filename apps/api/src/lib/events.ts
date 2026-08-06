@@ -1,4 +1,10 @@
-import type { ConsoleLine, InstallProgress, ResourceUsage, ServerState } from '@serverforge/core';
+import type {
+  ConsoleLine,
+  InstallProgress,
+  ResourceUsage,
+  ServerEvent,
+  ServerState,
+} from '@serverforge/core';
 import { prisma } from '@serverforge/db';
 import { CONSOLE_BUFFER_LINES, channels, keys, publisher, redis } from './redis.js';
 import { logger } from './logger.js';
@@ -44,11 +50,32 @@ export async function clearConsoleBuffer(serverUid: string): Promise<void> {
 }
 
 /**
+ * Announces something a server did, for event-triggered schedules.
+ *
+ * Fire-and-forget on purpose: a schedule that fails to fire must never be able
+ * to break the thing that provoked it, so a dead Redis loses the trigger rather
+ * than failing the state change or the log line that produced it.
+ */
+export async function publishServerEvent(event: ServerEvent): Promise<void> {
+  await publisher
+    .publish(channels.events(), JSON.stringify(event))
+    .catch((error) => logger.warn({ error, event }, 'failed to publish server event'));
+}
+
+/** State changes worth reacting to, and the trigger each one fires. */
+const STATE_TRIGGERS: Partial<Record<ServerState, ServerEvent['type']>> = {
+  running: 'server.ready',
+  crashed: 'server.crashed',
+  offline: 'server.stopped',
+};
+
+/**
  * Single writer for server state.
  *
  * Every state change goes through here so the DB row, the per-server channel
  * and the fleet channel can never disagree — a split between them is what
- * produces a dashboard stuck on "Starting…" forever.
+ * produces a dashboard stuck on "Starting…" forever. Being the single writer is
+ * also why the state-derived schedule triggers are emitted from here.
  */
 export async function setServerState(
   serverUid: string,
@@ -69,6 +96,11 @@ export async function setServerState(
     publisher.publish(channels.state(serverUid), payload),
     publisher.publish(channels.fleet(), payload),
   ]);
+
+  const trigger = STATE_TRIGGERS[state];
+  if (trigger) {
+    await publishServerEvent({ serverUid, type: trigger, at: Date.now() });
+  }
 }
 
 export async function publishStats(serverUid: string, usage: ResourceUsage): Promise<void> {

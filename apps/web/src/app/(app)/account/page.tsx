@@ -45,6 +45,8 @@ interface Me {
     avatarColor: string;
     createdAt: string;
     lastLoginAt: string | null;
+    twoFactorEnabled: boolean;
+    recoveryCodesLeft: number;
   };
 }
 
@@ -105,6 +107,10 @@ export default function AccountPage() {
       <ProfileCard user={user} onSaved={() => queryClient.invalidateQueries({ queryKey: ['me'] })} />
       <AppearanceCard role={user.role} />
       <PasswordCard />
+      <TwoFactorCard
+        user={user}
+        onChanged={() => queryClient.invalidateQueries({ queryKey: ['me'] })}
+      />
       <ApiKeysCard />
 
       <p className="text-[12px] text-ink-subtle">Account created {timeAgo(user.createdAt)}.</p>
@@ -440,6 +446,354 @@ function PasswordCard() {
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+// ───────────────────────────────────────────────────────────── two-factor ──
+
+/**
+ * Two-factor setup.
+ *
+ * Three states, and the middle one matters: a secret that has been generated
+ * but not yet confirmed with a working code changes nothing about signing in.
+ * Confirmation is what turns it on, which is what stops someone locking
+ * themselves out of a panel their authenticator never actually scanned.
+ */
+function TwoFactorCard({ user, onChanged }: { user: Me['user']; onChanged: () => void }) {
+  const toast = useToast();
+
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [enrolling, setEnrolling] = useState<{ secret: string; formattedSecret: string; otpauthUri: string } | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [disabling, setDisabling] = useState(false);
+
+  const fail = (error: unknown) => {
+    if (error instanceof ApiError) {
+      toast.push({ tone: 'danger', message: error.body.message, hint: error.body.hint });
+    }
+  };
+
+  const reset = () => {
+    setPassword('');
+    setCode('');
+    setEnrolling(null);
+    setDisabling(false);
+  };
+
+  const setup = useMutation({
+    mutationFn: () =>
+      api.post<{ secret: string; formattedSecret: string; otpauthUri: string }>(
+        '/api/auth/2fa/setup',
+        { password },
+      ),
+    onSuccess: (result) => {
+      setEnrolling(result);
+      setPassword('');
+    },
+    onError: fail,
+  });
+
+  const enable = useMutation({
+    mutationFn: () =>
+      api.post<{ recoveryCodes: string[] }>('/api/auth/2fa/enable', { code: code.trim() }),
+    onSuccess: (result) => {
+      setCodes(result.recoveryCodes);
+      reset();
+      onChanged();
+    },
+    onError: fail,
+  });
+
+  const disable = useMutation({
+    mutationFn: () =>
+      api.post('/api/auth/2fa/disable', { password, code: code.trim() }),
+    onSuccess: () => {
+      toast.push({ tone: 'ok', message: 'Two-factor authentication is off.' });
+      reset();
+      onChanged();
+    },
+    onError: fail,
+  });
+
+  const regenerate = useMutation({
+    mutationFn: () =>
+      api.post<{ recoveryCodes: string[] }>('/api/auth/2fa/recovery-codes', { password }),
+    onSuccess: (result) => {
+      setCodes(result.recoveryCodes);
+      reset();
+      onChanged();
+    },
+    onError: fail,
+  });
+
+  const lowOnCodes = user.twoFactorEnabled && user.recoveryCodesLeft <= 2;
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Two-factor authentication</CardTitle>
+              <CardDescription>
+                A code from your phone on top of your password. It is the single
+                most useful thing you can turn on if this panel is reachable from
+                the internet.
+              </CardDescription>
+            </div>
+            <Badge tone={user.twoFactorEnabled ? 'ok' : 'neutral'}>
+              {user.twoFactorEnabled ? 'On' : 'Off'}
+            </Badge>
+          </div>
+        </CardHeader>
+
+        <CardBody className="space-y-4">
+          {lowOnCodes && (
+            <div className="rounded-md border border-line border-l-2 border-l-warn bg-warn/[0.07] px-3 py-2.5">
+              <p className="text-[12.5px] text-ink-muted">
+                {user.recoveryCodesLeft === 0
+                  ? 'You have no recovery codes left. If you lose your phone you will be locked out — generate a new set now.'
+                  : `Only ${user.recoveryCodesLeft} recovery code${user.recoveryCodesLeft === 1 ? '' : 's'} left.`}
+              </p>
+            </div>
+          )}
+
+          {/* ── Off, and not yet enrolling ─────────────────────────────── */}
+          {!user.twoFactorEnabled && !enrolling && (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setup.mutate();
+              }}
+            >
+              <Field label="Confirm your password" required>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+              </Field>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={setup.isPending}
+                disabled={password === ''}
+              >
+                Set up two-factor
+              </Button>
+            </form>
+          )}
+
+          {/* ── Secret issued, waiting for a code to prove it works ─────── */}
+          {enrolling && (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                enable.mutate();
+              }}
+            >
+              <div className="space-y-2">
+                <p className="text-[13px] text-ink">
+                  Add this key to your authenticator app.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="readout flex-1 px-3 py-2 text-[13px] tracking-[0.12em]">
+                    {enrolling.formattedSecret}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      void copyToClipboard(enrolling.secret);
+                      toast.push({ tone: 'ok', message: 'Setup key copied.' });
+                    }}
+                  >
+                    <Copy className="h-4 w-4" aria-hidden />
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-[12.5px] leading-relaxed text-ink-subtle">
+                  Choose &ldquo;enter a setup key&rdquo; in your app and paste it
+                  in. On a phone,{' '}
+                  <a className="text-accent underline" href={enrolling.otpauthUri}>
+                    this link
+                  </a>{' '}
+                  opens the app directly.
+                </p>
+              </div>
+
+              <Field
+                label="Enter the code it shows"
+                help="Six digits. This proves the app and the panel agree before anything is switched on."
+                required
+              >
+                <Input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  maxLength={16}
+                  required
+                />
+              </Field>
+
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={enable.isPending}
+                  disabled={code.trim().length < 6}
+                >
+                  Turn on
+                </Button>
+                <Button type="button" variant="ghost" onClick={reset}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {/* ── On ─────────────────────────────────────────────────────── */}
+          {user.twoFactorEnabled && !disabling && (
+            <div className="space-y-4">
+              <p className="text-[13px] text-ink-muted">
+                You will be asked for a code from your app each time you sign in.
+                {user.recoveryCodesLeft > 0 &&
+                  ` You have ${user.recoveryCodesLeft} unused recovery code${user.recoveryCodesLeft === 1 ? '' : 's'}.`}
+              </p>
+
+              <form
+                className="space-y-4 border-t border-line pt-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  regenerate.mutate();
+                }}
+              >
+                <Field
+                  label="Confirm your password"
+                  help="Needed to generate a new set of recovery codes, or to turn two-factor off."
+                  required
+                >
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    required
+                  />
+                </Field>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    loading={regenerate.isPending}
+                    disabled={password === ''}
+                  >
+                    New recovery codes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={password === ''}
+                    onClick={() => setDisabling(true)}
+                  >
+                    Turn off
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ── Turning it off, which needs a code as well as the password ── */}
+          {user.twoFactorEnabled && disabling && (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                disable.mutate();
+              }}
+            >
+              <p className="text-[13px] text-ink-muted">
+                Turning this off means your password alone is enough to sign in.
+              </p>
+              <Field
+                label="Code from your app"
+                help="Or a recovery code, if you no longer have the app."
+                required
+              >
+                <Input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  maxLength={32}
+                  required
+                  data-autofocus
+                />
+              </Field>
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="danger"
+                  loading={disable.isPending}
+                  disabled={code.trim() === ''}
+                >
+                  Turn off two-factor
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setDisabling(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Shown once, and never again — same bargain as an API key. */}
+      <Modal
+        open={codes !== null}
+        onClose={() => setCodes(null)}
+        title="Save your recovery codes"
+        description="Each one works once, and only these get you in if you lose your phone. They are not shown again."
+        footer={
+          <Button variant="primary" onClick={() => setCodes(null)}>
+            I have saved them
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <ul className="readout grid grid-cols-2 gap-1.5 px-3 py-3 text-[13px]">
+            {(codes ?? []).map((entry) => (
+              <li key={entry} className="tracking-[0.08em]">
+                {entry}
+              </li>
+            ))}
+          </ul>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void copyToClipboard((codes ?? []).join('\n'));
+              toast.push({ tone: 'ok', message: 'Recovery codes copied.' });
+            }}
+          >
+            <Copy className="h-4 w-4" aria-hidden />
+            Copy all
+          </Button>
+          <p className="text-[12.5px] leading-relaxed text-ink-subtle">
+            Keep these somewhere that is not your phone — a password manager, or
+            printed. If you lose both the app and these codes, nobody can let you
+            back in.
+          </p>
+        </div>
+      </Modal>
+    </>
   );
 }
 

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   badRequest,
   brand,
@@ -6,6 +6,10 @@ import {
   loginSchema,
   registerSchema,
   tooManyRequests,
+  twoFactorDisableSchema,
+  twoFactorEnableSchema,
+  twoFactorLoginSchema,
+  twoFactorSetupSchema,
   unauthorized,
   usernameSchema,
 } from '@serverforge/core';
@@ -22,6 +26,19 @@ import {
 import { hashPassword, verifyPassword } from '../lib/crypto.js';
 import { keys, redis } from '../lib/redis.js';
 import { recordAudit } from '../lib/events.js';
+import { formatSecret, generateSecret, otpauthUri } from '../lib/totp.js';
+import {
+  beginEnrolment,
+  completeEnrolment,
+  consumeTicket,
+  countTicketFailure,
+  disableTwoFactor,
+  discardTicket,
+  issueTicket,
+  regenerateRecoveryCodes,
+  requiresTwoFactor,
+  verifySecondFactor,
+} from '../services/two-factor.js';
 
 /**
  * Authentication routes.
@@ -52,6 +69,29 @@ function publicUser(user: {
     displayName: user.displayName,
     role: user.role,
   };
+}
+
+/** The tail of a successful sign-in, shared by the one-step and two-step paths. */
+async function startSession(
+  reply: FastifyReply,
+  user: { id: string; uid: string },
+  userAgent: string | undefined,
+  ip: string,
+): Promise<void> {
+  const session = await createSession(user.id, {
+    ...(userAgent ? { userAgent } : {}),
+    ip,
+  });
+  setSessionCookie(reply, session.token, session.expiresAt);
+
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  await recordAudit({
+    actorId: user.id,
+    action: 'user.login',
+    targetType: 'user',
+    targetId: user.uid,
+    ip,
+  });
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -148,22 +188,77 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     await redis.del(throttleKey);
 
-    const session = await createSession(user.id, {
-      ...(request.headers['user-agent'] ? { userAgent: request.headers['user-agent'] } : {}),
-      ip: request.ip,
-    });
-    setSessionCookie(reply, session.token, session.expiresAt);
+    // A correct password is not a session when a second factor is owed. The
+    // ticket lets the browser come back for step two and nothing else.
+    if (requiresTwoFactor(user)) {
+      await recordAudit({
+        actorId: user.id,
+        action: 'user.login_2fa_challenge',
+        targetType: 'user',
+        targetId: user.uid,
+        ip: request.ip,
+      });
+      return { twoFactorRequired: true, ticket: await issueTicket(user.id) };
+    }
 
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    await recordAudit({
-      actorId: user.id,
-      action: 'user.login',
-      targetType: 'user',
-      targetId: user.uid,
-      ip: request.ip,
-    });
-
+    await startSession(reply, user, request.headers['user-agent'], request.ip);
     return { user: publicUser(user) };
+  });
+
+  /**
+   * Step two. Takes an authenticator code or a recovery code — the person
+   * signing in should not have to tell us which kind they are holding.
+   */
+  app.post('/api/auth/login/2fa', async (request, reply) => {
+    const input = twoFactorLoginSchema.parse(request.body);
+
+    const userId = await consumeTicket(input.ticket);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.suspended) {
+      await discardTicket(input.ticket);
+      throw unauthorized('That sign-in attempt is no longer valid.');
+    }
+
+    const result = await verifySecondFactor(user, input.code);
+    if (!result.ok) {
+      await countTicketFailure(input.ticket);
+      await recordAudit({
+        actorId: user.id,
+        action: 'user.login_2fa_failed',
+        targetType: 'user',
+        targetId: user.uid,
+        ip: request.ip,
+      });
+      throw unauthorized('That code is not right, or it has already been used.');
+    }
+
+    await discardTicket(input.ticket);
+    await startSession(reply, user, request.headers['user-agent'], request.ip);
+
+    if (result.usedRecoveryCode) {
+      await recordAudit({
+        actorId: user.id,
+        action: 'user.login_recovery_code',
+        targetType: 'user',
+        targetId: user.uid,
+        metadata: { remaining: result.recoveryCodesLeft },
+        ip: request.ip,
+      });
+    }
+
+    return {
+      user: publicUser(user),
+      usedRecoveryCode: result.usedRecoveryCode,
+      recoveryCodesLeft: result.recoveryCodesLeft,
+      ...(result.usedRecoveryCode
+        ? {
+            hint:
+              result.recoveryCodesLeft === 0
+                ? 'That was your last recovery code. Generate a new set under Account before you are locked out.'
+                : `You have ${result.recoveryCodesLeft} recovery code${result.recoveryCodesLeft === 1 ? '' : 's'} left.`,
+          }
+        : {}),
+    };
   });
 
   app.post('/api/auth/logout', async (request, reply) => {
@@ -185,6 +280,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         avatarColor: true,
         createdAt: true,
         lastLoginAt: true,
+        totpEnabledAt: true,
+        recoveryCodeHashes: true,
       },
     });
 
@@ -198,7 +295,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         ? await getSetting<boolean>(SETUP_COMPLETED, false)
         : true;
 
-    return { user: record, setupCompleted };
+    // The hashes themselves never leave the server — only how many are left,
+    // which is what the account page needs to warn someone running low.
+    const { recoveryCodeHashes, totpEnabledAt, ...rest } = record;
+    return {
+      user: {
+        ...rest,
+        twoFactorEnabled: totpEnabledAt !== null,
+        recoveryCodesLeft: totpEnabledAt !== null ? recoveryCodeHashes.length : 0,
+      },
+      setupCompleted,
+    };
   });
 
   app.patch('/api/auth/me', async (request) => {
@@ -239,6 +346,135 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     return { user: updated };
+  });
+
+  // ── Two-factor enrolment ──────────────────────────────────────────────
+  //
+  // Every route here re-asks for the password. The session is already
+  // authenticated, but turning 2FA on is exactly what someone who stole a
+  // session would do to keep the real owner out — and turning it off is what
+  // they would do to keep themselves in.
+
+  app.post('/api/auth/2fa/setup', async (request) => {
+    const user = await requireAuth(request);
+    const input = twoFactorSetupSchema.parse(request.body);
+
+    const record = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    if (!(await verifyPassword(record.passwordHash, input.password))) {
+      throw unauthorized('That password is not right.');
+    }
+    if (record.totpEnabledAt) {
+      throw conflict(
+        'Two-factor authentication is already on.',
+        'Turn it off first if you want to set up a different app.',
+      );
+    }
+
+    const secret = generateSecret();
+    await beginEnrolment(user.id, secret);
+
+    return {
+      secret,
+      formattedSecret: formatSecret(secret),
+      otpauthUri: otpauthUri({ secret, account: record.username, issuer: brand.name }),
+    };
+  });
+
+  app.post('/api/auth/2fa/enable', async (request) => {
+    const user = await requireAuth(request);
+    const input = twoFactorEnableSchema.parse(request.body);
+
+    const record = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    if (!record.totpSecret) {
+      throw conflict('Start the setup first.', 'Open Account and choose "Set up two-factor".');
+    }
+    if (record.totpEnabledAt) {
+      throw conflict('Two-factor authentication is already on.');
+    }
+
+    // Confirming with a live code is the point: it proves the app is holding
+    // the same secret, so nobody locks themselves out of a working account.
+    const result = await verifySecondFactor(record, input.code);
+    if (!result.ok) {
+      throw unauthorized('That code is not right. Check your app and try the next one.');
+    }
+
+    const recoveryCodes = await completeEnrolment(record);
+
+    // Existing sessions are left alone on purpose: turning 2FA on protects
+    // future sign-ins, and signing someone out of every device they own as a
+    // reward for improving their security is a good way to stop them doing it.
+    await recordAudit({
+      actorId: user.id,
+      action: 'user.2fa_enabled',
+      targetType: 'user',
+      targetId: user.uid,
+      ip: request.ip,
+    });
+
+    return {
+      ok: true,
+      recoveryCodes,
+      message:
+        'Two-factor authentication is on. Save these recovery codes somewhere other than your phone — they are the only way back in if you lose it, and they are not shown again.',
+    };
+  });
+
+  app.post('/api/auth/2fa/disable', async (request) => {
+    const user = await requireAuth(request);
+    const input = twoFactorDisableSchema.parse(request.body);
+
+    const record = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    if (!record.totpEnabledAt) {
+      throw conflict('Two-factor authentication is not on.');
+    }
+    if (!(await verifyPassword(record.passwordHash, input.password))) {
+      throw unauthorized('That password is not right.');
+    }
+
+    const result = await verifySecondFactor(record, input.code);
+    if (!result.ok) {
+      throw unauthorized('That code is not right, or it has already been used.');
+    }
+
+    await disableTwoFactor(user.id);
+    await recordAudit({
+      actorId: user.id,
+      action: 'user.2fa_disabled',
+      targetType: 'user',
+      targetId: user.uid,
+      ip: request.ip,
+    });
+
+    return { ok: true, message: 'Two-factor authentication is off.' };
+  });
+
+  app.post('/api/auth/2fa/recovery-codes', async (request) => {
+    const user = await requireAuth(request);
+    const input = twoFactorSetupSchema.parse(request.body);
+
+    const record = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    if (!record.totpEnabledAt) {
+      throw conflict('Two-factor authentication is not on.');
+    }
+    if (!(await verifyPassword(record.passwordHash, input.password))) {
+      throw unauthorized('That password is not right.');
+    }
+
+    const recoveryCodes = await regenerateRecoveryCodes(user.id);
+    await recordAudit({
+      actorId: user.id,
+      action: 'user.2fa_recovery_codes_regenerated',
+      targetType: 'user',
+      targetId: user.uid,
+      ip: request.ip,
+    });
+
+    return {
+      ok: true,
+      recoveryCodes,
+      message: 'These replace your old codes. The old ones no longer work.',
+    };
   });
 
   app.post('/api/auth/password', async (request) => {

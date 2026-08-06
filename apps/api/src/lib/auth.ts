@@ -1,7 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
+  explainRefusal,
   forbidden,
+  resolveServerAccess,
+  sanitisePermissionMap,
   unauthorized,
+  type AccessInput,
   type Role,
   type ServerPermission,
 } from '@serverforge/core';
@@ -167,8 +171,37 @@ export async function requireRole(request: FastifyRequest, roles: Role[]): Promi
 }
 
 /**
+ * Turns a membership row into the shape the resolver understands.
+ *
+ * Exported because the routes that report *effective* permissions to the
+ * dashboard have to build the same input — if they built it differently the
+ * UI would show tabs the API then refuses.
+ */
+export function accessInputFor(
+  user: { id: string; role: Role },
+  server: { ownerId: string; subusers: ServerWithAccess['subusers'] },
+): AccessInput {
+  const membership = server.subusers.find((entry) => entry.userId === user.id);
+  return {
+    panelRole: user.role,
+    isServerOwner: server.ownerId === user.id,
+    directGrants: membership?.permissions ?? [],
+    roles: (membership?.roles ?? []).map((role) => ({
+      name: role.name,
+      permissions: sanitisePermissionMap(role.permissions),
+    })),
+  };
+}
+
+/**
  * Resolves a server the user is allowed to touch, checking the specific
- * permission. Owners and panel admins bypass the per-server list.
+ * permission.
+ *
+ * The decision itself lives in `resolveServerAccess` — a pure function with an
+ * exhaustive test suite — so this only has to fetch the inputs and translate a
+ * refusal into the right HTTP status. An API key is a *ceiling*: it can narrow
+ * what its owner may do through that key, never widen it, so it is checked
+ * first and independently.
  *
  * Returns the server row so callers do not need a second query.
  */
@@ -187,24 +220,33 @@ export async function requireServerAccess(
 
   const server = await prisma.server.findUnique({
     where: { uid: serverUid },
-    include: { allocations: true, node: true, subusers: { where: { userId: user.id } } },
+    include: {
+      allocations: true,
+      node: true,
+      // Not filtered to this user: the row is handed to callers as
+      // `ServerWithAccess`, and the sub-user screens need the full list.
+      subusers: { include: { roles: true } },
+    },
   });
 
   // Deliberately a 404 rather than a 403: an unauthorised user should not be
   // able to probe which server ids exist.
   if (!server) throw unauthorized();
 
-  const isOwner = server.ownerId === user.id;
-  const isAdmin = user.role === 'owner' || user.role === 'admin';
-  if (isOwner || isAdmin) return { user, server };
+  const decision = resolveServerAccess(accessInputFor(user, server), permission);
+  if (decision.allowed) return { user, server };
 
-  const membership = server.subusers[0];
-  if (!membership) throw unauthorized();
-  if (!membership.permissions.includes(permission)) {
-    throw forbidden(`You don't have the "${permission.replace('server.', '')}" permission here.`);
-  }
+  // Someone with no relationship to the server at all is told it does not
+  // exist, for the same reason as above. Someone who *is* on the server but
+  // lacks this one permission already knows it exists, so they get the real
+  // reason — including which role took it away, if one did.
+  const known =
+    server.ownerId === user.id ||
+    user.role === 'admin' ||
+    server.subusers.some((entry) => entry.userId === user.id);
+  if (!known) throw unauthorized();
 
-  return { user, server };
+  throw forbidden(explainRefusal(decision, permission));
 }
 
 /** Issues an API key, returning the plaintext exactly once. */

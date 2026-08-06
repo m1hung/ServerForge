@@ -13,7 +13,14 @@ export type ServerWithRelations = Prisma.ServerGetPayload<{
 }>;
 
 export type ServerWithAccess = Prisma.ServerGetPayload<{
-  include: { allocations: true; node: true; subusers: true };
+  include: {
+    allocations: true;
+    node: true;
+    // Roles come along with the membership because the access check needs
+    // them on every request — fetching them separately would mean a second
+    // round trip on the hottest path in the API.
+    subusers: { include: { roles: true } };
+  };
 }>;
 
 export { uid, UID_ALPHABET } from './uid.js';

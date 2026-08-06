@@ -1,11 +1,13 @@
 import { Worker } from 'bullmq';
 import parser from 'cron-parser';
+import { SCHEDULE_TRIGGERS, type ScheduleTrigger, type ServerEvent } from '@serverforge/core';
 import { prisma } from '@serverforge/db';
-import { queueConnection } from '../lib/redis.js';
+import { channels, eventSubscriber, keys, queueConnection, redis } from '../lib/redis.js';
 import { logger } from '../lib/logger.js';
 import { recordActivity } from '../lib/events.js';
 import { createBackupRecord, pruneScheduleBackups, runBackup, runRestore } from '../services/backups.js';
 import { restartServer, sendConsoleCommand, startServer, stopServer } from '../services/servers.js';
+import { sendWebhook } from '../services/webhooks.js';
 import { createInstallWorker } from './install-worker.js';
 import {
   backupQueue,
@@ -26,11 +28,14 @@ import {
  */
 
 export interface ScheduleAction {
-  type: 'power' | 'command' | 'backup' | 'update';
+  type: 'power' | 'command' | 'backup' | 'update' | 'webhook';
   action?: 'start' | 'stop' | 'restart';
   command?: string;
   retain?: number;
   startAfter?: boolean;
+  url?: string;
+  template?: string;
+  format?: 'discord' | 'json';
 }
 
 export function createWorkers(): Worker[] {
@@ -65,10 +70,11 @@ export function createWorkers(): Worker[] {
   );
 
   workers.push(
-    new Worker<ScheduleJob>('schedule', async (job) => runSchedule(job.data.scheduleId), {
-      connection: queueConnection,
-      concurrency: 4,
-    }),
+    new Worker<ScheduleJob>(
+      'schedule',
+      async (job) => runSchedule(job.data.scheduleId, job.data.trigger),
+      { connection: queueConnection, concurrency: 4 },
+    ),
   );
 
   for (const worker of workers) {
@@ -80,7 +86,10 @@ export function createWorkers(): Worker[] {
   return workers;
 }
 
-async function runSchedule(scheduleId: string): Promise<void> {
+async function runSchedule(
+  scheduleId: string,
+  trigger?: ScheduleJob['trigger'],
+): Promise<void> {
   const schedule = await prisma.schedule.findUnique({
     where: { id: scheduleId },
     include: { server: true },
@@ -90,10 +99,15 @@ async function runSchedule(scheduleId: string): Promise<void> {
   const server = schedule.server;
   const isOnline = ['running', 'starting'].includes(server.state);
 
+  // Only a cron schedule has a next run to advance. An event-triggered one
+  // keeps nextRunAt null, which is also what excludes it from the tick below.
+  const advance = () =>
+    schedule.cron ? { nextRunAt: nextRun(schedule.cron, schedule.timezone) } : {};
+
   if (schedule.onlyWhenOnline && !isOnline) {
     await prisma.schedule.update({
       where: { id: schedule.id },
-      data: { lastRunAt: new Date(), lastRunOk: true, lastRunError: null, nextRunAt: nextRun(schedule.cron, schedule.timezone) },
+      data: { lastRunAt: new Date(), lastRunOk: true, lastRunError: null, ...advance() },
     });
     return;
   }
@@ -139,6 +153,23 @@ async function runSchedule(scheduleId: string): Promise<void> {
           });
           break;
         }
+
+        case 'webhook': {
+          if (!action.url) break;
+          await sendWebhook({
+            url: action.url,
+            format: action.format ?? 'discord',
+            template: action.template ?? '{server}: {event}',
+            context: {
+              serverName: server.name,
+              serverUid: server.uid,
+              taskName: schedule.name,
+              trigger: (trigger?.type ?? schedule.triggerType) as ScheduleTrigger | null,
+              playerName: trigger?.playerName ?? null,
+            },
+          });
+          break;
+        }
       }
     }
 
@@ -148,13 +179,15 @@ async function runSchedule(scheduleId: string): Promise<void> {
         lastRunAt: new Date(),
         lastRunOk: true,
         lastRunError: null,
-        nextRunAt: nextRun(schedule.cron, schedule.timezone),
+        ...advance(),
       },
     });
     await recordActivity({
       serverId: server.id,
       action: 'schedule.run',
-      message: `Scheduled task "${schedule.name}" ran.`,
+      message: schedule.triggerType
+        ? `Task "${schedule.name}" ran on ${schedule.triggerType}.`
+        : `Scheduled task "${schedule.name}" ran.`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -164,7 +197,7 @@ async function runSchedule(scheduleId: string): Promise<void> {
         lastRunAt: new Date(),
         lastRunOk: false,
         lastRunError: message,
-        nextRunAt: nextRun(schedule.cron, schedule.timezone),
+        ...advance(),
       },
     });
     await recordActivity({
@@ -176,7 +209,8 @@ async function runSchedule(scheduleId: string): Promise<void> {
   }
 }
 
-export function nextRun(cron: string, timezone: string): Date | null {
+export function nextRun(cron: string | null | undefined, timezone: string): Date | null {
+  if (!cron) return null;
   try {
     return parser.parseExpression(cron, { tz: timezone }).next().toDate();
   } catch {
@@ -190,11 +224,19 @@ export function nextRun(cron: string, timezone: string): Date | null {
  * A single interval enqueues due schedules rather than one BullMQ repeatable
  * job per schedule: repeatable jobs are awkward to keep in sync with rows a
  * user edits, and this stays correct after any edit without cleanup.
+ *
+ * Event-triggered schedules are excluded by `cron: { not: null }`. Their
+ * nextRunAt is permanently null, so without that filter every tick would
+ * re-select them, write null back, and crowd out real cron rows in `take: 50`.
  */
 export function startScheduler(): NodeJS.Timeout {
   const tick = async () => {
     const due = await prisma.schedule.findMany({
-      where: { enabled: true, OR: [{ nextRunAt: null }, { nextRunAt: { lte: new Date() } }] },
+      where: {
+        enabled: true,
+        cron: { not: null },
+        OR: [{ nextRunAt: null }, { nextRunAt: { lte: new Date() } }],
+      },
       take: 50,
     });
 
@@ -218,6 +260,89 @@ export function startScheduler(): NodeJS.Timeout {
 
   void tick().catch((error) => logger.error({ error }, 'scheduler tick failed'));
   return setInterval(() => void tick().catch((error) => logger.error({ error }, 'scheduler tick failed')), 30_000);
+}
+
+/**
+ * The trigger listener.
+ *
+ * Servers announce what they did on one Redis channel; this turns those
+ * announcements into schedule runs. It reuses the same queue and the same
+ * `runSchedule` as the cron path, so an event-triggered task and a timed one
+ * behave identically once they start — only the reason for starting differs.
+ */
+export function startTriggerListener(): () => void {
+  const channel = channels.events();
+
+  const onMessage = (received: string, payload: string) => {
+    if (received !== channel) return;
+    void dispatchServerEvent(payload).catch((error) =>
+      logger.error({ error }, 'failed to dispatch a server event to schedules'),
+    );
+  };
+
+  eventSubscriber.on('message', onMessage);
+  void eventSubscriber
+    .subscribe(channel)
+    .catch((error) => logger.error({ error }, 'could not subscribe to server events'));
+
+  return () => {
+    eventSubscriber.off('message', onMessage);
+    void eventSubscriber.unsubscribe(channel).catch(() => undefined);
+  };
+}
+
+async function dispatchServerEvent(payload: string): Promise<void> {
+  let event: ServerEvent;
+  try {
+    event = JSON.parse(payload) as ServerEvent;
+  } catch {
+    return;
+  }
+
+  if (!event?.serverUid || !SCHEDULE_TRIGGERS.includes(event.type)) return;
+
+  const schedules = await prisma.schedule.findMany({
+    where: {
+      enabled: true,
+      triggerType: event.type,
+      server: { uid: event.serverUid },
+    },
+    select: { id: true, name: true, cooldownSeconds: true },
+  });
+
+  for (const schedule of schedules) {
+    if (!(await claimCooldown(schedule.id, schedule.cooldownSeconds))) {
+      logger.debug(
+        { scheduleId: schedule.id, trigger: event.type },
+        'trigger ignored — schedule is still in its cooldown window',
+      );
+      continue;
+    }
+
+    await scheduleQueue().add(
+      'run',
+      {
+        scheduleId: schedule.id,
+        trigger: {
+          type: event.type,
+          ...(event.playerName ? { playerName: event.playerName } : {}),
+          at: event.at,
+        },
+      },
+      { jobId: `${schedule.id}:${event.type}:${event.at}` },
+    );
+  }
+}
+
+/**
+ * Takes the cooldown slot for a schedule, or reports that someone already has
+ * it. SET NX is what makes this safe with more than one worker: two events
+ * arriving together cannot both win.
+ */
+async function claimCooldown(scheduleId: string, seconds: number): Promise<boolean> {
+  if (seconds <= 0) return true;
+  const claimed = await redis.set(keys.scheduleCooldown(scheduleId), '1', 'EX', seconds, 'NX');
+  return claimed === 'OK';
 }
 
 export { restoreQueue };

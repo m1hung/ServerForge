@@ -34,6 +34,11 @@ export interface RestoreJob {
 
 export interface ScheduleJob {
   scheduleId: string;
+  /**
+   * The event that fired this, when one did. Carried through so a webhook can
+   * say *which* player joined — the whole point of that message.
+   */
+  trigger?: { type: string; playerName?: string; at: number };
 }
 
 const defaultJobOptions = {

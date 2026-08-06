@@ -27,6 +27,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  /** Set once the password is accepted and a second factor is owed. */
+  const [ticket, setTicket] = useState<string | null>(null);
+  const [code, setCode] = useState('');
 
   const context = useQuery({
     queryKey: ['auth-context'],
@@ -37,7 +40,7 @@ export default function LoginPage() {
   const isSetup = context.data?.needsSetup ?? false;
 
   const submit = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ twoFactorRequired?: boolean; ticket?: string }> => {
       const handle = username.trim().toLowerCase();
       if (isSetup) {
         return api.post('/api/auth/register', {
@@ -46,13 +49,45 @@ export default function LoginPage() {
           displayName: handle,
         });
       }
-      return api.post('/api/auth/login', { username: handle, password });
+      return api.post<{ twoFactorRequired?: boolean; ticket?: string }>('/api/auth/login', {
+        username: handle,
+        password,
+      });
     },
-    onSuccess: () => router.push('/servers'),
+    onSuccess: (result) => {
+      // A password alone is not a session for an account with 2FA on; the
+      // server hands back a ticket good for nothing but the second step.
+      if (result?.twoFactorRequired && result.ticket) {
+        setTicket(result.ticket);
+        setPassword('');
+        return;
+      }
+      router.push('/servers');
+    },
     onError: (err) => {
       if (err instanceof ApiError) {
         setError(err.body.message);
         setHint(err.body.hint ?? err.fieldIssues[0]?.message ?? null);
+      } else {
+        setError('Could not reach the panel. Is the API running?');
+        setHint(null);
+      }
+    },
+  });
+
+  const submitCode = useMutation({
+    mutationFn: () => api.post('/api/auth/login/2fa', { ticket, code: code.trim() }),
+    onSuccess: () => router.push('/servers'),
+    onError: (err) => {
+      if (err instanceof ApiError) {
+        setError(err.body.message);
+        setHint(err.body.hint ?? null);
+        setCode('');
+        // An expired or burnt-through ticket cannot be retried, so the form
+        // goes back to the password step rather than looping on a dead code.
+        if (err.status === 401 && /expired|no longer valid/i.test(err.body.message)) {
+          setTicket(null);
+        }
       } else {
         setError('Could not reach the panel. Is the API running?');
         setHint(null);
@@ -104,10 +139,86 @@ export default function LoginPage() {
           </div>
           <h1 className="engraved text-lg">{BRAND.name}</h1>
           <p className="mt-2.5 text-[13px] text-ink-muted">
-            {isSetup ? 'Create the account that will own this panel.' : BRAND.tagline}
+            {ticket
+              ? 'One more step.'
+              : isSetup
+                ? 'Create the account that will own this panel.'
+                : BRAND.tagline}
           </p>
         </div>
 
+        {ticket ? (
+          <Card>
+            <CardBody>
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setError(null);
+                  setHint(null);
+                  submitCode.mutate();
+                }}
+              >
+                <Field
+                  label="Authentication code"
+                  help="The six digits from your authenticator app. If you have lost your phone, enter one of your recovery codes instead."
+                  required
+                >
+                  <Input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    // Numeric so phones raise the digit keypad, but not
+                    // type="number": a recovery code goes in this box too.
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder="123456"
+                    maxLength={32}
+                    required
+                    data-autofocus
+                  />
+                </Field>
+
+                {error && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-line border-l-2 border-l-danger bg-danger/[0.07] px-3 py-2.5"
+                  >
+                    <p className="text-[12.5px] font-medium text-danger">{error}</p>
+                    {hint && <p className="mt-1 text-[12.5px] text-ink-muted">{hint}</p>}
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
+                  loading={submitCode.isPending}
+                  loadingText="Checking…"
+                >
+                  Verify
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => {
+                    setTicket(null);
+                    setCode('');
+                    setError(null);
+                    setHint(null);
+                  }}
+                >
+                  Back
+                </Button>
+              </form>
+            </CardBody>
+          </Card>
+        ) : (
         <Card>
           <CardBody>
             <form
@@ -181,8 +292,9 @@ export default function LoginPage() {
             </form>
           </CardBody>
         </Card>
+        )}
 
-        {isSetup && (
+        {isSetup && !ticket && (
           <p className="mt-4 text-center text-[12.5px] leading-relaxed text-ink-subtle">
             This first account becomes the owner. Everyone else joins by invitation.
           </p>

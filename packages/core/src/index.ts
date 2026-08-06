@@ -4,5 +4,6 @@ export * from './errors.js';
 export * from './format.js';
 export * from './net.js';
 export * from './paths.js';
+export * from './permissions.js';
 export * from './settings-schema.js';
 export * from './types.js';

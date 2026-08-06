@@ -37,12 +37,65 @@ holds something valuable is a decision worth making deliberately.
 - **Password change** invalidates every other session.
 - **Suspension** deletes sessions immediately, not at next expiry.
 
+### Two-factor authentication
+
+TOTP (RFC 6238), implemented in `apps/api/src/lib/totp.ts` and pinned against
+the RFC's published test vectors in `tests/totp.test.ts`.
+
+- The secret is **AES-256-GCM encrypted at rest**, so a database dump alone does
+  not let someone generate codes.
+- A correct password does **not** create a session when 2FA is on. It returns a
+  ticket that expires in 5 minutes, is single-use, and is destroyed after 5
+  wrong codes — six digits is only a million possibilities, so the attempt
+  limit is what makes the space large enough.
+- A code that has been accepted **cannot be replayed** inside its validity
+  window, so one observed over a shoulder or captured by a phishing page is
+  already spent.
+- Verification allows ±1 time step for clock drift and compares in constant
+  time, with no early exit between candidate steps.
+- **Recovery codes**: 10 single-use codes, stored only as SHA-256, removed as
+  they are used, shown exactly once. The alphabet excludes `0/O`, `1/I/L` and
+  `U/V` because these get written on paper.
+- Enrolment is confirmed with a live code before anything changes, so a
+  mis-scanned secret cannot lock someone out of their own panel.
+- Enabling, disabling and regenerating codes all re-ask for the password: a
+  stolen session should not be able to turn 2FA on to keep the real owner out,
+  or off to keep itself in.
+
+**API keys deliberately bypass 2FA.** They are a separate credential with their
+own scopes and revocation, and a second factor cannot be typed by a script. If
+you turn 2FA on because an account may be compromised, revoke its keys too.
+
 ### Authorisation
 
 Three panel roles (`owner`, `admin`, `user`) plus per-server sub-users with ten
 granular permissions. Every server route resolves access through
 `requireServerAccess(request, uid, permission)` — there is no path that reads a
 server without a permission check.
+
+Permissions come from four places: the panel role, owning the server, **access
+roles** assigned on that server, and direct grants on the membership row. How
+they combine is decided by one pure function, `resolveServerAccess` in
+`packages/core/src/permissions.ts`, with an exhaustive test suite. Two rules,
+in order:
+
+1. **The panel owner is always allowed.** Nothing can deny them — a panel whose
+   owner can be locked out of it has no way back.
+2. **Otherwise a deny beats everything.** A role that denies `server.files`
+   takes it away from a panel admin and from the server's own owner. That is
+   the difference between `deny` and merely "not granted".
+
+A permission left out of a role's map is **neutral**: it neither grants nor
+blocks, leaving another source to decide. Neutral is expressed by absence, so
+there is exactly one way to say it.
+
+The same resolver produces the *effective* permission list the dashboard uses
+to decide which tabs to show, and filters the server list so a denied server
+does not appear and then 403 when opened. A second implementation of these
+rules anywhere would be a way for the UI and the API to disagree.
+
+An API key is a **ceiling**, checked separately and first: it can narrow what
+its owner may do through that key, never widen it.
 
 Requesting a server you cannot see returns **404, not 403**, so the API cannot
 be used to enumerate which servers exist.
@@ -110,6 +163,28 @@ is at the host level (kernel or Docker version), not in the panel.
 - Logs redact cookies, authorization headers, and every known password field.
 - Secret settings are never echoed back by the API; the UI shows set/not-set
   and writes a new value only if you enter one.
+
+### Outbound requests from user input
+
+A schedule's webhook action is the one place a user gets to name a URL that the
+panel itself then requests, from inside whatever network the panel runs on.
+Unguarded that is a probe for the Docker API on localhost, a router admin page
+on the LAN, or the cloud metadata service on `169.254.169.254`, which on a
+hosted box hands out instance credentials.
+
+- Only `http:` and `https:` are accepted, and never with embedded credentials.
+- The hostname is resolved and **every** returned address is checked against
+  private, loopback, link-local, CGNAT, multicast and reserved space — IPv6
+  included, with IPv4-mapped (`::ffff:127.0.0.1`) and NAT64 addresses judged as
+  the IPv4 address they carry.
+- Redirects are never followed. A public host that passed the check would
+  otherwise be able to bounce the request to a private one.
+- The check runs again at send time, not just when the schedule is saved, since
+  DNS can be repointed in between.
+- Responses are never read, only their status, so a receiver cannot tie up a
+  worker with a large body. Requests time out at 10 seconds.
+
+See `apps/api/src/lib/ssrf.ts`.
 
 ### Rate limiting and CORS
 

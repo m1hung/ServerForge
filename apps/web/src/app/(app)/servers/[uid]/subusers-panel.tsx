@@ -29,9 +29,18 @@ import {
  * a membership without it would be a person who can see nothing.
  */
 
+interface AssignedRole {
+  uid: string;
+  name: string;
+  permissions: Record<string, 'allow' | 'deny'>;
+}
+
 interface Subuser {
   userId: string;
   permissions: string[];
+  roles: AssignedRole[];
+  /** What they can actually do once roles and denies are applied. */
+  effectivePermissions: string[];
   createdAt: string;
   user: {
     uid: string;
@@ -182,7 +191,14 @@ export function SubusersPanel({ uid, permissions }: { uid: string; permissions: 
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
             {list.map((subuser) => {
-              const granted = PERMISSIONS.filter((p) => subuser.permissions.includes(p.key));
+              // The *effective* list, not the switches: someone can have
+              // "Restart" turned on and still not be able to restart, because
+              // a role denies it. Showing the switch state here would be a lie.
+              const effective = subuser.effectivePermissions ?? subuser.permissions;
+              const granted = PERMISSIONS.filter((p) => effective.includes(p.key));
+              const takenAway = PERMISSIONS.filter(
+                (p) => subuser.permissions.includes(p.key) && !effective.includes(p.key),
+              );
 
               return (
                 <li key={subuser.user.uid} className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -196,15 +212,25 @@ export function SubusersPanel({ uid, permissions }: { uid: string; permissions: 
                       <span className="truncate font-mono text-[11.5px] text-ink-subtle">
                         {subuser.user.username}
                       </span>
-                      {subuser.permissions.includes('server.subusers') && (
+                      {effective.includes('server.subusers') && (
                         <Badge tone="warn">Can add others</Badge>
                       )}
+                      {(subuser.roles ?? []).map((role) => (
+                        <Badge key={role.uid} tone="accent">
+                          {role.name}
+                        </Badge>
+                      ))}
                     </div>
                     <p className="mt-0.5 text-[12px] text-ink-muted">
                       {granted.length === 0
                         ? 'Can view this server only'
                         : granted.map((p) => p.label.toLowerCase()).join(' · ')}
                     </p>
+                    {takenAway.length > 0 && (
+                      <p className="mt-0.5 text-[12px] text-danger">
+                        Blocked by a role: {takenAway.map((p) => p.label.toLowerCase()).join(' · ')}
+                      </p>
+                    )}
                     <p className="mt-0.5 text-[11.5px] text-ink-subtle">
                       Added {timeAgo(subuser.createdAt)}
                     </p>
@@ -295,13 +321,24 @@ function AccessEditor({
   const [granted, setGranted] = useState<string[]>(
     subuser?.permissions.filter((p) => p !== 'server.view') ?? PRESETS.moderator,
   );
+  const [roleUids, setRoleUids] = useState<string[]>(
+    subuser?.roles.map((role) => role.uid) ?? [],
+  );
+
+  // Roles are defined panel-wide; this only picks which of them apply here.
+  const roles = useQuery({
+    queryKey: ['access-roles'],
+    queryFn: () => api.get<{ roles: AssignedRole[] }>('/api/admin/roles'),
+    retry: false,
+  });
 
   const save = useMutation({
     mutationFn: () =>
       api.post(`/api/servers/${uid}/subusers`, {
         username: username.trim().toLowerCase(),
-        // The API needs at least one permission, and view is what the row means.
+        // The API needs a role or a permission, and view is what the row means.
         permissions: ['server.view', ...granted],
+        roleUids,
       }),
     onSuccess: () =>
       onSaved(
@@ -413,6 +450,47 @@ function AccessEditor({
             Everyone added can see the server, its status and its resource graphs. Everything below
             is on top of that.
           </p>
+
+          {(roles.data?.roles.length ?? 0) > 0 && (
+            <div className="space-y-2">
+              <p className="legend text-ink-muted">Roles</p>
+              <p className="text-[12.5px] leading-relaxed text-ink-muted">
+                A role applies its own permissions on top of the switches below.
+                Anything a role <span className="text-danger">denies</span> is
+                taken away even if it is switched on here.
+              </p>
+              <ul className="divide-y divide-line rounded-lg border border-line">
+                {(roles.data?.roles ?? []).map((role) => {
+                  const denied = Object.entries(role.permissions)
+                    .filter(([, state]) => state === 'deny')
+                    .map(([key]) => key.replace('server.', ''));
+                  return (
+                    <li key={role.uid} className="flex items-start gap-3 px-3.5 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] text-ink">{role.name}</p>
+                        {denied.length > 0 && (
+                          <p className="mt-0.5 text-[12px] text-danger">
+                            Denies {denied.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <Toggle
+                        checked={roleUids.includes(role.uid)}
+                        onChange={() =>
+                          setRoleUids((current) =>
+                            current.includes(role.uid)
+                              ? current.filter((entry) => entry !== role.uid)
+                              : [...current, role.uid],
+                          )
+                        }
+                        label={role.name}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           <ul className="divide-y divide-line rounded-lg border border-line">
             {PERMISSIONS.map((permission) => (

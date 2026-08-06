@@ -74,6 +74,37 @@ describe('registry', () => {
     }
   });
 
+  /**
+   * `reportsPlayers` is what makes the panel say "this game does not tell us
+   * who is connected" instead of showing an empty list that reads as "nobody
+   * is playing". A game that parses join lines but forgets the flag would show
+   * a permanently empty list; one that sets the flag without parsing anything
+   * would claim a server is empty forever. Both are silent wrongness, so the
+   * claim is checked against the behaviour.
+   */
+  it('only claims to report players when inspectLog actually does', () => {
+    const samples: Record<string, string[]> = {
+      'minecraft-java': [
+        '[12:00:00] [Server thread/INFO]: Notch joined the game',
+        '[12:00:00] [Server thread/INFO]: Notch left the game',
+      ],
+      valheim: [
+        '03/13/2021 20:35:57: Got character ZDOID from Erik : 1234567890:1',
+        '03/13/2021 20:40:00: Closing connection to Erik',
+      ],
+      palworld: ['[S_API FAIL] SteamAPI_Init() failed'],
+    };
+
+    for (const adapter of listAdapters()) {
+      const lines = samples[adapter.id] ?? [];
+      const emits = lines.some((line) => adapter.inspectLog?.(line)?.playerEvent);
+      expect(
+        Boolean(adapter.reportsPlayers),
+        `${adapter.id}: reportsPlayers is ${Boolean(adapter.reportsPlayers)} but inspectLog ${emits ? 'does' : 'does not'} return player events`,
+      ).toBe(emits);
+    }
+  });
+
   it('exposes a console command glossary for every game', () => {
     for (const adapter of listAdapters()) {
       const glossary = adapter.consoleGlossary?.(adapter.variants[0]!.id);
@@ -180,6 +211,42 @@ describe('valheim adapter', () => {
 
   it('defaults to enough memory for a small group', () => {
     expect(valheimAdapter.defaultLimits('valheim-vanilla').memoryMib).toBeGreaterThanOrEqual(4096);
+  });
+
+  /**
+   * Regression: the guard was case-insensitive and the extraction was not, so
+   * a real line ("Got character…", capitalised) entered the branch and then
+   * matched nothing — joins were never detected at all. The capture group also
+   * pointed at the literal "ZDOID" token rather than at the name after "from".
+   */
+  describe('player join detection', () => {
+    it('reads the name after "from", not the ZDOID token', () => {
+      const insight = valheimAdapter.inspectLog?.(
+        '03/13/2021 20:35:57: Got character ZDOID from Erik : 1234567890:1',
+      );
+      expect(insight?.playerEvent).toEqual({ type: 'join', name: 'Erik' });
+    });
+
+    it('handles a name with spaces in it', () => {
+      const insight = valheimAdapter.inspectLog?.(
+        '03/13/2021 20:35:57: Got character ZDOID from Erik the Red : 42:1',
+      );
+      expect(insight?.playerEvent).toEqual({ type: 'join', name: 'Erik the Red' });
+    });
+
+    it('still reads a line with no trailing id', () => {
+      const insight = valheimAdapter.inspectLog?.(
+        '03/13/2021 20:35:57: Got character ZDOID from Erik',
+      );
+      expect(insight?.playerEvent).toEqual({ type: 'join', name: 'Erik' });
+    });
+
+    it('reports a leave by name', () => {
+      const insight = valheimAdapter.inspectLog?.(
+        '03/13/2021 20:40:00: Closing connection to Erik',
+      );
+      expect(insight?.playerEvent).toEqual({ type: 'leave', name: 'Erik' });
+    });
   });
 
   it('passes the allocated port and settings to the launcher', () => {

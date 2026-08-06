@@ -193,6 +193,19 @@ inspectLog(line) {
 
 `ready: true` is what flips the server from "Starting" to "Online".
 
+If you return `playerEvent`, also set `reportsPlayers: true` on the adapter.
+That flag is what the Overview tab uses to decide between showing a player list
+and saying the game does not announce who is connected — without it your names
+are parsed and then never shown. `tests/adapters.test.ts` checks the flag and
+the behaviour agree, so a mismatch fails the suite.
+
+Two things to watch when writing the regex, both of which have bitten this
+codebase: put the same flags on the guard and the extraction (a case-insensitive
+`test` in front of a case-sensitive `exec` enters the branch and then matches
+nothing), and check which capture group holds the name — Valheim's line is
+`Got character ZDOID from Erik`, where `ZDOID` is a literal and the name comes
+after `from`.
+
 ## Testing
 
 Adapters are pure enough to test without a container. Follow
@@ -224,6 +237,7 @@ new adapter is checked against them automatically.
 - [ ] `startup` returns argv, never a shell string
 - [ ] `stopCommand` set if the game saves on shutdown
 - [ ] `inspectLog` detects ready, out-of-memory and port conflicts
+- [ ] `reportsPlayers` set if — and only if — `inspectLog` returns `playerEvent`
 - [ ] Install errors are written for a person, not a log parser
 - [ ] Registered in `registry.ts`
 - [ ] Tests added
