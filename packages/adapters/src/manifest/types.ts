@@ -1,4 +1,4 @@
-import type { SettingsSchema } from '@serverforge/core';
+import type { Setting, SettingsSchema } from '@serverforge/core';
 import type { ConsoleGlossary, EulaRequirement, GameVariant } from '../types.js';
 
 /**
@@ -67,10 +67,37 @@ export type ManifestInstall =
 export interface ManifestInstallStep {
   /** Restricts the step to these variant ids. Absent means every variant. */
   variants?: string[];
+  /** Further restricts the step to a settings value, e.g. an opt-in toggle. */
+  when?: ManifestCondition;
   mkdir?: string;
   writeFile?: { path: string; contents: string };
+  /**
+   * Seeds a config file from one the game ships.
+   *
+   * Several games write their config on first boot and run on built-in
+   * defaults until then, which means the choices someone made in the deploy
+   * wizard apply to their *second* world rather than their first. Copying the
+   * shipped defaults into place at install time fixes that.
+   *
+   * `ifMissing` defaults to true — overwriting a config on every reinstall
+   * would discard hand edits.
+   */
+  copyFile?: { from: string; to: string; ifMissing?: boolean };
   /** Progress line shown while it runs. */
   message?: string;
+}
+
+/**
+ * A value written into the game's config that is not a user setting.
+ *
+ * Ports are the reason this exists: the allocator decides them, and a game
+ * whose own config still names the default comes up listening where nothing is
+ * published — online to the panel, unreachable to every player.
+ */
+export interface ManifestConfigValue {
+  target: Setting['target'];
+  /** Templated, e.g. "{{port.game}}". */
+  value: string;
 }
 
 /** How the game is launched. */
@@ -118,6 +145,15 @@ export interface ManifestVariant extends GameVariant {
   limits?: { memoryMib: number; cpuCores: number; diskMib: number };
   /** Where mods go for this variant, relative to the server directory. */
   modDirectory?: string;
+  /**
+   * Settings only this variant has, e.g. a "install the mod loader" toggle
+   * that would be meaningless on the vanilla edition.
+   *
+   * Prepended to the game's settings rather than appended: these describe what
+   * makes the variant different, which is what someone who deliberately chose
+   * it came to configure, and groups render in declaration order.
+   */
+  settings?: SettingsSchema;
 }
 
 export interface GameManifest {
@@ -143,6 +179,8 @@ export interface GameManifest {
 
   install: ManifestInstall;
   postInstall?: ManifestInstallStep[];
+  /** Written into the config alongside the settings. See ManifestConfigValue. */
+  configValues?: ManifestConfigValue[];
   runtime: ManifestRuntime;
 
   logRules?: ManifestLogRule[];

@@ -19,8 +19,20 @@ export type SettingTier = 'basic' | 'advanced' | 'expert';
 export type SettingTarget =
   /** A key in a `key=value` properties file, e.g. server.properties. */
   | { kind: 'properties'; file: string; key: string }
-  /** A key inside an INI section, e.g. Palworld's PalWorldSettings.ini. */
-  | { kind: 'ini'; file: string; section: string; key: string }
+  /**
+   * A key inside an INI section, e.g. Palworld's PalWorldSettings.ini.
+   *
+   * `tuple` handles the Unreal shape, where dozens of settings live inside a
+   * single parenthesised value rather than on lines of their own:
+   *
+   *     OptionSettings=(Difficulty=None,DayTimeSpeedRate=1.000000,…)
+   *
+   * Set it to the name of the outer key and `key` becomes the field within it.
+   * Values are formatted the way Unreal expects for the setting's type —
+   * quoted strings, `True`/`False`, floats to six places — and fields the
+   * schema does not model are round-tripped untouched.
+   */
+  | { kind: 'ini'; file: string; section: string; key: string; tuple?: string }
   /** A dotted path inside a JSON file. */
   | { kind: 'json'; file: string; path: string }
   /** An environment variable on the container. */

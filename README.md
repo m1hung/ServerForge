@@ -160,7 +160,7 @@ apps/
 packages/
   core/         Branding, contracts, settings-schema DSL, path safety
   db/           Prisma schema, client, seed
-  adapters/     Game adapters (Minecraft family, Palworld)
+  adapters/     Game manifests (Valheim, Palworld) + coded adapters (Minecraft)
 themes/         Built-in CSS colour themes (drop more in data/themes/)
 docker/         Compose stack and Dockerfiles
 docs/           Setup, architecture, security, operations
@@ -259,10 +259,9 @@ Early. The core is built and tested, and the pieces below are the honest gaps:
   key, per their terms. Paste one into **Panel settings → Integrations** and
   browsing turns on; without a key the panel says so plainly rather than
   failing oddly
-- **Game breadth** — three games out of the box. The manifest format covers the
-  common case, Valheim runs on it, and you can add your own by dropping a
-  `.json` file in `data/games/`. But the shipped catalogue is still small, and
-  Palworld and Minecraft remain hand-written adapters
+- **Game breadth** — three games out of the box. Valheim and Palworld both run
+  on the manifest format, and you can add your own by dropping a `.json` file
+  in `data/games/`, but the shipped catalogue is still small
 - **Console transport** — panel commands are written to the container's stdin.
   Games that only accept RCON can stream their logs but cannot be commanded
   from the console yet

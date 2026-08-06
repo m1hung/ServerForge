@@ -1,9 +1,9 @@
 import { notFound } from '@serverforge/core';
 import type { GameAdapter, GameVariant } from './types.js';
 import { compileManifest } from './manifest/compile.js';
+import { palworldManifest } from './manifest/games/palworld.js';
 import { valheimManifest } from './manifest/games/valheim.js';
 import { minecraftAdapter } from './minecraft/index.js';
-import { palworldAdapter } from './palworld/index.js';
 
 /**
  * The adapter registry.
@@ -27,7 +27,7 @@ import { palworldAdapter } from './palworld/index.js';
  */
 const BUILT_IN: GameAdapter[] = [
   minecraftAdapter,
-  palworldAdapter,
+  compileManifest(palworldManifest),
   compileManifest(valheimManifest),
 ];
 

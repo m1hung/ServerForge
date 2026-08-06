@@ -1,6 +1,14 @@
 import { isSettingActive, type Setting, type SettingValue, type SettingsSchema } from '@serverforge/core';
 import type { InstallTools, ServerContext } from '../types.js';
-import { parseIni, stringifyIni } from '../util/ini.js';
+import {
+  parseIni,
+  parseTuple,
+  quoteUnreal,
+  stringifyIni,
+  stringifyTuple,
+  unrealBool,
+  unrealFloat,
+} from '../util/ini.js';
 import { mergeProperties } from '../util/properties.js';
 
 /**
@@ -27,9 +35,24 @@ export interface MaterialisePlan {
   /** Relative path -> the keys to set in it. */
   properties: Map<string, Record<string, string>>;
   ini: Map<string, Map<string, Record<string, string>>>;
+  /** file -> section -> outer key -> fields inside the parenthesised value. */
+  tuples: Map<string, Map<string, Map<string, Record<string, string>>>>;
   json: Map<string, Map<string, SettingValue>>;
   /** Settings targeting the container environment rather than a file. */
   env: Record<string, string>;
+}
+
+/**
+ * A value written to a config file that is not a user setting.
+ *
+ * The common case is a port: the game's own config has to name the port the
+ * allocator handed out, or the server comes up listening somewhere nothing is
+ * published to and looks online while refusing every connection.
+ */
+export interface DerivedValue {
+  target: Setting['target'];
+  /** Already rendered — the compiler resolves templates before calling. */
+  value: string;
 }
 
 /**
@@ -42,10 +65,12 @@ export interface MaterialisePlan {
 export function planMaterialisation(
   schema: SettingsSchema,
   ctx: ServerContext,
+  derived: DerivedValue[] = [],
 ): MaterialisePlan {
   const plan: MaterialisePlan = {
     properties: new Map(),
     ini: new Map(),
+    tuples: new Map(),
     json: new Map(),
     env: {},
   };
@@ -59,41 +84,96 @@ export function planMaterialisation(
     const value = ctx.settings[setting.key];
     if (value === undefined) continue;
 
-    writeInto(plan, setting, value);
+    writeInto(plan, setting.target, formatFor(setting, value), value);
   }
+
+  // Derived values last, so a computed port beats a stale one a user typed.
+  for (const { target, value } of derived) writeInto(plan, target, value, coerceJson(value));
 
   return plan;
 }
 
-function writeInto(plan: MaterialisePlan, setting: Setting, value: SettingValue): void {
-  const target = setting.target;
+/**
+ * Renders a value the way its destination expects.
+ *
+ * Unreal is the reason this depends on the setting rather than the value:
+ * inside a tuple it wants strings quoted, booleans as `True`/`False`, and
+ * floats to six decimal places, while an integer field written as `1.000000`
+ * is rejected. `step` is what distinguishes a rate from a count in the schema.
+ */
+function formatFor(setting: Setting, value: SettingValue): string {
+  const inTuple = setting.target.kind === 'ini' && Boolean(setting.target.tuple);
+  if (!inTuple) return format(value);
 
+  switch (setting.type) {
+    case 'boolean':
+      return unrealBool(Boolean(value));
+    case 'number':
+      return setting.step ? unrealFloat(Number(value)) : String(Math.round(Number(value)));
+    case 'string':
+      return quoteUnreal(String(value));
+    case 'enum':
+      return String(value);
+  }
+}
+
+/**
+ * A derived value arrives as text, but JSON config is typed — writing a port
+ * as `"25565"` where the game expects a number is a real difference.
+ */
+function coerceJson(value: string): SettingValue {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+  return value;
+}
+
+function writeInto(
+  plan: MaterialisePlan,
+  target: Setting['target'],
+  value: string,
+  raw: SettingValue,
+): void {
   switch (target.kind) {
     case 'properties': {
       const file = plan.properties.get(target.file) ?? {};
-      file[target.key] = format(value);
+      file[target.key] = value;
       plan.properties.set(target.file, file);
       return;
     }
 
     case 'ini': {
+      if (target.tuple) {
+        const file =
+          plan.tuples.get(target.file) ?? new Map<string, Map<string, Record<string, string>>>();
+        const section = file.get(target.section) ?? new Map<string, Record<string, string>>();
+        const tuple = section.get(target.tuple) ?? {};
+        tuple[target.key] = value;
+        section.set(target.tuple, tuple);
+        file.set(target.section, section);
+        plan.tuples.set(target.file, file);
+        return;
+      }
+
       const file = plan.ini.get(target.file) ?? new Map<string, Record<string, string>>();
       const section = file.get(target.section) ?? {};
-      section[target.key] = format(value);
+      section[target.key] = value;
       file.set(target.section, section);
       plan.ini.set(target.file, file);
       return;
     }
 
     case 'json': {
+      // The raw value, not the formatted text: JSON is typed, and a boolean
+      // written as the string "true" is a different thing to the game.
       const file = plan.json.get(target.file) ?? new Map<string, SettingValue>();
-      file.set(target.path, value);
+      file.set(target.path, raw);
       plan.json.set(target.file, file);
       return;
     }
 
     case 'env': {
-      plan.env[target.name] = format(value);
+      plan.env[target.name] = value;
       return;
     }
 
@@ -121,6 +201,26 @@ export async function applyMaterialisation(
     for (const [section, updates] of sections) {
       parsed[section] = { ...(parsed[section] ?? {}), ...updates };
     }
+    await tools.writeFile(file, stringifyIni(parsed));
+  }
+
+  // Unreal tuples. Read the existing parenthesised value, overwrite only the
+  // fields the schema models, write it back — so a field added by a game
+  // update survives, which is the whole reason not to rebuild it from scratch.
+  for (const [file, sections] of plan.tuples) {
+    const existing = (await tools.readFile(file)) ?? '';
+    const parsed = parseIni(existing);
+
+    for (const [section, tuples] of sections) {
+      const current = parsed[section] ?? {};
+      for (const [outerKey, fields] of tuples) {
+        const existingTuple = current[outerKey];
+        const merged = { ...(existingTuple ? parseTuple(existingTuple) : {}), ...fields };
+        current[outerKey] = stringifyTuple(merged);
+      }
+      parsed[section] = current;
+    }
+
     await tools.writeFile(file, stringifyIni(parsed));
   }
 

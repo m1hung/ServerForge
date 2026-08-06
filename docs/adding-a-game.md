@@ -14,8 +14,12 @@ A manifest is compiled into a `GameAdapter`, so nothing downstream can tell the
 difference — and a manifest that outgrows the format can be rewritten as a
 coded adapter later without touching anything else.
 
-Valheim is a manifest
-([`manifest/games/valheim.ts`](../packages/adapters/src/manifest/games/valheim.ts)).
+Valheim and Palworld are manifests
+([`manifest/games/`](../packages/adapters/src/manifest/games/)). Palworld is
+the one to read if your game is at all involved — it covers Unreal tuple
+config, ports written into that config, a seeded default file, and a setting
+only one variant has.
+
 Minecraft is code, because resolving Paper/Fabric/Forge builds and importing
 modpacks is a program, not a table.
 
@@ -125,17 +129,75 @@ There is no `applySettings` to write.
 
 Use `{ kind: 'internal' }` for values your `command` template reads instead.
 
+**Unreal games** put dozens of settings inside one parenthesised INI value:
+
+```ini
+OptionSettings=(Difficulty=None,ExpRate=1.000000,ServerName="My server")
+```
+
+Name the outer key with `tuple` and `key` becomes the field inside it:
+
+```ts
+target: { kind: 'ini', file: CONFIG, section: SECTION,
+          key: 'ExpRate', tuple: 'OptionSettings' }
+```
+
+Values are then formatted the way Unreal insists on — strings quoted, booleans
+as `True`/`False`, and numbers as floats to six places when the setting
+declares a `step`, integers when it does not. Fields you do not model are
+round-tripped untouched.
+
+### Values the user does not choose
+
+Ports are the case that matters. The allocator decides them, and a game whose
+own config still names its default port comes up listening where nothing is
+published — online to the panel, unreachable to every player.
+
+```ts
+configValues: [
+  { target: { kind: 'ini', file: CONFIG, section: SECTION,
+              key: 'PublicPort', tuple: 'OptionSettings' },
+    value: '{{port.game}}' },
+]
+```
+
+These are written after the settings, so a computed port beats a stale one
+somebody typed into a config by hand.
+
+### Variant-only settings
+
+A "install the mod loader" toggle is meaningless on the vanilla edition, so it
+belongs to the variant rather than the game:
+
+```ts
+variants: [
+  { id: 'example-modded', /* … */ settings: [ /* … */ ] },
+]
+```
+
+They are prepended to the game's own settings — what makes the variant
+different is what someone who deliberately chose it came to configure.
+
 ### Install steps
 
 `install` is `{ kind: 'steam', appId }` or `{ kind: 'download', url, strip }`.
 Steam games get the branch/beta settings automatically — set
 `branchSettings: false` to opt out.
 
-`postInstall` runs afterwards, optionally per variant:
+`postInstall` runs afterwards. Steps do `mkdir`, `writeFile` or `copyFile`, and
+can be limited to certain variants, to a settings value, or both:
 
 ```ts
 postInstall: [
-  { variants: ['example-modded'], mkdir: 'plugins',
+  // Many games write their config on first boot and run on built-in defaults
+  // until then — so without this, the choices someone made in the wizard would
+  // apply to their *second* world. `ifMissing` defaults to true, because
+  // overwriting on every reinstall would discard hand edits.
+  { copyFile: { from: 'DefaultSettings.ini', to: CONFIG } },
+
+  { variants: ['example-modded'],
+    when: { ref: 'setting.sf_enable_loader', isSet: true },
+    mkdir: 'plugins',
     message: 'Setting up the plugins folder…' },
 ]
 ```

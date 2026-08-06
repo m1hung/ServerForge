@@ -67,7 +67,12 @@ export function validateManifest(manifest: GameManifest): string[] {
   need(purposes.size === ports.length, 'two ports share the same purpose; purposes must be unique.');
 
   // ── Settings ────────────────────────────────────────────────────────────
-  const settings: SettingsSchema = manifest.settings ?? [];
+  // Variant settings count: a template may legitimately reference one, and
+  // every variant that has it will resolve it.
+  const settings: SettingsSchema = [
+    ...(manifest.settings ?? []),
+    ...variants.flatMap((variant) => variant.settings ?? []),
+  ];
   const settingKeys = new Set(settings.map((s) => s.key));
   if (settingKeys.size !== settings.length) {
     issues.push('two settings share the same key.');
@@ -148,10 +153,31 @@ export function validateManifest(manifest: GameManifest): string[] {
         issues.push(`postInstall[${index}] names the variant "${variantId}", which this game does not have.`);
       }
     }
-    if (!step.mkdir && !step.writeFile) {
-      issues.push(`postInstall[${index}] does nothing — give it mkdir or writeFile.`);
+    if (!step.mkdir && !step.writeFile && !step.copyFile) {
+      issues.push(`postInstall[${index}] does nothing — give it mkdir, writeFile or copyFile.`);
     }
+    if (step.when) checkRef(step.when.ref, `postInstall[${index}].when.ref`, settingKeys, purposes, issues);
     if (step.writeFile) checkTemplate(step.writeFile.contents, `postInstall[${index}].writeFile.contents`);
+  }
+
+  // Config values are the ports-in-the-config path, and a typo here produces
+  // a server that looks online and refuses every connection — so the template
+  // gets the same treatment as the command line.
+  for (const [index, entry] of (manifest.configValues ?? []).entries()) {
+    if (!entry.target) {
+      issues.push(`configValues[${index}] has no target — say where the value should be written.`);
+      continue;
+    }
+    if (typeof entry.value !== 'string') {
+      issues.push(`configValues[${index}].value must be a string, optionally with {{…}} references.`);
+      continue;
+    }
+    if (entry.target.kind === 'internal') {
+      issues.push(
+        `configValues[${index}] targets "internal", which writes nowhere. Use a properties, ini, json or env target.`,
+      );
+    }
+    checkTemplate(entry.value, `configValues[${index}].value`);
   }
 
   // ── Log rules ───────────────────────────────────────────────────────────

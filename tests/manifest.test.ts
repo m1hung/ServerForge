@@ -12,6 +12,8 @@ import {
   planMaterialisation,
   setDeep,
 } from '../packages/adapters/src/manifest/materialise.js';
+import { palworldManifest } from '../packages/adapters/src/manifest/games/palworld.js';
+import { palworldAdapter } from '../packages/adapters/src/palworld/index.js';
 import { valheimAdapter } from '../packages/adapters/src/valheim/index.js';
 import type { GameManifest } from '../packages/adapters/src/manifest/types.js';
 import type { ServerContext } from '../packages/adapters/src/types.js';
@@ -402,5 +404,330 @@ describe('valheim manifest matches the hand-written adapter', () => {
     expect(compiled.consoleGlossary?.('valheim-vanilla')).toEqual(
       valheimAdapter.consoleGlossary?.('valheim-vanilla'),
     );
+  });
+});
+
+// ──────────────────────────────────────────────────── palworld equivalence ──
+
+/**
+ * Palworld exercises the parts of the format Valheim did not: Unreal tuples,
+ * config values derived from allocations, a seeded default config, and a
+ * setting that only one variant has. The hand-written adapter is again the
+ * reference the port has to reproduce.
+ */
+describe('palworld manifest matches the hand-written adapter', () => {
+  const compiled = compileManifest(palworldManifest);
+  const variants = ['palworld-vanilla', 'palworld-modded'];
+
+  function pwContext(variantId: string, overrides: Partial<ServerContext> = {}): ServerContext {
+    return {
+      serverUid: 'pw123',
+      name: 'Pals',
+      dataPath: '/srv/pw123',
+      version: 'latest',
+      build: null,
+      variantId,
+      settings: defaultsFor(compiled.settingsSchema(variantId)),
+      memoryMib: 16384,
+      cpuCores: 4,
+      allocations: [
+        { ip: '0.0.0.0', port: 8211, purpose: 'game', primary: true },
+        { ip: '0.0.0.0', port: 27015, purpose: 'query', primary: false },
+        { ip: '0.0.0.0', port: 8212, purpose: 'rest', primary: false },
+      ],
+      environment: {},
+      javaFlagsPreset: 'balanced',
+      customJavaFlags: null,
+      ...overrides,
+    };
+  }
+
+  it('exposes the same identity, variants, ports and limits', () => {
+    expect(compiled.id).toBe(palworldAdapter.id);
+    expect(compiled.name).toBe(palworldAdapter.name);
+    expect(compiled.summary).toBe(palworldAdapter.summary);
+    expect(compiled.icon).toBe(palworldAdapter.icon);
+    expect(compiled.variants).toEqual(palworldAdapter.variants);
+
+    for (const variantId of variants) {
+      expect(compiled.requiredPorts(variantId)).toEqual(palworldAdapter.requiredPorts(variantId));
+      expect(compiled.defaultLimits(variantId)).toEqual(palworldAdapter.defaultLimits(variantId));
+    }
+  });
+
+  /**
+   * Everything a user sees or is validated against has to match exactly.
+   *
+   * `target` deliberately does not: the hand-written adapter knew in code that
+   * these settings live inside the `OptionSettings` tuple, and the manifest
+   * says so in the target instead. That relocation is the port. It is asserted
+   * separately below rather than waved through.
+   */
+  it('produces the same settings schema per variant, including the mods toggle', () => {
+    for (const variantId of variants) {
+      const withoutTargets = (schema: SettingsSchema) =>
+        schema.map(({ target: _target, ...rest }) => rest);
+
+      expect(withoutTargets(compiled.settingsSchema(variantId))).toEqual(
+        withoutTargets(palworldAdapter.settingsSchema(variantId)),
+      );
+    }
+
+    // The variant-only setting must be absent from vanilla, not merely hidden.
+    const vanillaKeys = compiled.settingsSchema('palworld-vanilla').map((s) => s.key);
+    expect(vanillaKeys).not.toContain('sf_enable_ue4ss');
+    expect(compiled.settingsSchema('palworld-modded').map((s) => s.key)).toContain(
+      'sf_enable_ue4ss',
+    );
+  });
+
+  it('points every game setting at the OptionSettings tuple', () => {
+    // The relocation the previous test excludes. Getting this wrong writes
+    // each setting onto its own INI line, which Palworld ignores entirely —
+    // the server would start and quietly use defaults for everything.
+    const schema = compiled.settingsSchema('palworld-vanilla');
+    const iniTargets = schema.filter((s) => s.target.kind === 'ini');
+
+    expect(iniTargets.length).toBeGreaterThan(15);
+    for (const setting of iniTargets) {
+      expect(setting.target, setting.key).toMatchObject({
+        kind: 'ini',
+        file: 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini',
+        section: '/Script/Pal.PalGameWorldSettings',
+        tuple: 'OptionSettings',
+      });
+    }
+
+    // The two that are not config at all stay internal.
+    const internal = schema.filter((s) => s.target.kind === 'internal').map((s) => s.key);
+    expect(internal).toContain('sf_use_perf_threads');
+  });
+
+  it('does not leak manifest-only fields into the catalogue', () => {
+    // `variants` is serialised to every browser that opens the deploy wizard.
+    for (const variant of compiled.variants) {
+      expect(variant).not.toHaveProperty('settings');
+      expect(variant).not.toHaveProperty('limits');
+      expect(variant).not.toHaveProperty('modDirectory');
+    }
+  });
+
+  it('returns the same array identity for repeated schema reads', () => {
+    // A fresh array each call reads to React as "the settings changed".
+    expect(compiled.settingsSchema('palworld-vanilla')).toBe(
+      compiled.settingsSchema('palworld-vanilla'),
+    );
+  });
+
+  it('produces the same startup plan on defaults and with perf threads off', () => {
+    for (const variantId of variants) {
+      const ctx = pwContext(variantId);
+      expect(compiled.startup(ctx)).toEqual(palworldAdapter.startup(ctx));
+
+      const off = { ...ctx, settings: { ...ctx.settings, sf_use_perf_threads: false } };
+      expect(compiled.startup(off)).toEqual(palworldAdapter.startup(off));
+      expect(compiled.startup(off).command).not.toContain('-useperfthreads');
+    }
+  });
+
+  it('produces the same startup plan on non-default ports and player counts', () => {
+    const ctx = pwContext('palworld-vanilla', {
+      allocations: [
+        { ip: '0.0.0.0', port: 25600, purpose: 'game', primary: true },
+        { ip: '0.0.0.0', port: 25601, purpose: 'query', primary: false },
+        { ip: '0.0.0.0', port: 25602, purpose: 'rest', primary: false },
+      ],
+    });
+    const custom = { ...ctx, settings: { ...ctx.settings, ServerPlayerMaxNum: 24 } };
+
+    expect(compiled.startup(custom)).toEqual(palworldAdapter.startup(custom));
+    expect(compiled.startup(custom).command).toContain('-port=25600');
+    expect(compiled.startup(custom).command).toContain('-players=24');
+  });
+
+  it('classifies the same log lines the same way', () => {
+    const lines = [
+      'Running Palworld dedicated server',
+      'Setting breakpad minidump AppID = 2394010',
+      'Failed to bind to 0.0.0.0:8211',
+      'the system is out of memory',
+      'LogPal: Save complete',
+      'Error: something broke',
+      'Warning: something is odd',
+      'nothing interesting here',
+    ];
+
+    for (const line of lines) {
+      expect(compiled.inspectLog?.(line) ?? null, line).toEqual(
+        palworldAdapter.inspectLog?.(line) ?? null,
+      );
+    }
+  });
+
+  it('agrees on player reporting and mod directories', () => {
+    expect(Boolean(compiled.reportsPlayers)).toBe(Boolean(palworldAdapter.reportsPlayers));
+    for (const variantId of variants) {
+      expect(compiled.modDirectory?.(variantId)).toBe(palworldAdapter.modDirectory?.(variantId));
+    }
+  });
+
+  it('offers the same console glossary', () => {
+    expect(compiled.consoleGlossary?.('palworld-vanilla')).toEqual(
+      palworldAdapter.consoleGlossary?.('palworld-vanilla'),
+    );
+  });
+});
+
+// ───────────────────────────────────────────── palworld config materialising ──
+
+/**
+ * The part of the Palworld port that actually touches a config file.
+ *
+ * Both adapters are run against the same in-memory filesystem and the results
+ * compared. Everything above compares descriptions of behaviour; this compares
+ * the bytes, which is what the game reads.
+ */
+describe('palworld writes the same config as the hand-written adapter', () => {
+  const compiled = compileManifest(palworldManifest);
+  const CONFIG = 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini';
+
+  /** Minimal InstallTools over a Map. Only the file operations are reachable. */
+  function memoryTools(seed: Record<string, string> = {}) {
+    const files = new Map(Object.entries(seed));
+    const unsupported = () => {
+      throw new Error('not reachable from applySettings');
+    };
+
+    return {
+      files,
+      tools: {
+        readFile: async (p: string) => files.get(p) ?? null,
+        writeFile: async (p: string, c: string) => void files.set(p, c),
+        exists: async (p: string) => files.has(p),
+        mkdir: async () => undefined,
+        remove: async (p: string) => void files.delete(p),
+        listDir: async () => [...files.keys()],
+        download: unsupported,
+        unzip: unsupported,
+        runInContainer: unsupported,
+      } as unknown as Parameters<typeof compiled.applySettings>[1],
+    };
+  }
+
+  function pwContext(overrides: Partial<ServerContext> = {}): ServerContext {
+    return {
+      serverUid: 'pw123',
+      name: 'Pals',
+      dataPath: '/srv/pw123',
+      version: 'latest',
+      build: null,
+      variantId: 'palworld-vanilla',
+      settings: defaultsFor(compiled.settingsSchema('palworld-vanilla')),
+      memoryMib: 16384,
+      cpuCores: 4,
+      allocations: [
+        { ip: '0.0.0.0', port: 25600, purpose: 'game', primary: true },
+        { ip: '0.0.0.0', port: 25601, purpose: 'query', primary: false },
+        { ip: '0.0.0.0', port: 25602, purpose: 'rest', primary: false },
+      ],
+      environment: {},
+      javaFlagsPreset: 'balanced',
+      customJavaFlags: null,
+      ...overrides,
+    };
+  }
+
+  async function writeWith(
+    adapter: { applySettings: (c: ServerContext, t: never) => Promise<void> },
+    ctx: ServerContext,
+    seed: Record<string, string> = {},
+  ): Promise<string> {
+    const { files, tools } = memoryTools(seed);
+    await adapter.applySettings(ctx, tools as never);
+    return files.get(CONFIG) ?? '';
+  }
+
+  /** PvP on, so no setting is hidden and the two must agree exactly. */
+  function allVisible(overrides: Record<string, string | number | boolean> = {}) {
+    const ctx = pwContext();
+    return {
+      ...ctx,
+      settings: { ...ctx.settings, bEnablePlayerToPlayerDamage: true, ...overrides },
+    };
+  }
+
+  it('produces an identical config file when every setting is visible', async () => {
+    const ctx = allVisible();
+    expect(await writeWith(compiled, ctx)).toBe(await writeWith(palworldAdapter, ctx));
+  });
+
+  it('produces an identical config file from customised settings', async () => {
+    const custom = allVisible({
+      ServerName: 'Test "quoted" server',
+      ServerPassword: 'hunter2',
+      ExpRate: 2.5,
+      ServerPlayerMaxNum: 24,
+      bEnableFriendlyFire: true,
+      Difficulty: 'Hard',
+    });
+    expect(await writeWith(compiled, custom)).toBe(await writeWith(palworldAdapter, custom));
+  });
+
+  /**
+   * A divergence, and a deliberate one: the port fixes a bug.
+   *
+   * `bEnableFriendlyFire` is hidden until player-versus-player damage is on,
+   * and the schema contract says hidden settings are neither validated nor
+   * materialised — the reason being that writing one leaves a disabled option
+   * silently in force in the game's config. The hand-written adapter looped
+   * over every ini setting and wrote it regardless.
+   *
+   * No practical difference here, because the value it wrote matches
+   * Palworld's own default for the field. It is asserted so the change is on
+   * the record rather than discovered later as a regression.
+   */
+  it('omits a hidden setting that the hand-written adapter wrote anyway', async () => {
+    const ctx = pwContext(); // PvP off by default, so friendly fire is hidden.
+    expect(ctx.settings.bEnablePlayerToPlayerDamage).toBe(false);
+
+    expect(await writeWith(compiled, ctx)).not.toMatch(/bEnableFriendlyFire=/);
+    expect(await writeWith(palworldAdapter, ctx)).toMatch(/bEnableFriendlyFire=False/);
+
+    // Turning the parent on brings it back for both.
+    expect(await writeWith(compiled, allVisible())).toMatch(/bEnableFriendlyFire=/);
+  });
+
+  it('formats each type the way Unreal expects', async () => {
+    const written = await writeWith(compiled, pwContext());
+
+    // Floats to six places, integers bare, booleans capitalised, strings quoted.
+    expect(written).toMatch(/ExpRate=1\.000000/);
+    expect(written).toMatch(/ServerPlayerMaxNum=16(,|\))/);
+    expect(written).toMatch(/bIsMultiplay=False/);
+    expect(written).toMatch(/ServerName="A ServerForge Palworld server"/);
+    expect(written).toMatch(/Difficulty=None/);
+  });
+
+  it('writes the allocated ports, not the defaults', async () => {
+    // A config still naming 8211 while the panel published 25600 gives a
+    // server that looks online and refuses every connection.
+    const written = await writeWith(compiled, pwContext());
+    expect(written).toMatch(/PublicPort=25600/);
+    expect(written).toMatch(/RESTAPIPort=25602/);
+  });
+
+  it('keeps tuple fields a game update added that the schema does not model', async () => {
+    const seed = {
+      [CONFIG]:
+        '[/Script/Pal.PalGameWorldSettings]\n' +
+        'OptionSettings=(Difficulty=None,SomeBrandNewSetting=42,ServerName="old")\n',
+    };
+
+    const written = await writeWith(compiled, allVisible(), seed);
+    expect(written).toMatch(/SomeBrandNewSetting=42/);
+    expect(written).toMatch(/ServerName="A ServerForge Palworld server"/);
+
+    // And the hand-written adapter agreed, which is why this is the behaviour.
+    expect(written).toBe(await writeWith(palworldAdapter, allVisible(), seed));
   });
 });

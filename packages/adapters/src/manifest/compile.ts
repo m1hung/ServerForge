@@ -3,12 +3,13 @@ import type {
   ConsoleGlossary,
   GameAdapter,
   LogInsight,
+  ServerContext,
   StartupPlan,
   VersionInfo,
 } from '../types.js';
 import { steamAppUpdate, steamBranchFrom, steamBranchSettings } from '../util/steamcmd.js';
-import { applyMaterialisation, planMaterialisation } from './materialise.js';
-import { renderArgs, renderEnv, renderTemplate } from './template.js';
+import { applyMaterialisation, planMaterialisation, type DerivedValue } from './materialise.js';
+import { evaluateCondition, renderArgs, renderEnv, renderTemplate } from './template.js';
 import { assertValidManifest } from './validate.js';
 import type { GameManifest, ManifestVariant } from './types.js';
 
@@ -32,12 +33,29 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
   const steamBranch =
     manifest.install.kind === 'steam' && manifest.install.branchSettings !== false;
 
-  // Built once: the schema does not vary by variant today, and computing it
-  // per call would hand a different array identity to React on every render.
-  const schema: SettingsSchema = [
-    ...manifest.settings,
-    ...(steamBranch ? steamBranchSettings() : []),
-  ];
+  // Cached per variant. Both because building it repeatedly is wasted work,
+  // and because a fresh array on every call hands React a new identity each
+  // render, which it reads as "the settings changed".
+  const schemaCache = new Map<string, SettingsSchema>();
+  const schemaFor = (variantId: string): SettingsSchema => {
+    const cached = schemaCache.get(variantId);
+    if (cached) return cached;
+
+    const built: SettingsSchema = [
+      ...(variantsById.get(variantId)?.settings ?? []),
+      ...manifest.settings,
+      ...(steamBranch ? steamBranchSettings() : []),
+    ];
+    schemaCache.set(variantId, built);
+    return built;
+  };
+
+  /** Config values computed per server — ports, mostly. See ManifestConfigValue. */
+  const derivedFor = (ctx: ServerContext): DerivedValue[] =>
+    (manifest.configValues ?? []).map((entry) => ({
+      target: entry.target,
+      value: renderTemplate(entry.value, ctx),
+    }));
 
   const versionLabel = manifest.versionLabel ?? 'Latest (kept up to date from Steam)';
   const onlyVersion: VersionInfo = { id: 'latest', label: versionLabel, stable: true };
@@ -57,8 +75,8 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
       return manifest.ports.map((port) => ({ purpose: port.purpose, protocol: port.protocol }));
     },
 
-    settingsSchema() {
-      return schema;
+    settingsSchema(variantId) {
+      return schemaFor(variantId);
     },
 
     ...(manifest.eula ? { eula: () => manifest.eula ?? null } : {}),
@@ -105,8 +123,19 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
 
       for (const step of manifest.postInstall ?? []) {
         if (step.variants && !step.variants.includes(ctx.variantId)) continue;
+        if (step.when && !evaluateCondition(step.when, ctx)) continue;
+
         if (step.message) await report.phase('extracting', step.message, 85);
         if (step.mkdir) await tools.mkdir(step.mkdir);
+        if (step.copyFile) {
+          const { from, to, ifMissing = true } = step.copyFile;
+          // Not overwriting by default: a reinstall must not throw away the
+          // edits someone made in the file manager.
+          if (!ifMissing || !(await tools.exists(to))) {
+            const contents = await tools.readFile(from);
+            if (contents !== null) await tools.writeFile(to, contents);
+          }
+        }
         if (step.writeFile) {
           await tools.writeFile(step.writeFile.path, renderTemplate(step.writeFile.contents, ctx));
         }
@@ -119,15 +148,17 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
     },
 
     async applySettings(ctx, tools) {
-      const plan = planMaterialisation(schema, ctx);
-      await applyMaterialisation(plan, tools);
+      await applyMaterialisation(
+        planMaterialisation(schemaFor(ctx.variantId), ctx, derivedFor(ctx)),
+        tools,
+      );
     },
 
     startup(ctx): StartupPlan {
       // Settings targeting `env` are applied here rather than in
       // applySettings: they are not files, and startup() is the only place
       // that can put them on the container.
-      const fromSettings = planMaterialisation(schema, ctx).env;
+      const fromSettings = planMaterialisation(schemaFor(ctx.variantId), ctx, derivedFor(ctx)).env;
 
       return {
         image: manifest.runtime.image,
@@ -210,9 +241,21 @@ function compileLogInspection(
   };
 }
 
-/** Drops the manifest-only fields so the variant matches `GameVariant`. */
+/**
+ * Drops the manifest-only fields so the variant matches `GameVariant`.
+ *
+ * Not cosmetic: `variants` is serialised into the catalogue the deploy wizard
+ * fetches, so anything left here is shipped to every browser. A whole settings
+ * schema riding along would be both wasted bytes and a leak of internals the
+ * client has its own endpoint for.
+ */
 function stripManifestOnlyFields(variant: ManifestVariant) {
-  const { limits: _limits, modDirectory: _modDirectory, ...rest } = variant;
+  const {
+    limits: _limits,
+    modDirectory: _modDirectory,
+    settings: _settings,
+    ...rest
+  } = variant;
   return rest;
 }
 
