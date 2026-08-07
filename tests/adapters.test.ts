@@ -12,6 +12,7 @@ import {
   isValidSteamBranch,
   steamBranchArgs,
   steamBranchFrom,
+  steamAppUpdate,
 } from '../packages/adapters/src/util/steamcmd.js';
 import { compareMinecraftVersions } from '../packages/adapters/src/minecraft/versions.js';
 import { normalizeModrinthProject, parseModrinthRef } from '../packages/adapters/src/minecraft/modpacks.js';
@@ -593,5 +594,83 @@ describe('steam branches', () => {
         expect(steamBranchArgs(steamBranchFrom(defaults))).toEqual([]);
       }
     }
+  });
+});
+
+describe('steam install resilience', () => {
+  /** Records every container run and answers each from a scripted queue. */
+  function fakeTools(outcomes: { exitCode: number; output: string }[]) {
+    const runs: string[][] = [];
+    const queue = [...outcomes];
+    return {
+      runs,
+      tools: {
+        runInContainer: async ({ command }: { command: string[] }) => {
+          runs.push(command);
+          return queue.shift() ?? { exitCode: 0, output: '' };
+        },
+      } as unknown as Parameters<typeof steamAppUpdate>[0],
+    };
+  }
+
+  const ok = { exitCode: 0, output: 'Success! App fully installed.' };
+  const missingConfig = {
+    exitCode: 8,
+    output: "Waiting for user info...OK\nERROR! Failed to install app '2394010' (Missing configuration)\n",
+  };
+
+  it('lets SteamCMD bootstrap before asking it to install', async () => {
+    // Measured on a fresh server directory: one success in three without this
+    // first run, three in three with it.
+    const { runs, tools } = fakeTools([ok, ok]);
+    await steamAppUpdate(tools, { appId: '2394010' });
+
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toEqual(['+login', 'anonymous', '+quit']);
+    expect(runs[1]).toContain('+app_update');
+  });
+
+  it('retries once when Steam reports the race and then succeeds', async () => {
+    const { runs, tools } = fakeTools([ok, missingConfig, ok]);
+    await expect(steamAppUpdate(tools, { appId: '2394010' })).resolves.toBeUndefined();
+
+    // bootstrap, failed install, retried install
+    expect(runs).toHaveLength(3);
+  });
+
+  it('does not retry a request that is simply wrong', async () => {
+    // A bad app id or branch fails identically twice; retrying only delays
+    // the report and makes it look like a flake.
+    const invalid = { exitCode: 1, output: "ERROR! Failed to install app '999' (Invalid platform)" };
+    const { runs, tools } = fakeTools([ok, invalid]);
+
+    await expect(steamAppUpdate(tools, { appId: '999' })).rejects.toThrow(/Invalid platform/);
+    expect(runs).toHaveLength(2);
+  });
+
+  it('leads with the error Steam actually printed', async () => {
+    // The old message buried it under 4 KB of progress lines and blamed a
+    // Steam outage, which sent people to wait out something else entirely.
+    const { tools } = fakeTools([ok, missingConfig, missingConfig]);
+
+    const error = await steamAppUpdate(tools, { appId: '2394010' }).catch((e: unknown) => e);
+    const message = (error as Error).message;
+
+    expect(message.split('\n')[0]).toMatch(/ERROR! Failed to install app/);
+    expect(message).toMatch(/usually temporary/);
+  });
+
+  it('blames the branch when one is set and the failure is not the race', async () => {
+    const denied = { exitCode: 1, output: 'ERROR! Failed to install app (App not available)' };
+    const { tools } = fakeTools([ok, denied]);
+
+    const error = await steamAppUpdate(tools, {
+      appId: '2394010',
+      branch: 'public-test',
+      branchPassword: 'pw',
+    }).catch((e: unknown) => e);
+
+    expect((error as Error).message).toMatch(/branch "public-test"/);
+    expect((error as Error).message).toMatch(/password is right/);
   });
 });

@@ -140,6 +140,7 @@ export async function steamAppUpdate(
   },
 ): Promise<void> {
   const branchArgs = steamBranchArgs(options);
+  const timeoutMs = options.timeoutMs ?? 60 * 60 * 1000;
 
   const command = [
     '+force_install_dir',
@@ -161,22 +162,77 @@ export async function steamAppUpdate(
       : 'Connecting to Steam…',
   );
 
-  const result = await tools.runInContainer({
+  // Let SteamCMD finish bootstrapping before asking it for anything.
+  //
+  // On a first run it downloads its own ~40 MB update and restarts itself,
+  // and an app_update issued in that same invocation frequently dies with
+  // "Failed to install app (Missing configuration)" — the client has not
+  // written its app config yet. Measured on a fresh server directory: one
+  // success in three without this, three in three with it.
+  //
+  // Cheap to repeat. Once bootstrapped the directory keeps the files, so
+  // every later install and update returns almost immediately.
+  await tools.runInContainer({
     image: STEAMCMD_IMAGE,
-    command,
-    timeoutMs: options.timeoutMs ?? 60 * 60 * 1000,
+    command: ['+login', 'anonymous', '+quit'],
+    timeoutMs: Math.min(timeoutMs, 10 * 60 * 1000),
   });
 
-  if (result.exitCode !== 0) {
-    // A wrong branch name fails the same way a Steam outage does, so say so
-    // rather than sending someone to wait out an outage that is not happening.
-    const branchHint =
-      branchArgs.length > 0
-        ? ` Check that the branch "${options.branch}" still exists on the game's Steam betas tab${options.branchPassword ? ' and that its password is right' : ''}.`
-        : '';
+  let result = await tools.runInContainer({ image: STEAMCMD_IMAGE, command, timeoutMs });
 
-    throw new Error(
-      `SteamCMD failed (exit ${result.exitCode}). This is usually a temporary Steam outage — try installing again.${branchHint}\n${result.output.slice(-4000)}`,
-    );
+  // One retry, and only for the race above. Steam hands out that error for a
+  // transient condition, so a second attempt usually just works — whereas a
+  // wrong app id or branch fails the same way twice and should not be masked
+  // by pretending to try harder.
+  if (result.exitCode !== 0 && isTransientSteamFailure(result.output)) {
+    await options.report?.('Steam was not ready — trying once more…');
+    result = await tools.runInContainer({ image: STEAMCMD_IMAGE, command, timeoutMs });
   }
+
+  if (result.exitCode !== 0) {
+    throw new Error(describeSteamFailure(result, options));
+  }
+}
+
+/** The "not ready yet" failure, as opposed to a genuinely wrong request. */
+function isTransientSteamFailure(output: string): boolean {
+  return /Missing configuration|No subscription|Timeout downloading|Connection to Steam servers lost/i.test(
+    output,
+  );
+}
+
+/**
+ * Turns SteamCMD's output into something the person deploying can act on.
+ *
+ * SteamCMD prints hundreds of progress lines and then one line that matters.
+ * The old message dumped the last 4 KB and led with "usually a temporary Steam
+ * outage", which buried the real cause and sent people to wait out an outage
+ * that was not happening. The `ERROR!` line goes first now; the tail is kept
+ * after it, because when the guess is wrong that is what makes it diagnosable.
+ */
+function describeSteamFailure(
+  result: { exitCode: number; output: string },
+  options: { appId: string; branch?: string | null; branchPassword?: string | null },
+): string {
+  const reported = /^.*ERROR!.*$/m.exec(result.output)?.[0]?.trim();
+  const branch = (options.branch ?? '').trim();
+
+  let explanation: string;
+  if (isTransientSteamFailure(result.output)) {
+    explanation =
+      'Steam did not have the app ready, twice in a row. This is usually temporary — try installing again in a few minutes.';
+  } else if (branch !== '' && branch !== DEFAULT_STEAM_BRANCH) {
+    explanation = `Check that the branch "${branch}" still exists on the game's Steam betas tab${
+      options.branchPassword ? ' and that its password is right' : ''
+    }.`;
+  } else {
+    explanation = `Steam refused to install app ${options.appId}.`;
+  }
+
+  return [
+    reported ? `${reported}` : `SteamCMD failed (exit ${result.exitCode}).`,
+    explanation,
+    '',
+    result.output.slice(-2000),
+  ].join('\n');
 }
