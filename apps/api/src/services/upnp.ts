@@ -200,7 +200,13 @@ export async function openGamePorts(serverUid: string, bindings: PortBinding[]):
   if (!(await forwardingEnabled())) return;
 
   const entries = toDesired(serverUid, bindings);
-  if (entries.length === 0) return;
+  if (entries.length === 0) {
+    // Not an error — some games declare no player-facing port to forward —
+    // but silence here was one of the reasons a missing forward took so long
+    // to explain.
+    logger.info({ serverUid }, 'no player-facing port to forward for this server');
+    return;
+  }
 
   for (const entry of entries) desired.set(key(entry.externalPort, entry.protocol), entry);
 
@@ -287,6 +293,23 @@ export async function applyForwardingSetting(enabled: boolean): Promise<void> {
  * description URL is rediscovered rather than retried forever.
  */
 async function reassert(): Promise<void> {
+  // Re-derive intent from the database first, every cycle.
+  //
+  // The desired-state map is memory, and the only other things that write to
+  // it are a server start and this function. A start asks the router in the
+  // background, deliberately, so that an uncooperative router cannot fail a
+  // start that otherwise worked — but that means a forward lost to a router
+  // that was busy, rebooting, or briefly unreachable was never retried by
+  // anything. The server ran, the panel looked healthy, and players got a
+  // connection timeout with nothing anywhere saying why.
+  //
+  // Reading the running servers back each time makes the loop self-healing:
+  // whatever should be forwarded gets asserted, whether or not the start
+  // managed it.
+  await adoptRunningServers().catch((error) =>
+    logger.warn({ error }, 'could not read running servers while renewing port forwards'),
+  );
+
   if (desired.size === 0) return;
 
   cachedGateway = null;
@@ -304,9 +327,10 @@ async function reassert(): Promise<void> {
 /**
  * Rebuilds intent from the servers that are actually running.
  *
- * Called at boot, because the desired-state map lives in memory: without this
- * a panel restart would leave running servers unmapped until someone
- * restarted each one.
+ * Called at boot — the desired-state map lives in memory, so without this a
+ * panel restart would leave running servers unmapped — and again before every
+ * renewal, which is what makes a forward that failed at start time recoverable
+ * rather than permanent.
  */
 async function adoptRunningServers(): Promise<void> {
   // Imported lazily: services/servers.ts imports this module, and a static
