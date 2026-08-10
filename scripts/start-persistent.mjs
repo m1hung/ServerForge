@@ -103,22 +103,86 @@ async function waitForPort(port, timeoutMs = 60_000) {
   );
 }
 
-async function waitForHttp(url, label, timeoutMs = 120_000) {
+/**
+ * Waits for a service to answer, saying so while it waits.
+ *
+ * The silence here used to be the whole problem: two minutes of no output
+ * after "Container serverforge-web-1 Started" is indistinguishable from a
+ * hung launcher, and people reasonably killed it before it ever reported
+ * anything. It prints progress now, and when it does give up it says what
+ * the container itself was complaining about — which is nearly always the
+ * actual answer.
+ */
+async function waitForHttp(url, label, container, timeoutMs = 120_000) {
   const startedAt = Date.now();
+  let lastNotice = 0;
 
   while (Date.now() - startedAt < timeoutMs) {
     try {
       const response = await fetch(url);
       if (response.ok) return;
     } catch {
-      // The API container may still be building or waiting for its dependencies.
+      // Still starting, or waiting on its own dependencies.
     }
+
+    const waited = Math.round((Date.now() - startedAt) / 1000);
+    if (waited - lastNotice >= 10) {
+      lastNotice = waited;
+      console.log(color.dim(`  waiting for ${label.toLowerCase()}… ${waited}s`));
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
 
   throw new Error(
-    `${label} did not become reachable at ${url} within two minutes`,
+    [
+      `${label} did not become reachable at ${url} within two minutes.`,
+      "",
+      ...describeContainerTrouble(container),
+    ].join("\n"),
   );
+}
+
+/**
+ * The tail of a stuck container's log, and a reading of it.
+ *
+ * A container that starts and then cannot reach Postgres or Redis looks
+ * identical from outside to one that is merely slow. The difference is written
+ * plainly in its own log, so the launcher fetches it rather than leaving
+ * someone to discover `docker logs` on their own.
+ */
+function describeContainerTrouble(container) {
+  if (!container) return ["Check what it is doing with:  npm run stack:logs"];
+
+  const result = spawnSync("docker", ["logs", "--tail", "20", container], {
+    cwd: root,
+    encoding: "utf8",
+    shell: winShell,
+  });
+
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  if (output === "") return ["Check what it is doing with:  npm run stack:logs"];
+
+  const lines = [`Last output from ${container}:`, "", ...output.split("\n").map((l) => `  ${l}`)];
+
+  // The one failure worth naming outright. Containers that cannot reach each
+  // other by name are almost never an application problem — Docker's own
+  // forwarding rules have usually been dropped by a firewall reload or a
+  // daemon that needs restarting.
+  if (/Cannot reach (PostgreSQL|Redis)|ETIMEDOUT/i.test(output)) {
+    lines.push(
+      "",
+      "This container is running but cannot reach the database or Redis, which",
+      "are running too. That is Docker networking rather than the panel: containers",
+      "on the same network cannot talk to each other.",
+      "",
+      "Restarting the Docker daemon reinstates its firewall rules and usually fixes it:",
+      "",
+      "  sudo systemctl restart docker && npm start",
+    );
+  }
+
+  return lines;
 }
 
 function ensureDocker() {
@@ -198,10 +262,12 @@ async function main() {
   await waitForHttp(
     `http://127.0.0.1:${Number(env.API_PORT || 8080)}/health`,
     "The API",
+    "serverforge-api-1",
   );
   await waitForHttp(
     `http://127.0.0.1:${Number(env.WEB_PORT || 3000)}`,
     "The dashboard",
+    "serverforge-web-1",
   );
   success("API and dashboard are healthy");
 
