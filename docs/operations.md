@@ -37,6 +37,30 @@ nothing.
 The server stays offline afterwards, deliberately: check the world is what you
 expected before letting people back in.
 
+## Locked out of the panel
+
+Passwords are Argon2id hashes, so a forgotten one cannot be recovered — by you
+or by anyone else. Set a new one from the machine instead:
+
+```bash
+npm run reset-password
+```
+
+It lists the accounts, asks which, and prompts twice without echoing. Add
+`-- --user admin --generate` to skip the prompts and have it print a strong
+password once.
+
+Every session for that account is signed out, the same as changing a password
+in the dashboard: a reset is exactly when a session somebody else is holding
+must stop working.
+
+Two-factor is left alone deliberately — losing a password should not silently
+remove a second factor. If the authenticator is gone too, use a recovery code,
+or add `--clear-2fa` to turn it off as well.
+
+This needs shell access to the machine, which already implies database access,
+so it grants nothing that was not there before.
+
 ## Scheduled tasks
 
 Five-field cron in the server's timezone. Actions run in order and can combine:

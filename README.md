@@ -188,6 +188,7 @@ tests/          Unit tests
 | `npm run db:push`                 | Apply the schema (development)                    |
 | `npm run db:migrate`              | Create and apply a migration                      |
 | `npm run db:seed`                 | Create the local node and its port allocations    |
+| `npm run reset-password`          | Set an account's password when you are locked out |
 | `npm run db:studio`               | Browse the database                               |
 
 The compose commands work with both `docker compose` and the older
