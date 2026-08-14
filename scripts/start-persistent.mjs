@@ -116,6 +116,7 @@ async function waitForPort(port, timeoutMs = 60_000) {
 async function waitForHttp(url, label, container, timeoutMs = 120_000) {
   const startedAt = Date.now();
   let lastNotice = 0;
+  let repairedForwarding = false;
 
   while (Date.now() - startedAt < timeoutMs) {
     try {
@@ -129,6 +130,31 @@ async function waitForHttp(url, label, container, timeoutMs = 120_000) {
     if (waited - lastNotice >= 10) {
       lastNotice = waited;
       console.log(color.dim(`  waiting for ${label.toLowerCase()}… ${waited}s`));
+
+      // If the container has already decided it cannot start, waiting out the
+      // rest of the timeout is the hang this used to be. One common cause is
+      // Docker FORWARD rules missing for the compose bridge — restore those
+      // once and retry, rather than polling a crash loop.
+      if (container && containerWillNotRecover(container)) {
+        if (!repairedForwarding) {
+          repairedForwarding = true;
+          if (repairComposeBridgeForwarding()) {
+            spawnSync("docker", ["restart", container], {
+              cwd: root,
+              encoding: "utf8",
+              shell: winShell,
+            });
+            continue;
+          }
+        }
+        throw new Error(
+          [
+            `${label} is running but cannot start.`,
+            "",
+            ...describeContainerTrouble(container),
+          ].join("\n"),
+        );
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -141,6 +167,85 @@ async function waitForHttp(url, label, container, timeoutMs = 120_000) {
       ...describeContainerTrouble(container),
     ].join("\n"),
   );
+}
+
+/**
+ * True when the *latest* start attempt is blocked, not merely slow.
+ *
+ * Logs accumulate across restarts, so an earlier "Startup blocked" followed
+ * by "API ready" must not be treated as still doomed.
+ */
+function containerWillNotRecover(container) {
+  const result = spawnSync("docker", ["logs", "--tail", "40", container], {
+    cwd: root,
+    encoding: "utf8",
+    shell: winShell,
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  const markers = [
+    ...output.matchAll(/Startup blocked:|API ready|Server listening at/gi),
+  ];
+  if (markers.length === 0) return false;
+  return /Startup blocked:/i.test(markers[markers.length - 1][0]);
+}
+
+/**
+ * Docker 28+ sets FORWARD policy DROP and is supposed to ACCEPT each compose
+ * bridge. After a daemon restart, UFW reload, or Tailscale rewriting
+ * iptables, those per-bridge ACCEPTs are often missing even though NAT still
+ * exists — so containers time out reaching Postgres/Redis on the same network.
+ *
+ * Restores Docker's own rules (not a blanket FORWARD ACCEPT) via the host
+ * netns. The docker group can do this without sudo.
+ *
+ * @returns {boolean} true when rules were missing and got restored
+ */
+function repairComposeBridgeForwarding() {
+  if (process.platform !== "linux") return false;
+
+  const script = [
+    "iptables -L DOCKER-FORWARD -n >/dev/null 2>&1 || exit 0",
+    "changed=0",
+    'for br in $(ip -o link show type bridge | awk -F": " \'{print $2}\' | cut -d@ -f1 | grep "^br-" || true); do',
+    '  iptables -C DOCKER-FORWARD -i "$br" -j ACCEPT 2>/dev/null || { iptables -I DOCKER-FORWARD -i "$br" -j ACCEPT; changed=1; }',
+    '  iptables -C DOCKER-BRIDGE -o "$br" -j DOCKER 2>/dev/null || { iptables -I DOCKER-BRIDGE -o "$br" -j DOCKER; changed=1; }',
+    '  iptables -C DOCKER-CT -o "$br" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || { iptables -I DOCKER-CT -o "$br" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT; changed=1; }',
+    "done",
+    'if [ "$changed" = 1 ]; then echo REPAIRED; else echo OK; fi',
+  ].join("\n");
+
+  const result = spawnSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--privileged",
+      "--pid=host",
+      "--network=host",
+      "alpine",
+      "nsenter",
+      "-t",
+      "1",
+      "-m",
+      "-n",
+      "--",
+      "sh",
+      "-c",
+      script,
+    ],
+    { cwd: root, encoding: "utf8", shell: winShell },
+  );
+
+  if (result.status !== 0) return false;
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (!output.includes("REPAIRED")) return false;
+
+  console.log(
+    color.dim(
+      "  restored Docker bridge forwarding rules (compose bridges were not ACCEPTed)",
+    ),
+  );
+  return true;
 }
 
 /**
@@ -166,17 +271,20 @@ function describeContainerTrouble(container) {
   const lines = [`Last output from ${container}:`, "", ...output.split("\n").map((l) => `  ${l}`)];
 
   // The one failure worth naming outright. Containers that cannot reach each
-  // other by name are almost never an application problem — Docker's own
-  // forwarding rules have usually been dropped by a firewall reload or a
-  // daemon that needs restarting.
+  // other by name are almost never an application problem — Docker's FORWARD
+  // chain is DROP, and the compose bridge was never ACCEPTed. A daemon
+  // restart does not always restore those rules (UFW and Tailscale both
+  // rewrite iptables around Docker).
   if (/Cannot reach (PostgreSQL|Redis)|ETIMEDOUT/i.test(output)) {
     lines.push(
       "",
       "This container is running but cannot reach the database or Redis, which",
-      "are running too. That is Docker networking rather than the panel: containers",
-      "on the same network cannot talk to each other.",
+      "are running too. That is Docker networking rather than the panel: the",
+      "compose bridge is missing from Docker's FORWARD chain, so traffic between",
+      "containers is dropped.",
       "",
-      "Restarting the Docker daemon reinstates its firewall rules and usually fixes it:",
+      "The launcher tries to restore those rules on start. If you still see this,",
+      "restart Docker and start again:",
       "",
       "  sudo systemctl restart docker && npm start",
     );
@@ -259,6 +367,7 @@ async function main() {
     "api",
     "web",
   ]);
+  repairComposeBridgeForwarding();
   await waitForHttp(
     `http://127.0.0.1:${Number(env.API_PORT || 8080)}/health`,
     "The API",
