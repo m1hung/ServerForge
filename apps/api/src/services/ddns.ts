@@ -1,8 +1,7 @@
 import { config } from '../config.js';
 import {
-  describeGateway,
   discoverGateway,
-  gatewayFromControlUrl,
+  gatewayFromConfiguredUrl,
   getExternalIp,
 } from '../lib/igd.js';
 import { logger } from '../lib/logger.js';
@@ -113,9 +112,7 @@ export async function getDdnsStatus(): Promise<DdnsStatus> {
  */
 async function currentIpv4(): Promise<string | null> {
   const gateway = config.UPNP_CONTROL_URL
-    ? config.UPNP_CONTROL_URL.endsWith('.xml')
-      ? await describeGateway(config.UPNP_CONTROL_URL).catch(() => null)
-      : gatewayFromControlUrl(config.UPNP_CONTROL_URL)
+    ? await gatewayFromConfiguredUrl(config.UPNP_CONTROL_URL)
     : await discoverGateway().catch(() => null);
 
   if (!gateway) return null;

@@ -2,9 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import { config } from '../config.js';
 import {
-  describeGateway,
   discoverGateway,
-  gatewayFromControlUrl,
+  gatewayFromConfiguredUrl,
   gatewayHost,
   getExternalIp,
   localAddressFor,
@@ -135,9 +134,7 @@ export function readInterfaces(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]
 
 async function resolveRouter(): Promise<NetworkReport['router'] & { lanIp: string | null }> {
   const gateway = config.UPNP_CONTROL_URL
-    ? config.UPNP_CONTROL_URL.endsWith('.xml')
-      ? await describeGateway(config.UPNP_CONTROL_URL).catch(() => null)
-      : gatewayFromControlUrl(config.UPNP_CONTROL_URL)
+    ? await gatewayFromConfiguredUrl(config.UPNP_CONTROL_URL)
     : await discoverGateway().catch(() => null);
 
   if (!gateway) return { available: false, externalIp: null, controlUrl: null, lanIp: null };

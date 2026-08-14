@@ -4,9 +4,8 @@ import { logger } from '../lib/logger.js';
 import {
   addPortMapping,
   deletePortMapping,
-  describeGateway,
   discoverGateway,
-  gatewayFromControlUrl,
+  gatewayFromConfiguredUrl,
   gatewayHost,
   getPortMapping,
   IGD_CONFLICT,
@@ -95,12 +94,15 @@ async function resolveGateway(): Promise<Gateway | null> {
     // Accept either a control URL or a device-description URL: telling them
     // apart by eye is not something anyone should have to do.
     const configured = config.UPNP_CONTROL_URL;
-    cachedGateway = configured.endsWith('.xml')
-      ? await describeGateway(configured).catch(() => null)
-      : gatewayFromControlUrl(configured);
+    cachedGateway = await gatewayFromConfiguredUrl(configured);
 
     if (!cachedGateway) {
       logger.warn({ url: configured }, 'UPNP_CONTROL_URL did not describe a WAN connection service');
+    } else if (cachedGateway.controlUrl !== configured && !configured.endsWith('.xml')) {
+      logger.info(
+        { configured, controlUrl: cachedGateway.controlUrl },
+        'UPnP gateway moved to a new port — using the rediscovered control URL',
+      );
     }
     return cachedGateway;
   }
@@ -183,7 +185,12 @@ async function apply(gateway: Gateway, client: string, entry: Desired): Promise<
     }
 
     logger.warn(
-      { error, port: entry.externalPort, protocol: entry.protocol, serverUid: entry.serverUid },
+      {
+        err: error,
+        port: entry.externalPort,
+        protocol: entry.protocol,
+        serverUid: entry.serverUid,
+      },
       'could not create router port forward',
     );
     return false;

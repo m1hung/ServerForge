@@ -171,6 +171,103 @@ export function gatewayFromControlUrl(controlUrl: string, serviceType?: string):
   return { controlUrl, serviceType: serviceType ?? WAN_SERVICES[0]! };
 }
 
+const IGD_DESCRIPTION_PATHS = [
+  '/IGDdevicedesc_brlan0.xml',
+  '/rootDesc.xml',
+  '/igddesc.xml',
+  '/gatedesc.xml',
+  '/description.xml',
+];
+
+function tcpOpen(host: string, port: number, timeoutMs = 250): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const done = (ok: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+  });
+}
+
+async function controlUrlReachable(url: string): Promise<boolean> {
+  try {
+    const parsed = new URL(url);
+    const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+    return tcpOpen(parsed.hostname, port, 400);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Finds an IGD on the same host as a configured URL, when that URL's port is dead.
+ *
+ * Xfinity (and some other consumer gateways) pick a new high port every time
+ * UPnP is toggled. SSDP multicast cannot reach the LAN from a bridged
+ * container, but a unicast GET to the gateway IP can. Nearby ports are tried
+ * first, then the common 49152–49220 range.
+ */
+export async function discoverGatewayNear(hintUrl: string): Promise<Gateway | null> {
+  let host: string;
+  let hintPort: number | undefined;
+  try {
+    const parsed = new URL(hintUrl);
+    host = parsed.hostname;
+    hintPort = parsed.port ? Number(parsed.port) : undefined;
+  } catch {
+    return null;
+  }
+
+  const ports: number[] = [];
+  const seen = new Set<number>();
+  const add = (port: number) => {
+    if (port < 1 || port > 65535 || seen.has(port)) return;
+    seen.add(port);
+    ports.push(port);
+  };
+
+  if (hintPort) {
+    for (const delta of [0, 1, -1, 2, -2, 3, -3, 4, -4, 8, -8]) add(hintPort + delta);
+  }
+  for (let port = 49152; port <= 49220; port++) add(port);
+
+  const open: number[] = [];
+  const batchSize = 20;
+  for (let i = 0; i < ports.length; i += batchSize) {
+    const batch = ports.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map(async (port) => ({ port, ok: await tcpOpen(host, port) })));
+    open.push(...results.filter((row) => row.ok).map((row) => row.port));
+  }
+
+  for (const port of open) {
+    for (const path of IGD_DESCRIPTION_PATHS) {
+      const gateway = await describeGateway(`http://${host}:${port}${path}`).catch(() => null);
+      if (gateway) return gateway;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolves a configured control or description URL, rediscovering nearby if it
+ * no longer answers.
+ */
+export async function gatewayFromConfiguredUrl(url: string): Promise<Gateway | null> {
+  if (url.endsWith('.xml')) {
+    const described = await describeGateway(url).catch(() => null);
+    if (described) return described;
+  } else if (await controlUrlReachable(url)) {
+    return gatewayFromControlUrl(url);
+  }
+
+  return discoverGatewayNear(url);
+}
+
 async function soap(
   gateway: Gateway,
   action: string,
