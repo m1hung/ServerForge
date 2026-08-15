@@ -93,7 +93,8 @@ html[data-sf-theme="phosphor"] body::before {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Below portaled chrome (bottom nav / sheets); above the shell canvas. */
+  z-index: 20;
   background: repeating-linear-gradient(
     to bottom,
     transparent 0,
@@ -111,7 +112,7 @@ html[data-sf-theme="phosphor"] body::after {
   left: 0;
   right: 0;
   height: 20%;
-  z-index: 51;
+  z-index: 21;
   background: linear-gradient(
     to bottom,
     transparent,
@@ -130,7 +131,7 @@ html[data-sf-theme="phosphor"].light body::before {
   opacity: 0.5;
 }
 
-html[data-sf-theme="phosphor"] [data-sf-shell],
+/* Shell stays z-auto so fixed bottom nav / sticky bars can stack above theme overlays. */
 html[data-sf-theme="phosphor"] [data-sf-workspace],
 html[data-sf-theme="phosphor"] [data-sf-main] {
   position: relative;

@@ -112,7 +112,7 @@ html[data-sf-theme="inkseal"].light body::after {
   background: radial-gradient(circle, hsl(30 20% 70% / 0.45), transparent 70%);
 }
 
-html[data-sf-theme="inkseal"] [data-sf-shell],
+/* Shell stays z-auto so fixed bottom nav / sticky bars can stack above theme overlays. */
 html[data-sf-theme="inkseal"] [data-sf-workspace],
 html[data-sf-theme="inkseal"] [data-sf-main] {
   position: relative;

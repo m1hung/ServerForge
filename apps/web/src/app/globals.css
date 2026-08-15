@@ -112,9 +112,21 @@
 
   body {
     @apply min-h-screen bg-canvas font-sans text-ink antialiased;
-    /* Notch / home-indicator insets for the shell chrome. */
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
-      env(safe-area-inset-left);
+  }
+
+  /*
+   * Safe-area lives on the shell, not body. Body padding + h-screen made the
+   * fixed bottom nav slip under the home indicator when the URL bar toggled.
+   */
+  [data-sf-shell] {
+    box-sizing: border-box;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
 
   /*
@@ -271,7 +283,9 @@
    * Desktop: flush to the bottom, inset past the sidebar.
    */
   .sticky-action-bar {
-    @apply fixed left-0 right-0 z-40 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:bottom-0 md:left-60;
+    @apply fixed left-0 right-0 z-[46] border-t border-line bg-surface px-4 py-3 md:bottom-0 md:left-60;
+    background-color: hsl(var(--surface) / 0.95);
+    backdrop-filter: blur(12px);
     bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
   }
 

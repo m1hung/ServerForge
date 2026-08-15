@@ -188,10 +188,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   // The shell is a fixed viewport: the sidebar and header never move, and
-  // only <main> scrolls. That is what keeps the dashboard on one screen
-  // instead of the whole window scrolling under a sticky header.
+  // only <main> scrolls. Height/safe-area come from [data-sf-shell] in
+  // globals.css (dvh) so the mobile bottom nav is not clipped by iOS chrome.
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas" data-sf-shell>
+    <div className="flex overflow-hidden bg-canvas" data-sf-shell>
       {/* ── Sidebar (desktop) ────────────────────────────────────────── */}
       <aside
         className="relative hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex"
@@ -384,7 +384,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* ── Bottom nav (mobile) ──────────────────────────────────────── */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl md:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 flex flex-nowrap border-t border-line bg-surface pb-[env(safe-area-inset-bottom,0px)] md:hidden"
+        style={{ backgroundColor: "hsl(var(--surface) / 0.97)" }}
         aria-label="Main"
         data-sf-mobile-nav
       >
@@ -397,14 +398,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] touch-manipulation",
+                "relative flex min-h-[3.25rem] min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] touch-manipulation",
                 active ? "font-medium text-accent" : "text-ink-muted",
               )}
             >
               {active && (
                 <span className="absolute inset-x-1/3 top-0 h-0.5 rounded-full bg-accent" />
               )}
-              <item.icon className="h-[18px] w-[18px]" aria-hidden />
+              <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
               <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );
@@ -416,7 +417,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             aria-haspopup="dialog"
             onClick={() => setMoreOpen(true)}
             className={cn(
-              "relative flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] touch-manipulation",
+              "relative flex min-h-[3.25rem] min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] touch-manipulation",
               moreOpen || moreActive
                 ? "font-medium text-accent"
                 : "text-ink-muted",
@@ -425,7 +426,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {(moreOpen || moreActive) && (
               <span className="absolute inset-x-1/3 top-0 h-0.5 rounded-full bg-accent" />
             )}
-            <MoreHorizontal className="h-[18px] w-[18px]" aria-hidden />
+            <MoreHorizontal className="h-[18px] w-[18px] shrink-0" aria-hidden />
             More
           </button>
         )}

@@ -184,7 +184,7 @@ html[data-sf-theme="zenless"] body::after {
   animation: sf-zz-ghost-drift 22s ease-in-out infinite;
 }
 
-html[data-sf-theme="zenless"] [data-sf-shell],
+/* Shell stays z-auto so fixed bottom nav / sticky bars can stack above theme overlays. */
 html[data-sf-theme="zenless"] [data-sf-workspace],
 html[data-sf-theme="zenless"] [data-sf-main] {
   position: relative;

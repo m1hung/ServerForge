@@ -105,7 +105,8 @@ html[data-sf-theme="arcade"] body::after {
   position: fixed;
   bottom: 1.25rem;
   left: 50%;
-  z-index: 40;
+  /* Decorative only — must stay under the mobile bottom nav. */
+  z-index: 5;
   transform: translateX(-50%);
   font-family: var(--font-display);
   font-size: 10px;
@@ -119,7 +120,7 @@ html[data-sf-theme="arcade"] body::after {
   html[data-sf-theme="arcade"] body::after { bottom: 4.5rem; }
 }
 
-html[data-sf-theme="arcade"] [data-sf-shell],
+/* Shell stays z-auto so fixed bottom nav / sticky bars can stack above theme overlays. */
 html[data-sf-theme="arcade"] [data-sf-workspace],
 html[data-sf-theme="arcade"] [data-sf-main] {
   position: relative;

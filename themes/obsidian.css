@@ -124,7 +124,7 @@ html[data-sf-theme="obsidian"].light body::before {
     linear-gradient(160deg, hsl(25 20% 95%), hsl(25 18% 92%));
 }
 
-html[data-sf-theme="obsidian"] [data-sf-shell],
+/* Shell stays z-auto so fixed bottom nav / sticky bars can stack above theme overlays. */
 html[data-sf-theme="obsidian"] [data-sf-workspace],
 html[data-sf-theme="obsidian"] [data-sf-main] {
   position: relative;
