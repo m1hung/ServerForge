@@ -10,6 +10,7 @@ import {
   HardDrive,
   House,
   MemoryStick,
+  MoreVertical,
   Play,
   Rocket,
   RotateCw,
@@ -23,9 +24,10 @@ import {
   Wifi,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import { api, ApiError, streamUrl } from "@/lib/api";
 import { cn, copyToClipboard, formatMib } from "@/lib/utils";
+import { useLongPress } from "@/lib/use-long-press";
 import {
   Badge,
   Button,
@@ -223,13 +225,8 @@ export default function ServersPage() {
                           : undefined,
                       });
                     }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setMenu({
-                        server,
-                        x: event.clientX,
-                        y: event.clientY,
-                      });
+                    onOpenMenu={(x, y) => {
+                      setMenu({ server, x, y });
                     }}
                   />
                 ))}
@@ -421,13 +418,13 @@ function Toolbar({
           value={search}
           onChange={(event) => onSearch(event.target.value)}
           placeholder="Search by server, game, or machine…"
-          className="inset-well h-8 w-full border border-transparent pl-8 pr-3 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:font-sans placeholder:text-ink-subtle focus:border-accent/60"
+          className="inset-well h-11 w-full border border-transparent pl-9 pr-3 font-mono text-[13px] text-ink outline-none transition-colors placeholder:font-sans placeholder:text-ink-subtle focus:border-accent/60 md:h-9 md:pl-8 md:text-[12.5px]"
         />
       </label>
 
       {/* A segmented filter: the selected one is the only filled segment. */}
       <div
-        className="flex shrink-0 gap-0.5 rounded-md bg-surface-raised p-0.5"
+        className="flex shrink-0 gap-0.5 overflow-x-auto rounded-md bg-surface-raised p-0.5 scrollbar-thin"
         aria-label="Filter servers"
       >
         {(["all", "online", "attention", "offline"] as const).map((entry) => (
@@ -437,7 +434,7 @@ function Toolbar({
             aria-pressed={filter === entry}
             onClick={() => onFilter(entry)}
             className={cn(
-              "shrink-0 rounded-[5px] px-2.5 py-1.5 text-[12px] capitalize transition-colors",
+              "min-h-10 shrink-0 rounded-[5px] px-3 py-2 text-[12.5px] capitalize transition-colors md:min-h-0 md:px-2.5 md:py-1.5 md:text-[12px]",
               filter === entry
                 ? "bg-surface font-medium text-ink shadow-sm"
                 : "text-ink-subtle hover:text-ink",
@@ -454,13 +451,18 @@ function Toolbar({
 function ServerCard({
   server,
   onCopy,
-  onContextMenu,
+  onOpenMenu,
 }: {
   server: FleetServer;
   onCopy: (address: string, kind: "internet" | "local") => void;
-  onContextMenu: (event: MouseEvent) => void;
+  onOpenMenu: (x: number, y: number) => void;
 }) {
   const isLive = server.state === "running";
+  const openAt = useCallback(
+    (x: number, y: number) => onOpenMenu(x, y),
+    [onOpenMenu],
+  );
+  const longPress = useLongPress(openAt);
 
   return (
     /*
@@ -468,22 +470,35 @@ function ServerCard({
      * right now, what it is allowed to use, and how to reach it.
      */
     <Card
-      className="group relative flex cursor-pointer flex-col px-4 py-4 transition-colors duration-150 hover:border-line-strong"
-      onContextMenu={onContextMenu}
+      className="group relative flex cursor-pointer flex-col px-4 py-4 transition-colors duration-150 hover:border-line-strong touch-manipulation"
+      onContextMenu={(event: MouseEvent) => {
+        event.preventDefault();
+        onOpenMenu(event.clientX, event.clientY);
+      }}
+      onPointerDown={longPress.onPointerDown}
+      onPointerMove={longPress.onPointerMove}
+      onPointerUp={longPress.onPointerUp}
+      onPointerCancel={longPress.onPointerCancel}
     >
       <Link
         href={`/servers/${server.uid}`}
         className="absolute inset-0 z-[1] rounded-[inherit] focus-visible:ring-inset"
         aria-label={`Open ${server.name}`}
+        onClick={(event) => {
+          if (longPress.didFire()) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
       />
       {/* Identity strip */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="inset-well flex h-8 w-8 shrink-0 items-center justify-center text-ink-subtle transition-colors group-hover:text-accent">
+          <div className="inset-well flex h-9 w-9 shrink-0 items-center justify-center text-ink-subtle transition-colors group-hover:text-accent md:h-8 md:w-8">
             <Gamepad2 className="h-4 w-4" aria-hidden />
           </div>
           <div className="min-w-0">
-            <h2 className="engraved truncate text-[13.5px] leading-tight">
+            <h2 className="engraved truncate text-[14px] leading-tight md:text-[13.5px]">
               {server.name}
             </h2>
             <p className="datum mt-1 truncate text-ink-subtle">
@@ -491,7 +506,22 @@ function ServerCard({
             </p>
           </div>
         </div>
-        <StatusBadge state={server.state} className="mt-0.5 shrink-0" />
+        <div className="relative z-[2] flex shrink-0 items-start gap-1">
+          <StatusBadge state={server.state} className="mt-0.5" />
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-subtle transition-colors hover:bg-surface-raised hover:text-ink md:h-8 md:w-8"
+            aria-label={`Actions for ${server.name}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              onOpenMenu(rect.right - 8, rect.bottom + 4);
+            }}
+          >
+            <MoreVertical className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
       </div>
 
       {/* Live signal or node */}
@@ -565,7 +595,7 @@ function AddressChip({
 }) {
   return (
     <div className="readout flex min-w-0 items-center gap-1.5 px-2 py-1.5">
-      <Icon className="h-3 w-3 shrink-0 text-ink-subtle" aria-hidden />
+      <Icon className="h-3.5 w-3.5 shrink-0 text-ink-subtle" aria-hidden />
       <code className="min-w-0 flex-1 truncate text-[11px]" title={`${label}: ${value}`}>
         {value}
       </code>
@@ -576,10 +606,10 @@ function AddressChip({
           event.stopPropagation();
           onCopy();
         }}
-        className="relative z-[2] shrink-0 rounded p-0.5 text-ink-subtle transition-colors hover:text-accent"
+        className="relative z-[2] flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-ink-subtle transition-colors hover:bg-surface-raised hover:text-accent md:h-7 md:w-7"
         aria-label={`Copy the ${label.toLowerCase()} address`}
       >
-        <Copy className="h-3 w-3" />
+        <Copy className="h-3.5 w-3.5" />
       </button>
     </div>
   );

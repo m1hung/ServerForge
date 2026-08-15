@@ -97,7 +97,7 @@ export function SettingsPanel({ uid, state }: { uid: string; state: ServerState 
   const hasChanges = dirty.size > 0;
 
   return (
-    <div className="space-y-4 pb-20">
+    <div className="space-y-4 pb-sticky-actions">
       <Card>
         <CardBody className="space-y-8">
           {settings.data?.groups.map((group) => (
@@ -125,8 +125,8 @@ export function SettingsPanel({ uid, state }: { uid: string; state: ServerState 
       {/* A sticky bar rather than a button at the bottom of a long form: on a
           settings page nobody scrolls back up to find Save. */}
       {hasChanges && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:left-56">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+        <div className="sticky-action-bar">
+          <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-[13px] text-ink-muted">
               {dirty.size} unsaved change{dirty.size === 1 ? '' : 's'}
               {['running', 'starting'].includes(state) && ' — a restart may be needed'}
@@ -134,6 +134,7 @@ export function SettingsPanel({ uid, state }: { uid: string; state: ServerState 
             <div className="flex gap-2">
               <Button
                 variant="ghost"
+                className="flex-1 sm:flex-none"
                 onClick={() => {
                   if (settings.data) setValues(settings.data.values);
                   setDirty(new Set());
@@ -142,7 +143,13 @@ export function SettingsPanel({ uid, state }: { uid: string; state: ServerState 
               >
                 Discard
               </Button>
-              <Button variant="primary" loading={save.isPending} loadingText="Saving…" onClick={() => save.mutate()}>
+              <Button
+                variant="primary"
+                className="flex-1 sm:flex-none"
+                loading={save.isPending}
+                loadingText="Saving…"
+                onClick={() => save.mutate()}
+              >
                 <Save className="h-4 w-4" aria-hidden />
                 Save changes
               </Button>

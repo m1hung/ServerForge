@@ -107,10 +107,14 @@
   html {
     /* Prevents the layout shift when a modal locks scrolling. */
     scrollbar-gutter: stable;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     @apply min-h-screen bg-canvas font-sans text-ink antialiased;
+    /* Notch / home-indicator insets for the shell chrome. */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
+      env(safe-area-inset-left);
   }
 
   /*
@@ -260,5 +264,25 @@
 
   .text-balance {
     text-wrap: balance;
+  }
+
+  /*
+   * Sticky form chrome sits above the mobile bottom nav (+ home indicator).
+   * Desktop: flush to the bottom, inset past the sidebar.
+   */
+  .sticky-action-bar {
+    @apply fixed left-0 right-0 z-40 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:bottom-0 md:left-60;
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Extra scroll padding so the last fields clear nav + sticky bar. */
+  .pb-sticky-actions {
+    padding-bottom: calc(9.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 768px) {
+    .pb-sticky-actions {
+      padding-bottom: 6rem;
+    }
   }
 }

@@ -20,6 +20,9 @@ export const viewport: Viewport = {
   ],
   width: 'device-width',
   initialScale: 1,
+  // Lets env(safe-area-inset-*) resolve on notched phones so the bottom nav
+  // and sticky save bars clear the home indicator.
+  viewportFit: 'cover',
 };
 
 const apiUrlLiteral = JSON.stringify(process.env.NEXT_PUBLIC_API_URL ?? 'auto');

@@ -243,9 +243,9 @@ function ServerPageInner() {
       <div>
         <Link
           href="/servers"
-          className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] text-ink-muted transition-colors hover:text-accent"
+          className="mb-3 inline-flex min-h-10 items-center gap-1.5 text-[13px] text-ink-muted transition-colors hover:text-accent"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+          <ArrowLeft className="h-4 w-4" aria-hidden />
           All servers
         </Link>
 
@@ -285,10 +285,11 @@ function ServerPageInner() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               {!isLive ? (
                 <Button
                   variant="primary"
+                  className="w-full sm:w-auto"
                   loading={power.isPending && power.variables === "start"}
                   disabled={isBusy}
                   onClick={() => power.mutate("start")}
@@ -300,13 +301,18 @@ function ServerPageInner() {
                 <>
                   <Button
                     variant="secondary"
+                    className="w-full sm:w-auto"
                     loading={power.isPending && power.variables === "restart"}
                     onClick={() => power.mutate("restart")}
                   >
                     <RotateCw className="h-4 w-4" aria-hidden />
                     Restart
                   </Button>
-                  <Button variant="danger" onClick={() => setConfirmStop(true)}>
+                  <Button
+                    variant="danger"
+                    className="w-full sm:w-auto"
+                    onClick={() => setConfirmStop(true)}
+                  >
                     <Square className="h-4 w-4" aria-hidden />
                     Stop
                   </Button>
@@ -372,80 +378,84 @@ function ServerPageInner() {
         </div>
       )}
 
-      {/* ── Live stats ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          icon={Cpu}
-          label="CPU"
-          value={
-            stream.stats
-              ? `${cpuUtilizationPercent(stream.stats.cpuPercent, server.limits.cpuCores).toFixed(1)}%`
-              : "—"
-          }
-          sub={`of ${server.limits.cpuCores} cores`}
-          percent={
-            stream.stats
-              ? cpuUtilizationPercent(stream.stats.cpuPercent, server.limits.cpuCores)
-              : undefined
-          }
-        />
-        <Stat
-          icon={MemoryStick}
-          label="Memory"
-          value={stream.stats ? formatBytes(stream.stats.memoryBytes) : "—"}
-          sub={`of ${formatMib(server.limits.memoryMib)}`}
-          percent={
-            stream.stats && server.limits.memoryMib > 0
-              ? (stream.stats.memoryBytes /
-                  (server.limits.memoryMib * 1024 * 1024)) *
-                100
-              : undefined
-          }
-        />
-        <Stat
-          icon={HardDrive}
-          label="Disk"
-          value={
-            stream.stats?.diskBytes ? formatBytes(stream.stats.diskBytes) : "—"
-          }
-          sub={`of ${formatMib(server.limits.diskMib)}`}
-          percent={
-            stream.stats?.diskBytes && server.limits.diskMib > 0
-              ? (stream.stats.diskBytes /
-                  (server.limits.diskMib * 1024 * 1024)) *
-                100
-              : undefined
-          }
-        />
-        <Stat
-          icon={Clock3}
-          label="Uptime"
-          value={
-            state === "running"
-              ? formatDuration(stream.stats?.uptimeSeconds ?? 0)
-              : "—"
-          }
-          sub={
-            state === "running"
-              ? `${stream.stats?.players?.online ?? 0} players online`
-              : "Server is offline"
-          }
-        />
-      </div>
+      {/* ── Live stats (Overview only — other tabs need the viewport) ── */}
+      {activeTab === "Overview" && (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat
+              icon={Cpu}
+              label="CPU"
+              value={
+                stream.stats
+                  ? `${cpuUtilizationPercent(stream.stats.cpuPercent, server.limits.cpuCores).toFixed(1)}%`
+                  : "—"
+              }
+              sub={`of ${server.limits.cpuCores} cores`}
+              percent={
+                stream.stats
+                  ? cpuUtilizationPercent(stream.stats.cpuPercent, server.limits.cpuCores)
+                  : undefined
+              }
+            />
+            <Stat
+              icon={MemoryStick}
+              label="Memory"
+              value={stream.stats ? formatBytes(stream.stats.memoryBytes) : "—"}
+              sub={`of ${formatMib(server.limits.memoryMib)}`}
+              percent={
+                stream.stats && server.limits.memoryMib > 0
+                  ? (stream.stats.memoryBytes /
+                      (server.limits.memoryMib * 1024 * 1024)) *
+                    100
+                  : undefined
+              }
+            />
+            <Stat
+              icon={HardDrive}
+              label="Disk"
+              value={
+                stream.stats?.diskBytes ? formatBytes(stream.stats.diskBytes) : "—"
+              }
+              sub={`of ${formatMib(server.limits.diskMib)}`}
+              percent={
+                stream.stats?.diskBytes && server.limits.diskMib > 0
+                  ? (stream.stats.diskBytes /
+                      (server.limits.diskMib * 1024 * 1024)) *
+                    100
+                  : undefined
+              }
+            />
+            <Stat
+              icon={Clock3}
+              label="Uptime"
+              value={
+                state === "running"
+                  ? formatDuration(stream.stats?.uptimeSeconds ?? 0)
+                  : "—"
+              }
+              sub={
+                state === "running"
+                  ? `${stream.stats?.players?.online ?? 0} players online`
+                  : "Server is offline"
+              }
+            />
+          </div>
 
-      <ResourceChart
-        history={stream.statsHistory}
-        cpuCores={server.limits.cpuCores}
-        memoryLimitBytes={server.limits.memoryMib * 1024 * 1024}
-        connected={stream.connected}
-      />
+          <ResourceChart
+            history={stream.statsHistory}
+            cpuCores={server.limits.cpuCores}
+            memoryLimitBytes={server.limits.memoryMib * 1024 * 1024}
+            connected={stream.connected}
+          />
+        </>
+      )}
 
       {/* ── Tabs ───────────────────────────────────────────────────── */}
       {/* A single rule under the row, with the selected tab sitting on it —
           the least furniture that still says "these are the sections". */}
-      <div className="overflow-x-auto border-b border-line scrollbar-thin">
+      <div className="-mx-4 overflow-x-auto border-b border-line px-4 scrollbar-thin sm:mx-0 sm:px-0">
         <div
-          className="flex min-w-max gap-1"
+          className="flex min-w-max gap-0.5"
           role="tablist"
           aria-label="Server sections"
         >
@@ -459,7 +469,7 @@ function ServerPageInner() {
               tabIndex={activeTab === entry ? 0 : -1}
               onClick={() => openTab(entry)}
               className={cn(
-                "-mb-px border-b-2 px-3 py-2.5 text-[13px] transition-colors",
+                "-mb-px min-h-11 border-b-2 px-3.5 py-2.5 text-[13px] transition-colors md:min-h-0",
                 activeTab === entry
                   ? "border-b-accent font-medium text-ink"
                   : "border-b-transparent text-ink-muted hover:text-ink",
@@ -480,7 +490,7 @@ function ServerPageInner() {
         {activeTab === "Overview" && <Overview server={server} state={state} />}
 
         {activeTab === "Console" && (
-          <div className="h-[560px]">
+          <div className="h-[min(560px,70dvh)] min-h-[280px]">
             <Console
               lines={stream.lines}
               connected={stream.connected}
@@ -599,7 +609,7 @@ function CopyAddress({
           hint: ok && label === "Local" ? "Use this on the same network." : undefined,
         });
       }}
-      className="readout inline-flex max-w-full items-center gap-2 px-2.5 py-1.5 text-[11.5px] transition-colors hover:border-line-strong"
+      className="readout inline-flex min-h-10 max-w-full items-center gap-2 px-3 py-2 text-[12px] transition-colors hover:border-line-strong md:min-h-0 md:px-2.5 md:py-1.5 md:text-[11.5px]"
       aria-label={`Copy ${label.toLowerCase()} address ${value}`}
       title={`${label}: ${value}`}
     >

@@ -8,6 +8,7 @@ import {
   Loader2,
   LogOut,
   Moon,
+  MoreHorizontal,
   ScrollText,
   Settings,
   Plus,
@@ -15,10 +16,12 @@ import {
   SlidersHorizontal,
   Sun,
   Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, ApiError } from "@/lib/api";
 import { BRAND, cn, inkOn } from "@/lib/utils";
 import { Button } from "@/components/ui";
@@ -73,12 +76,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     const stored =
       (localStorage.getItem("sf-theme") as "dark" | "light" | null) ?? "dark";
     setTheme(stored);
   }, []);
+
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -166,9 +174,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   ];
 
   // The bottom bar splits the width evenly between its entries, so past four
-  // the labels stop fitting on a phone. Capacity planning and log reading are
-  // desk work; they stay reachable by URL and from the sidebar on a tablet up.
+  // the labels stop fitting on a phone. Desk-only routes land in a More sheet.
   const mobileNav = nav.filter((item) => item.mobile !== false);
+  const moreNav = nav.filter((item) => item.mobile === false);
+  const moreActive = moreNav.some(
+    (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+  );
   const route = describeRoute(pathname);
 
   const signOut = async () => {
@@ -365,7 +376,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main
           id="main"
           data-sf-main
-          className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-5 scrollbar-thin sm:px-6 md:px-8 md:pb-8 md:pt-6"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-5 scrollbar-thin sm:px-6 md:px-8 md:pb-8 md:pt-6"
         >
           {children}
         </main>
@@ -373,7 +384,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* ── Bottom nav (mobile) ──────────────────────────────────────── */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+        className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl md:hidden"
         aria-label="Main"
         data-sf-mobile-nav
       >
@@ -386,7 +397,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex flex-1 flex-col items-center gap-1 py-3 text-[11px]",
+                "relative flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] touch-manipulation",
                 active ? "font-medium text-accent" : "text-ink-muted",
               )}
             >
@@ -394,11 +405,127 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <span className="absolute inset-x-1/3 top-0 h-0.5 rounded-full bg-accent" />
               )}
               <item.icon className="h-[18px] w-[18px]" aria-hidden />
-              {item.label}
+              <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );
         })}
+        {moreNav.length > 0 && (
+          <button
+            type="button"
+            aria-expanded={moreOpen}
+            aria-haspopup="dialog"
+            onClick={() => setMoreOpen(true)}
+            className={cn(
+              "relative flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] touch-manipulation",
+              moreOpen || moreActive
+                ? "font-medium text-accent"
+                : "text-ink-muted",
+            )}
+          >
+            {(moreOpen || moreActive) && (
+              <span className="absolute inset-x-1/3 top-0 h-0.5 rounded-full bg-accent" />
+            )}
+            <MoreHorizontal className="h-[18px] w-[18px]" aria-hidden />
+            More
+          </button>
+        )}
       </nav>
+
+      {moreOpen && moreNav.length > 0 && (
+        <MobileMoreSheet
+          items={moreNav}
+          pathname={pathname}
+          onClose={() => setMoreOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function MobileMoreSheet({
+  items,
+  pathname,
+  onClose,
+}: {
+  items: Array<{
+    href: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }>;
+  pathname: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 md:hidden" role="presentation">
+      <button
+        type="button"
+        className="absolute inset-0 bg-canvas/70 backdrop-blur-[2px]"
+        aria-label="Close menu"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="More"
+        className="absolute inset-x-0 bottom-0 rounded-t-2xl border border-line bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-overlay"
+      >
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <p className="engraved text-[13px]">More</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-md text-ink-muted hover:bg-surface-raised hover:text-ink"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <nav className="flex flex-col p-2" aria-label="More destinations">
+          {items.map((item) => {
+            const active =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex min-h-12 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors",
+                  active
+                    ? "bg-surface-raised font-medium text-ink"
+                    : "text-ink-muted hover:bg-surface-raised/60 hover:text-ink",
+                )}
+              >
+                <item.icon
+                  className={cn(
+                    "h-5 w-5 shrink-0",
+                    active ? "text-accent" : "text-ink-subtle",
+                  )}
+                  aria-hidden
+                />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+    </div>,
+    document.body,
   );
 }

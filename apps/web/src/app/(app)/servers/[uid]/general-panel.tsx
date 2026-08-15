@@ -150,7 +150,7 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
   });
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-4 pb-sticky-actions">
       <Card>
         <CardHeader>
           <CardTitle>Server details</CardTitle>
@@ -307,12 +307,13 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
       )}
 
       {dirty && canEdit && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:left-60">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+        <div className="sticky-action-bar">
+          <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-[12.5px] text-ink-muted">Unsaved changes</p>
             <div className="flex gap-2">
               <Button
                 variant="ghost"
+                className="flex-1 sm:flex-none"
                 onClick={() => {
                   setName(server.name);
                   setDescription(server.description ?? '');
@@ -324,6 +325,7 @@ export function GeneralPanel({ server }: { server: GeneralPanelServer }) {
               </Button>
               <Button
                 variant="primary"
+                className="flex-1 sm:flex-none"
                 loading={save.isPending}
                 loadingText="Saving…"
                 onClick={() => save.mutate()}

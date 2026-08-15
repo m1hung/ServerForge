@@ -573,7 +573,7 @@ export function FilesPanel({ uid, permissions }: { uid: string; permissions: str
 
       {/* ── Upload progress ────────────────────────────────────────────── */}
       {uploadPercent !== null && (
-        <div className="fixed bottom-4 left-1/2 z-40 w-72 -translate-x-1/2 rounded-lg border border-line bg-surface-raised p-3 shadow-xl">
+        <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-40 w-[min(18rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-line bg-surface-raised p-3 shadow-xl md:bottom-4">
           <div className="mb-2 flex items-center justify-between text-[12.5px]">
             <span className="flex items-center gap-2 text-ink">
               <HardDriveDownload className="h-3.5 w-3.5" aria-hidden />

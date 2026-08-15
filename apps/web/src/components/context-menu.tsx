@@ -13,13 +13,11 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * A right-click menu.
+ * A contextual action menu.
  *
- * Rendered on `document.body` with an inline `position: fixed`. The `.panel`
- * class is `position: relative`, and several themes add a hover transform;
- * either would take `left`/`top` as an offset from the menu's place in the
- * page instead of from the cursor. Portalling also escapes `main`'s scroll
- * container, which otherwise becomes the containing block.
+ * Opened from right-click, long-press, or an explicit overflow control.
+ * Rendered on `document.body` with `position: fixed` so theme transforms and
+ * `main`'s scroll container cannot steal the coordinates.
  */
 
 export function ContextMenu({
@@ -92,7 +90,7 @@ export function ContextMenu({
       role="menu"
       aria-label={label}
       style={{ position: "fixed", left, top, zIndex: 70 }}
-      className="min-w-[11.5rem] rounded-lg border border-line bg-surface py-1 shadow-overlay"
+      className="min-w-[13rem] max-w-[min(20rem,calc(100vw-1rem))] rounded-xl border border-line bg-surface py-1.5 shadow-overlay"
     >
       {children}
     </div>,
@@ -116,17 +114,18 @@ export function ContextMenuItem({
   onSelect?: () => void;
 }) {
   const className = cn(
-    "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] transition-colors",
+    // 44px-class rows on touch; still compact enough on desktop.
+    "flex min-h-11 w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] transition-colors md:min-h-0 md:py-2 md:text-[12.5px]",
     disabled
       ? "cursor-not-allowed text-ink-subtle"
       : danger
-        ? "text-danger hover:bg-danger/[0.08]"
-        : "text-ink hover:bg-surface-raised hover:text-ink",
+        ? "text-danger hover:bg-danger/[0.08] active:bg-danger/[0.12]"
+        : "text-ink hover:bg-surface-raised hover:text-ink active:bg-surface-raised",
   );
 
   const body = (
     <>
-      {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
+      {Icon ? <Icon className="h-4 w-4 shrink-0 md:h-3.5 md:w-3.5" aria-hidden /> : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
     </>
   );
@@ -156,5 +155,5 @@ export function ContextMenuItem({
 }
 
 export function ContextMenuSeparator() {
-  return <div role="separator" className="my-1 h-px bg-line" />;
+  return <div role="separator" className="my-1.5 h-px bg-line" />;
 }
