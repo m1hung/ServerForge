@@ -35,6 +35,7 @@ import {
 } from '../services/servers.js';
 import { changePrimaryPort } from '../services/allocations.js';
 import { isWatching, playerCount, playersOnline } from '../services/monitor.js';
+import { lanHost, localConnectAddress } from '../services/network.js';
 import { getRuntime } from '../runtime/index.js';
 
 export async function serverRoutes(app: FastifyInstance): Promise<void> {
@@ -102,26 +103,32 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
       canAccessServer(accessInputFor(user, server), 'server.view'),
     );
 
+    const lan = lanHost();
     const withCounts = await Promise.all(
-      servers.map(async (server) => ({
-        uid: server.uid,
-        name: server.name,
-        description: server.description,
-        state: server.state,
-        gameId: server.gameId,
-        variantId: server.variantId,
-        version: server.version,
-        memoryMib: server.memoryMib,
-        cpuCores: server.cpuCores,
-        diskMib: server.diskMib,
-        installedAt: server.installedAt,
-        createdAt: server.createdAt,
-        owner: { uid: server.owner.uid, displayName: server.owner.displayName },
-        node: { uid: server.node.uid, name: server.node.name, publicHost: server.node.publicHost },
-        address: connectAddress(server.node.publicHost, server.allocations[0]?.port),
-        players: await playerCount(server.uid),
-        isOwner: server.ownerId === user.id,
-      })),
+      servers.map(async (server) => {
+        const port = server.allocations[0]?.port;
+        return {
+          uid: server.uid,
+          name: server.name,
+          description: server.description,
+          state: server.state,
+          gameId: server.gameId,
+          variantId: server.variantId,
+          version: server.version,
+          memoryMib: server.memoryMib,
+          cpuCores: server.cpuCores,
+          diskMib: server.diskMib,
+          installedAt: server.installedAt,
+          createdAt: server.createdAt,
+          owner: { uid: server.owner.uid, displayName: server.owner.displayName },
+          node: { uid: server.node.uid, name: server.node.name, publicHost: server.node.publicHost },
+          address: connectAddress(server.node.publicHost, port),
+          lanAddress: localConnectAddress(server.node.publicHost, lan, port),
+          players: await playerCount(server.uid),
+          isOwner: server.ownerId === user.id,
+          permissions: effectivePermissions(user, server),
+        };
+      }),
     );
 
     return { servers: withCounts };
@@ -190,6 +197,11 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
           primary: a.primary,
         })),
         address: connectAddress(server.node.publicHost, server.allocations.find((a) => a.primary)?.port),
+        lanAddress: localConnectAddress(
+          server.node.publicHost,
+          lanHost(),
+          server.allocations.find((a) => a.primary)?.port,
+        ),
         node: { uid: server.node.uid, name: server.node.name, publicHost: server.node.publicHost },
         installedAt: server.installedAt,
         lastStartAt: server.lastStartAt,

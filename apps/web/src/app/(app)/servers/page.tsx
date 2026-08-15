@@ -1,33 +1,46 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronRight,
   Copy,
   Cpu,
+  FileText,
   Gamepad2,
+  Globe,
   HardDrive,
+  House,
   MemoryStick,
+  Play,
   Rocket,
+  RotateCw,
   Search,
   Server,
+  Settings,
+  Square,
+  Terminal,
   TriangleAlert,
   Users,
   Wifi,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { api, streamUrl } from "@/lib/api";
+import { useEffect, useState, type MouseEvent } from "react";
+import { api, ApiError, streamUrl } from "@/lib/api";
 import { cn, copyToClipboard, formatMib } from "@/lib/utils";
 import {
   Badge,
   Button,
   Card,
   EmptyState,
+  Modal,
   Skeleton,
   useToast,
 } from "@/components/ui";
 import { StatusBadge, type ServerState } from "@/components/server-status";
+import {
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/context-menu";
 
 interface FleetServer {
   uid: string;
@@ -41,8 +54,10 @@ interface FleetServer {
   cpuCores: number;
   diskMib: number;
   address: string | null;
+  lanAddress: string | null;
   players: number;
   isOwner: boolean;
+  permissions: string[];
   node: { name: string; publicHost: string };
 }
 
@@ -61,10 +76,36 @@ export default function ServersPage() {
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FleetFilter>("all");
+  const [menu, setMenu] = useState<{
+    server: FleetServer;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [stopping, setStopping] = useState<FleetServer | null>(null);
 
   const servers = useQuery({
     queryKey: ["servers"],
     queryFn: () => api.get<{ servers: FleetServer[] }>("/api/servers"),
+  });
+
+  const power = useMutation({
+    mutationFn: ({
+      uid,
+      action,
+    }: {
+      uid: string;
+      action: "start" | "stop" | "restart";
+    }) => api.post(`/api/servers/${uid}/power`, { action }),
+    onError: (error) => {
+      if (error instanceof ApiError) {
+        toast.push({
+          tone: "danger",
+          message: error.body.message,
+          hint: error.body.hint,
+        });
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["servers"] }),
   });
 
   // A single fleet-wide socket keeps every card's status current without
@@ -166,12 +207,28 @@ export default function ServersPage() {
                   <ServerCard
                     key={server.uid}
                     server={server}
-                    onCopy={async (address) => {
+                    onCopy={async (address, kind) => {
                       const ok = await copyToClipboard(address);
                       toast.push({
                         tone: ok ? "ok" : "danger",
-                        message: ok ? "Address copied" : "Could not copy",
-                        hint: ok ? "Ready to share." : undefined,
+                        message: ok
+                          ? kind === "local"
+                            ? "Local address copied"
+                            : "Address copied"
+                          : "Could not copy",
+                        hint: ok
+                          ? kind === "local"
+                            ? "Use this on the same network."
+                            : "Ready to share."
+                          : undefined,
+                      });
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setMenu({
+                        server,
+                        x: event.clientX,
+                        y: event.clientY,
                       });
                     }}
                   />
@@ -200,6 +257,56 @@ export default function ServersPage() {
           </div>
         </>
       )}
+
+      <ServerContextMenu
+        menu={menu}
+        busy={power.isPending}
+        onClose={() => setMenu(null)}
+        onCopy={async (address, kind) => {
+          const ok = await copyToClipboard(address);
+          toast.push({
+            tone: ok ? "ok" : "danger",
+            message: ok
+              ? kind === "local"
+                ? "Local address copied"
+                : "Address copied"
+              : "Could not copy",
+          });
+        }}
+        onStart={(server) => power.mutate({ uid: server.uid, action: "start" })}
+        onRestart={(server) =>
+          power.mutate({ uid: server.uid, action: "restart" })
+        }
+        onStop={(server) => setStopping(server)}
+      />
+
+      <Modal
+        open={Boolean(stopping)}
+        onClose={() => setStopping(null)}
+        title={stopping ? `Stop ${stopping.name}?` : "Stop the server?"}
+        description="Everyone playing will be disconnected."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setStopping(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (!stopping) return;
+                power.mutate({ uid: stopping.uid, action: "stop" });
+                setStopping(null);
+              }}
+            >
+              Stop server
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] leading-relaxed text-ink-muted">
+          The world is saved first, so nothing is lost.
+        </p>
+      </Modal>
     </div>
   );
 }
@@ -347,9 +454,11 @@ function Toolbar({
 function ServerCard({
   server,
   onCopy,
+  onContextMenu,
 }: {
   server: FleetServer;
-  onCopy: (address: string) => void;
+  onCopy: (address: string, kind: "internet" | "local") => void;
+  onContextMenu: (event: MouseEvent) => void;
 }) {
   const isLive = server.state === "running";
 
@@ -358,13 +467,18 @@ function ServerCard({
      * One server, one card, read top to bottom: who it is, what it is doing
      * right now, what it is allowed to use, and how to reach it.
      */
-    <Card className="group flex flex-col px-4 py-4 transition-colors duration-150 hover:border-line-strong">
+    <Card
+      className="group relative flex cursor-pointer flex-col px-4 py-4 transition-colors duration-150 hover:border-line-strong"
+      onContextMenu={onContextMenu}
+    >
+      <Link
+        href={`/servers/${server.uid}`}
+        className="absolute inset-0 z-[1] rounded-[inherit] focus-visible:ring-inset"
+        aria-label={`Open ${server.name}`}
+      />
       {/* Identity strip */}
       <div className="flex items-start justify-between gap-2">
-        <Link
-          href={`/servers/${server.uid}`}
-          className="flex min-w-0 items-center gap-2.5 rounded-md focus-visible:ring-inset"
-        >
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="inset-well flex h-8 w-8 shrink-0 items-center justify-center text-ink-subtle transition-colors group-hover:text-accent">
             <Gamepad2 className="h-4 w-4" aria-hidden />
           </div>
@@ -376,7 +490,7 @@ function ServerCard({
               {server.variantId} · {server.version}
             </p>
           </div>
-        </Link>
+        </div>
         <StatusBadge state={server.state} className="mt-0.5 shrink-0" />
       </div>
 
@@ -411,36 +525,215 @@ function ServerCard({
         <Spec icon={HardDrive} label="disk" value={formatMib(server.diskMib)} />
       </div>
 
-      {/* Footer: the address, and the way in */}
-      <div className="mt-3.5 flex items-center gap-2">
+      {/* Footer: internet and local join addresses */}
+      <div className="mt-3.5 flex min-w-0 flex-col gap-1.5">
         {server.address ? (
-          <div className="readout flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
-            <code className="min-w-0 flex-1 truncate text-[11px]">
-              {server.address}
-            </code>
-            <button
-              type="button"
-              onClick={() => onCopy(server.address!)}
-              className="shrink-0 rounded p-0.5 text-ink-subtle transition-colors hover:text-accent"
-              aria-label={`Copy the address for ${server.name}`}
-            >
-              <Copy className="h-3 w-3" />
-            </button>
-          </div>
+          <AddressChip
+            icon={Globe}
+            label="Internet"
+            value={server.address}
+            onCopy={() => onCopy(server.address!, "internet")}
+          />
         ) : (
-          <span className="inset-well min-w-0 flex-1 truncate px-2 py-1.5 font-mono text-[11px] text-ink-subtle">
+          <span className="inset-well min-w-0 truncate px-2 py-1.5 font-mono text-[11px] text-ink-subtle">
             no address assigned
           </span>
         )}
-        <Link
-          href={`/servers/${server.uid}`}
-          className="inline-flex h-[30px] shrink-0 items-center gap-0.5 rounded-md border border-line px-2.5 text-[12px] text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
-        >
-          Open
-          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-        </Link>
+        {server.lanAddress && (
+          <AddressChip
+            icon={House}
+            label="Local"
+            value={server.lanAddress}
+            onCopy={() => onCopy(server.lanAddress!, "local")}
+          />
+        )}
       </div>
     </Card>
+  );
+}
+
+function AddressChip({
+  icon: Icon,
+  label,
+  value,
+  onCopy,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="readout flex min-w-0 items-center gap-1.5 px-2 py-1.5">
+      <Icon className="h-3 w-3 shrink-0 text-ink-subtle" aria-hidden />
+      <code className="min-w-0 flex-1 truncate text-[11px]" title={`${label}: ${value}`}>
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onCopy();
+        }}
+        className="relative z-[2] shrink-0 rounded p-0.5 text-ink-subtle transition-colors hover:text-accent"
+        aria-label={`Copy the ${label.toLowerCase()} address`}
+      >
+        <Copy className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function ServerContextMenu({
+  menu,
+  busy,
+  onClose,
+  onCopy,
+  onStart,
+  onRestart,
+  onStop,
+}: {
+  menu: { server: FleetServer; x: number; y: number } | null;
+  busy: boolean;
+  onClose: () => void;
+  onCopy: (address: string, kind: "internet" | "local") => void;
+  onStart: (server: FleetServer) => void;
+  onRestart: (server: FleetServer) => void;
+  onStop: (server: FleetServer) => void;
+}) {
+  const server = menu?.server;
+  const can = (permission: string) =>
+    Boolean(server?.permissions?.includes(permission));
+  const running = server?.state === "running";
+  const starting = server?.state === "starting";
+  const live = running || starting || server?.state === "stopping";
+  const busyState = [
+    "installing",
+    "creating",
+    "updating",
+    "restoring",
+    "deleting",
+  ].includes(server?.state ?? "");
+
+  return (
+    <ContextMenu
+      open={Boolean(menu)}
+      x={menu?.x ?? 0}
+      y={menu?.y ?? 0}
+      label={server ? `Actions for ${server.name}` : "Server actions"}
+      onClose={onClose}
+    >
+      {server && (
+        <>
+          <ContextMenuItem href={`/servers/${server.uid}`} onSelect={onClose}>
+            Open
+          </ContextMenuItem>
+          {can("server.power") && (
+            <>
+              <ContextMenuSeparator />
+              {!live ? (
+                <ContextMenuItem
+                  icon={Play}
+                  disabled={busy || busyState}
+                  onSelect={() => {
+                    onStart(server);
+                    onClose();
+                  }}
+                >
+                  Start
+                </ContextMenuItem>
+              ) : (
+                <>
+                  <ContextMenuItem
+                    icon={RotateCw}
+                    disabled={busy || !running}
+                    onSelect={() => {
+                      onRestart(server);
+                      onClose();
+                    }}
+                  >
+                    Restart
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon={Square}
+                    danger
+                    disabled={busy}
+                    onSelect={() => {
+                      onStop(server);
+                      onClose();
+                    }}
+                  >
+                    Stop
+                  </ContextMenuItem>
+                </>
+              )}
+            </>
+          )}
+          {(can("server.console") ||
+            can("server.files") ||
+            can("server.settings")) && (
+            <>
+              <ContextMenuSeparator />
+              {can("server.console") && (
+                <ContextMenuItem
+                  icon={Terminal}
+                  href={`/servers/${server.uid}?tab=Console`}
+                  onSelect={onClose}
+                >
+                  Console
+                </ContextMenuItem>
+              )}
+              {can("server.files") && (
+                <ContextMenuItem
+                  icon={FileText}
+                  href={`/servers/${server.uid}?tab=Files`}
+                  onSelect={onClose}
+                >
+                  Files
+                </ContextMenuItem>
+              )}
+              {can("server.settings") && (
+                <ContextMenuItem
+                  icon={Settings}
+                  href={`/servers/${server.uid}?tab=Settings`}
+                  onSelect={onClose}
+                >
+                  Settings
+                </ContextMenuItem>
+              )}
+            </>
+          )}
+          {(server.address || server.lanAddress) && (
+            <>
+              <ContextMenuSeparator />
+              {server.address && (
+                <ContextMenuItem
+                  icon={Globe}
+                  onSelect={() => {
+                    onCopy(server.address!, "internet");
+                    onClose();
+                  }}
+                >
+                  Copy internet address
+                </ContextMenuItem>
+              )}
+              {server.lanAddress && (
+                <ContextMenuItem
+                  icon={House}
+                  onSelect={() => {
+                    onCopy(server.lanAddress!, "local");
+                    onClose();
+                  }}
+                >
+                  Copy local address
+                </ContextMenuItem>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </ContextMenu>
   );
 }
 

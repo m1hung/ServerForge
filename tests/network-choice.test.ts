@@ -28,6 +28,7 @@ async function loadNetwork() {
 
 afterEach(() => {
   vi.resetModules();
+  delete process.env.UPNP_INTERNAL_IP;
 });
 
 /** Minimal shape of what os.networkInterfaces() hands back. */
@@ -74,6 +75,34 @@ describe('classifyAddress', () => {
     expect(classifyAddress('not-an-ip')).toBe('unknown');
     expect(classifyAddress('1.2.3')).toBe('unknown');
     expect(classifyAddress('999.1.1.1')).toBe('unknown');
+  });
+});
+
+describe('localConnectAddress', () => {
+  it('builds a LAN join string next to a public hostname', async () => {
+    const { localConnectAddress } = await loadNetwork();
+    expect(localConnectAddress('bucees.duckdns.org', '10.0.0.215', 25509)).toBe(
+      '10.0.0.215:25509',
+    );
+  });
+
+  it('omits the LAN string when it would duplicate the advertised address', async () => {
+    const { localConnectAddress } = await loadNetwork();
+    expect(localConnectAddress('10.0.0.215', '10.0.0.215', 25509)).toBeNull();
+  });
+
+  it('omits the LAN string when the port or the LAN IP is missing', async () => {
+    const { localConnectAddress } = await loadNetwork();
+    expect(localConnectAddress('bucees.duckdns.org', null, 25509)).toBeNull();
+    expect(localConnectAddress('bucees.duckdns.org', '10.0.0.215')).toBeNull();
+  });
+});
+
+describe('lanHost', () => {
+  it('uses UPNP_INTERNAL_IP when it is set', async () => {
+    process.env.UPNP_INTERNAL_IP = '10.0.0.215';
+    const { lanHost } = await loadNetwork();
+    expect(lanHost()).toBe('10.0.0.215');
   });
 });
 

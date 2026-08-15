@@ -8,7 +8,9 @@ import {
   Copy,
   Cpu,
   Gamepad2,
+  Globe,
   HardDrive,
+  House,
   MemoryStick,
   Play,
   RotateCw,
@@ -16,8 +18,8 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -72,6 +74,7 @@ interface ServerDetail {
     version: string;
     limits: { memoryMib: number; cpuCores: number; diskMib: number };
     address: string | null;
+    lanAddress: string | null;
     installedAt: string | null;
     crashCount: number;
     isOwner: boolean;
@@ -125,13 +128,40 @@ function visibleTabs(server: {
   });
 }
 
+function tabFromSearch(value: string | null): Tab | null {
+  if (!value) return null;
+  const match = ALL_TABS.find(
+    (tab) => tab.toLowerCase() === value.toLowerCase(),
+  );
+  return match ?? null;
+}
+
 export default function ServerPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="page-shell space-y-5">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-40 w-full rounded-2xl" />
+        </div>
+      }
+    >
+      <ServerPageInner />
+    </Suspense>
+  );
+}
+
+function ServerPageInner() {
   const params = useParams<{ uid: string }>();
   const uid = params.uid;
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(
+    () => tabFromSearch(searchParams.get("tab")) ?? "Overview",
+  );
   const [confirmStop, setConfirmStop] = useState(false);
 
   const detail = useQuery({
@@ -169,6 +199,15 @@ export default function ServerPage() {
     },
   });
 
+  const openTab = (entry: Tab) => {
+    setTab(entry);
+    const next =
+      entry === "Overview"
+        ? `/servers/${uid}`
+        : `/servers/${uid}?tab=${entry}`;
+    router.replace(next, { scroll: false });
+  };
+
   if (detail.isLoading) {
     return (
       <div className="page-shell space-y-5">
@@ -186,6 +225,7 @@ export default function ServerPage() {
   if (!detail.data) return null;
   const server = detail.data.server;
   const tabs = visibleTabs(server);
+  const activeTab = tabs.includes(tab) ? tab : "Overview";
 
   const isLive = ["running", "starting", "stopping"].includes(state);
   const isBusy = [
@@ -224,25 +264,23 @@ export default function ServerPage() {
                   {server.game.name} ·{" "}
                   {server.variant?.name ?? server.variantId} · {server.version}
                 </p>
-                {server.address && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const ok = await copyToClipboard(server.address!);
-                      toast.push({
-                        tone: ok ? "ok" : "danger",
-                        message: ok ? "Address copied" : "Could not copy",
-                      });
-                    }}
-                    className="readout mt-3 inline-flex max-w-full items-center gap-2 px-2.5 py-1.5 text-[11.5px] transition-colors hover:border-line-strong"
-                    aria-label={`Copy ${server.address}`}
-                  >
-                    <span className="truncate">{server.address}</span>
-                    <Copy
-                      className="h-3.5 w-3.5 shrink-0 text-ink-subtle"
-                      aria-hidden
-                    />
-                  </button>
+                {(server.address || server.lanAddress) && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {server.address && (
+                      <CopyAddress
+                        icon={Globe}
+                        label="Internet"
+                        value={server.address}
+                      />
+                    )}
+                    {server.lanAddress && (
+                      <CopyAddress
+                        icon={House}
+                        label="Local"
+                        value={server.lanAddress}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -416,13 +454,13 @@ export default function ServerPage() {
               key={entry}
               id={`tab-${entry.toLowerCase()}`}
               role="tab"
-              aria-selected={tab === entry}
+              aria-selected={activeTab === entry}
               aria-controls={`panel-${entry.toLowerCase()}`}
-              tabIndex={tab === entry ? 0 : -1}
-              onClick={() => setTab(entry)}
+              tabIndex={activeTab === entry ? 0 : -1}
+              onClick={() => openTab(entry)}
               className={cn(
                 "-mb-px border-b-2 px-3 py-2.5 text-[13px] transition-colors",
-                tab === entry
+                activeTab === entry
                   ? "border-b-accent font-medium text-ink"
                   : "border-b-transparent text-ink-muted hover:text-ink",
               )}
@@ -434,14 +472,14 @@ export default function ServerPage() {
       </div>
 
       <div
-        id={`panel-${tab.toLowerCase()}`}
+        id={`panel-${activeTab.toLowerCase()}`}
         role="tabpanel"
-        aria-labelledby={`tab-${tab.toLowerCase()}`}
+        aria-labelledby={`tab-${activeTab.toLowerCase()}`}
         tabIndex={0}
       >
-        {tab === "Overview" && <Overview server={server} state={state} />}
+        {activeTab === "Overview" && <Overview server={server} state={state} />}
 
-        {tab === "Console" && (
+        {activeTab === "Console" && (
           <div className="h-[560px]">
             <Console
               lines={stream.lines}
@@ -458,11 +496,11 @@ export default function ServerPage() {
           </div>
         )}
 
-        {tab === "Files" && (
+        {activeTab === "Files" && (
           <FilesPanel uid={uid} permissions={server.permissions ?? []} />
         )}
 
-        {tab === "Backups" && (
+        {activeTab === "Backups" && (
           <BackupsPanel
             uid={uid}
             state={state}
@@ -470,11 +508,11 @@ export default function ServerPage() {
           />
         )}
 
-        {tab === "Schedules" && (
+        {activeTab === "Schedules" && (
           <SchedulesPanel uid={uid} permissions={server.permissions ?? []} />
         )}
 
-        {tab === "Mods" && (
+        {activeTab === "Mods" && (
           <ModsPanel
             uid={uid}
             state={state}
@@ -482,13 +520,13 @@ export default function ServerPage() {
           />
         )}
 
-        {tab === "Settings" && <SettingsPanel uid={uid} state={state} />}
+        {activeTab === "Settings" && <SettingsPanel uid={uid} state={state} />}
 
-        {tab === "Access" && (
+        {activeTab === "Access" && (
           <SubusersPanel uid={uid} permissions={server.permissions ?? []} />
         )}
 
-        {tab === "General" && (
+        {activeTab === "General" && (
           <GeneralPanel
             server={{
               uid: server.uid,
@@ -532,6 +570,43 @@ export default function ServerPage() {
         </p>
       </Modal>
     </div>
+  );
+}
+
+function CopyAddress({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  const toast = useToast();
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const ok = await copyToClipboard(value);
+        toast.push({
+          tone: ok ? "ok" : "danger",
+          message: ok
+            ? label === "Local"
+              ? "Local address copied"
+              : "Address copied"
+            : "Could not copy",
+          hint: ok && label === "Local" ? "Use this on the same network." : undefined,
+        });
+      }}
+      className="readout inline-flex max-w-full items-center gap-2 px-2.5 py-1.5 text-[11.5px] transition-colors hover:border-line-strong"
+      aria-label={`Copy ${label.toLowerCase()} address ${value}`}
+      title={`${label}: ${value}`}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0 text-ink-subtle" aria-hidden />
+      <span className="truncate">{value}</span>
+      <Copy className="h-3.5 w-3.5 shrink-0 text-ink-subtle" aria-hidden />
+    </button>
   );
 }
 

@@ -132,6 +132,39 @@ export function readInterfaces(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]
   return { lanIp, vpn };
 }
 
+/**
+ * The IPv4 address a device on the same LAN should use to join.
+ *
+ * `UPNP_INTERNAL_IP` wins because it is the address the router actually
+ * forwards to, and because a containerised API's own interfaces are Docker
+ * bridges that no player can reach. Without that override we only trust the
+ * host's NICs — guessing from inside a container produces 172.x.x.x, which
+ * looks like a join address and is useless.
+ */
+export function lanHost(): string | null {
+  const configured = config.UPNP_INTERNAL_IP?.trim();
+  if (configured) return configured;
+  if (detectContainer()) return null;
+  return readInterfaces(os.networkInterfaces()).lanIp;
+}
+
+/**
+ * Join string for devices on the same LAN.
+ *
+ * Omitted when it would duplicate the advertised address: a LAN-only install
+ * already shows `10.0.0.215:25509` as the public join string, and a second
+ * copy of the same string next to it is noise.
+ */
+export function localConnectAddress(
+  publicHost: string,
+  lanIp: string | null,
+  port?: number,
+): string | null {
+  if (!port || !lanIp) return null;
+  if (lanIp === publicHost) return null;
+  return `${lanIp}:${port}`;
+}
+
 async function resolveRouter(): Promise<NetworkReport['router'] & { lanIp: string | null }> {
   const gateway = config.UPNP_CONTROL_URL
     ? await gatewayFromConfiguredUrl(config.UPNP_CONTROL_URL)
