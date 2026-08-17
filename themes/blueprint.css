@@ -18,7 +18,7 @@ html[data-sf-theme="blueprint"].dark {
 
   --ink: 190 80% 92%;
   --ink-muted: 195 40% 72%;
-  --ink-subtle: 200 30% 58%;
+  --ink-subtle: 200 30% 60.4%;
 
   --accent: 190 95% 62%;
   --accent-soft: 200 50% 22%;
@@ -44,7 +44,7 @@ html[data-sf-theme="blueprint"].light {
 
   --ink: 210 50% 16%;
   --ink-muted: 210 30% 36%;
-  --ink-subtle: 210 22% 46%;
+  --ink-subtle: 210 22% 41.3%;
 
   --accent: 205 85% 32%;
   --accent-soft: 200 50% 88%;

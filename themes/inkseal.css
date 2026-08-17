@@ -18,7 +18,7 @@ html[data-sf-theme="inkseal"].dark {
 
   --ink: 35 20% 92%;
   --ink-muted: 30 8% 68%;
-  --ink-subtle: 30 6% 52%;
+  --ink-subtle: 30 6% 55.8%;
 
   --accent: 5 72% 48%;
   --accent-soft: 5 40% 16%;
@@ -44,7 +44,7 @@ html[data-sf-theme="inkseal"].light {
 
   --ink: 25 25% 14%;
   --ink-muted: 25 12% 38%;
-  --ink-subtle: 25 10% 48%;
+  --ink-subtle: 25 10% 41.9%;
 
   --accent: 5 70% 42%;
   --accent-soft: 5 55% 92%;

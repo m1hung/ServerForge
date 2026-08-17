@@ -18,7 +18,7 @@ html[data-sf-theme="obsidian"].dark {
 
   --ink: 30 20% 95%;
   --ink-muted: 20 10% 68%;
-  --ink-subtle: 18 8% 50%;
+  --ink-subtle: 18 8% 52.6%;
 
   --accent: 28 100% 52%;
   --accent-soft: 20 60% 14%;
@@ -45,7 +45,7 @@ html[data-sf-theme="obsidian"].light {
 
   --ink: 20 25% 12%;
   --ink-muted: 20 12% 38%;
-  --ink-subtle: 18 10% 46%;
+  --ink-subtle: 18 10% 42.2%;
 
   --accent: 22 95% 38%;
   --accent-soft: 28 70% 90%;

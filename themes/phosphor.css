@@ -18,7 +18,7 @@ html[data-sf-theme="phosphor"].dark {
 
   --ink: 120 70% 68%;
   --ink-muted: 120 45% 48%;
-  --ink-subtle: 120 30% 36%;
+  --ink-subtle: 120 30% 43.7%;
 
   --accent: 120 90% 52%;
   --accent-soft: 120 50% 10%;
@@ -44,7 +44,7 @@ html[data-sf-theme="phosphor"].light {
 
   --ink: 120 40% 18%;
   --ink-muted: 120 25% 32%;
-  --ink-subtle: 120 18% 42%;
+  --ink-subtle: 120 18% 37.4%;
 
   --accent: 120 55% 28%;
   --accent-soft: 120 30% 86%;

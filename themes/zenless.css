@@ -28,7 +28,7 @@ html[data-sf-theme="zenless"].dark {
 
   --ink: 0 0% 94%;
   --ink-muted: 220 5% 66%;
-  --ink-subtle: 220 5% 48%;
+  --ink-subtle: 220 5% 53.8%;
 
   /* Acid lime — the only chromatic colour in the concept. */
   --accent: 68 100% 49%;
@@ -62,7 +62,7 @@ html[data-sf-theme="zenless"].light {
 
   --ink: 220 8% 10%;
   --ink-muted: 220 6% 38%;
-  --ink-subtle: 220 5% 46%;
+  --ink-subtle: 220 5% 43.9%;
 
   --accent: 72 92% 26%;
   --accent-soft: 68 80% 88%;

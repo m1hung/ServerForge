@@ -45,7 +45,7 @@ html[data-sf-theme="arcade"].light {
 
   --ink: 265 30% 14%;
   --ink-muted: 265 15% 40%;
-  --ink-subtle: 265 10% 48%;
+  --ink-subtle: 265 10% 44.1%;
 
   --accent: 320 85% 42%;
   --accent-soft: 320 60% 92%;
@@ -105,8 +105,15 @@ html[data-sf-theme="arcade"] body::after {
   position: fixed;
   bottom: 1.25rem;
   left: 50%;
-  /* Decorative only — must stay under the mobile bottom nav. */
-  z-index: 5;
+  /*
+   * 0, not 5: the workspace is lifted to z-index 1 below, so anything above
+   * that floats *over* real content. At 5 this badge sat on top of whatever
+   * occupied the bottom of the page — a table's last row, the console's
+   * newest line — which is the one thing a decoration must never do. At 0 it
+   * joins the backdrop with every other theme's chrome, and content covers it.
+   * The mobile offset below still keeps it clear of the bottom nav.
+   */
+  z-index: 0;
   transform: translateX(-50%);
   font-family: var(--font-display);
   font-size: 10px;

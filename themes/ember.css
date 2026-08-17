@@ -42,7 +42,9 @@
   --ink-muted: 20 8% 38%;
   --ink-subtle: 20 7% 42%;
 
-  --accent: 24 90% 42%;
+  /* 40.5%, not 42%: --accent-ink is pure white here, and white on the lighter
+     amber lands at 4.24:1 — under AA for the primary button's own label. */
+  --accent: 24 90% 40.5%;
   --accent-soft: 28 70% 94%;
   --accent-ink: 0 0% 100%;
 
