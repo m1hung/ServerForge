@@ -366,6 +366,9 @@ async function main() {
     "--force-recreate",
     "api",
     "web",
+    // The tailnet sidecar. Named explicitly like the others, or `npm start`
+    // would leave the panel's front door down while reporting success.
+    "tailscale",
   ]);
   repairComposeBridgeForwarding();
   await waitForHttp(

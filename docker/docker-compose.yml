@@ -28,7 +28,10 @@ services:
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: '--auth-host=scram-sha-256'
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      # Loopback by default: host-side tooling (prisma, psql, npm run dev) still
+      # reaches it, while nothing on the LAN can. Set DB_BIND_HOST=0.0.0.0 only
+      # if something off-box genuinely needs the database.
+      - '${DB_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -51,7 +54,8 @@ services:
       --maxmemory 512mb
       --maxmemory-policy noeviction
     ports:
-      - '${REDIS_PORT:-6379}:6379'
+      # Loopback by default — see the postgres service above.
+      - '${DB_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -164,6 +168,63 @@ services:
       # See the API's ports block for why the bind address is a variable.
       - '${BIND_HOST:-0.0.0.0}:${WEB_PORT:-3000}:3000'
 
+  # ── Tailnet front door ────────────────────────────────────────────────────
+  #
+  # Puts the panel on the tailnet as its own machine — `serverforge`, with its
+  # own 100.x address — rather than on a port of whatever host happens to be
+  # running Docker. The URL is then https://serverforge.<tailnet>.ts.net, with
+  # a real certificate Tailscale gets and renews itself.
+  #
+  # Why a sidecar rather than `tailscale serve` on the host: serve on the host
+  # needs root, and it would hang the panel's name off the host's identity, so
+  # moving the panel to another box would change its URL.
+  #
+  # The api and web services keep their own network namespaces here (unlike the
+  # usual sidecar recipe, which shares one). That matters: the API attaches
+  # itself to the `games` network at startup so RCON can reach game containers,
+  # and a container sharing another's namespace cannot be attached to any
+  # further network. Proxying by compose DNS name instead costs nothing and
+  # leaves that working.
+  tailscale:
+    profiles: ['full']
+    image: tailscale/tailscale:stable
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    environment:
+      # The tailnet node name, and therefore the URL. Changing it after the
+      # first login leaves the old name registered — rename in the admin
+      # console instead, or delete the node and the state volume below.
+      TS_HOSTNAME: ${TS_HOSTNAME:-serverforge}
+      # Required for the FIRST login; afterwards the node identity lives in the
+      # state volume and this can go back to being empty. Deliberately not
+      # `${TS_AUTHKEY:?}`, which would make every later `up -d` demand a key
+      # that is no longer needed:
+      #
+      #   TS_AUTHKEY=tskey-auth-... node scripts/compose.mjs --profile full up -d tailscale
+      #
+      # A key is not optional on first run, however much the login URL in the
+      # logs suggests otherwise. containerboot runs `tailscale up` under a hard
+      # 60-second deadline; when it expires it SIGTERMs tailscaled, throws the
+      # pending registration away and retries with a fresh node key. Clicking
+      # the URL races that deadline and loses, and every lap leaves another
+      # dead node behind in the admin console, squatting this node's name.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      # Userspace networking: serve is a userspace proxy, so this needs neither
+      # NET_ADMIN nor /dev/net/tun. Less privilege for the same result.
+      TS_USERSPACE: 'true'
+      # Explicit because the serve config proxies to `web` and `api` by compose
+      # DNS name. Accepting the tailnet's DNS would replace the resolver that
+      # resolves them, and every request would 502.
+      TS_ACCEPT_DNS: 'false'
+    volumes:
+      # Node identity. Lose this and the node re-registers as serverforge-1.
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale-serve.json:/config/serve.json:ro
+
   # ── TLS front door ────────────────────────────────────────────────────────
   #
   # Opt-in, because it only makes sense once the panel has a domain name
@@ -212,5 +273,6 @@ volumes:
   postgres-data:
   redis-data:
   serverforge-cache:
+  tailscale-state:
   caddy-data:
   caddy-config:
