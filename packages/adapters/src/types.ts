@@ -75,6 +75,18 @@ export interface InstallReporter {
     percent?: number,
   ): Promise<void>;
   log(message: string): Promise<void>;
+  /**
+   * Records what the installed files turned out to need.
+   *
+   * `resolveVersion` and `detectRuntime` both run *before* install, which is
+   * fine when the version is known up front and useless when it is not: a
+   * server pack only states its Minecraft version and loader inside the
+   * archive, so nothing can know them until the archive is open. Without this
+   * such a server keeps `from-pack` as its version and no Java major, and
+   * startup falls back to a guess — which strands, say, a Forge 1.20.1 pack on
+   * Java 21, a combination that does not run.
+   */
+  runtime?(detected: { javaMajor?: number; version?: string }): Promise<void>;
 }
 
 /** Filesystem + download primitives handed to adapters by the worker. */

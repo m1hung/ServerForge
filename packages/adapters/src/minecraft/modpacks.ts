@@ -1,5 +1,6 @@
 import { fetchJson } from '@serverforge/core';
 import type { InstallReporter, InstallTools, ServerContext } from '../types.js';
+import { javaImageFor, javaMajorFor } from './java.js';
 import {
   resolveFabricDownload,
   resolveForgeDownload,
@@ -217,14 +218,112 @@ export async function installCustomPack(
     (await tools.listDir('.')).some((name) => /^(fabric|minecraft)?server.*\.jar$/i.test(name));
 
   if (!hasServerJar && !installer) {
-    // Still useful: some packs use run.sh / start scripts. Leave the files
-    // in place and let the operator adjust startup if needed.
-    await report.log(
-      'Pack unpacked. No server.jar was found — if Start fails, open Files and check the pack layout.',
-    );
+    // The common case for CurseForge downloads, and the one that used to fall
+    // through to a soft warning: a ServerPackCreator pack. It ships mods,
+    // configs and start scripts but deliberately no jar — its start.sh fetches
+    // NeoForge's ServerStarterJar at first run and *saves it as server.jar*,
+    // which then installs the loader and launches it.
+    //
+    // Doing that here rather than leaving it to a script we never execute is
+    // what makes the pack bootable: the panel launches `java -jar server.jar`,
+    // so the pack's own entry point and ours are already the same name.
+    const pack = await readPackVariables(tools);
+
+    if (pack && /^(forge|neoforge)$/i.test(pack.modloader)) {
+      const loader = pack.modloader.toLowerCase();
+      const javaMajor = javaMajorFor(pack.minecraftVersion, loader);
+
+      // The pack's own version, not `from-pack`. Recorded before the installer
+      // runs because the installer needs the right JDK too — Forge 1.20.1 does
+      // not run on the 21 that a `from-pack` guess would have chosen.
+      await report.runtime?.({ version: pack.minecraftVersion, javaMajor });
+
+      await report.phase(
+        'configuring',
+        `Installing ${pack.modloader} ${pack.modloaderVersion} for Minecraft ${pack.minecraftVersion}…`,
+        65,
+      );
+      const download =
+        loader === 'neoforge'
+          ? await resolveNeoForgeDownload(pack.minecraftVersion, pack.modloaderVersion || undefined)
+          : await resolveForgeDownload(pack.minecraftVersion, pack.modloaderVersion || undefined);
+
+      await tools.download(download.url, download.fileName);
+      await runInstaller(ctx, tools, download.fileName, javaMajor);
+
+      // The installer leaves `run.sh` and `libraries/…/unix_args.txt` rather
+      // than a fat jar, and the panel launches a fixed `server.jar`. NeoForge's
+      // ServerStarterJar bridges exactly that gap: it is a real jar whose first
+      // act is to run `run.sh`. Installing the loader above is what lets it
+      // start with no arguments — handed no run file it tries to fetch an
+      // installer it was never told the URL of, and exits 1 saying nothing.
+      await report.phase('configuring', 'Adding the server launcher…', 85);
+      await tools.download(SERVER_STARTER_JAR_URL, 'server.jar');
+
+      await report.log(
+        `Server pack ready: Minecraft ${pack.minecraftVersion}, ${pack.modloader} ${pack.modloaderVersion}, Java ${javaMajor}.`,
+      );
+    } else {
+      // Better to fail here, loudly and with the pack layout in hand, than to
+      // report success and let the container die with "Unable to access
+      // jarfile server.jar" — an error that says nothing about the real cause.
+      const found = (await tools.listDir('.')).slice(0, 20).join(', ');
+      throw new Error(
+        'This server pack has no server.jar, no mod loader installer, and no variables.txt naming a ' +
+          'loader, so there is nothing to launch.\n\n' +
+          `The pack contains: ${found}\n\n` +
+          'If it came with its own start script, check that you downloaded the *server* pack rather ' +
+          'than the client pack.',
+      );
+    }
   }
 
   await report.phase('finalizing', 'Server pack ready.', 95);
+}
+
+/**
+ * NeoForge's ServerStarterJar — the launcher every modern Forge/NeoForge
+ * server pack bootstraps itself with. Pinned to `latest` for the same reason
+ * the packs' own scripts default to it: it tracks loader changes, and a
+ * version pinned here would rot against packs published afterwards.
+ */
+const SERVER_STARTER_JAR_URL =
+  'https://github.com/neoforged/ServerStarterJar/releases/latest/download/server.jar';
+
+export interface PackVariables {
+  minecraftVersion: string;
+  modloader: string;
+  modloaderVersion: string;
+}
+
+/**
+ * Reads ServerPackCreator's `variables.txt`, the de-facto manifest of a
+ * CurseForge server pack. It is plain `KEY=value`, values sometimes quoted.
+ *
+ * This is the only place the pack states which Minecraft version and loader it
+ * is for, which is also why it decides the Java version: `from-pack` tells the
+ * runtime picker nothing, and guessing lands modern packs on the wrong JDK.
+ */
+export async function readPackVariables(tools: InstallTools): Promise<PackVariables | null> {
+  const raw = await tools.readFile('variables.txt');
+  if (!raw) return null;
+
+  const values: Record<string, string> = {};
+  for (const line of raw.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (!match) continue;
+    values[match[1]!] = match[2]!.trim().replace(/^["']|["']$/g, '');
+  }
+
+  const minecraftVersion = values.MINECRAFT_VERSION ?? '';
+  const modloader = values.MODLOADER ?? '';
+  if (!minecraftVersion || !modloader) return null;
+
+  return {
+    minecraftVersion,
+    modloader,
+    modloaderVersion: values.MODLOADER_VERSION ?? '',
+  };
 }
 
 /** If the zip wrapped everything in one folder, lift that folder's contents up. */
@@ -290,9 +389,12 @@ async function runInstaller(
   ctx: ServerContext,
   tools: InstallTools,
   installerJar: string,
+  javaMajor?: number,
 ): Promise<void> {
   const result = await tools.runInContainer({
-    image: 'eclipse-temurin:21-jre-jammy',
+    // Defaulted rather than fixed at 21: a 1.20.1 pack's installer has to run
+    // on the JDK that pack targets, and 21 is not it.
+    image: javaImageFor(javaMajor ?? 21),
     command: ['java', '-jar', installerJar, '--installServer'],
     timeoutMs: 10 * 60 * 1000,
   });
@@ -300,4 +402,7 @@ async function runInstaller(
     throw new Error(`The mod loader installer failed.\n${result.output.slice(-4000)}`);
   }
   await tools.remove(installerJar);
+  // The installer writes a log next to itself; leaving it behind makes the
+  // file manager look like the install half-finished.
+  await tools.remove(`${installerJar}.log`);
 }

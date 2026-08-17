@@ -106,6 +106,19 @@ export function createInstallWorker(): Worker<InstallJob> {
         await adapter.install(ctx, tools, {
           phase: (phase, message, percent) => report(phase, message, percent ?? 0),
           log: (message) => report('downloading', message, -1),
+          // Only an adapter that opened the archive knows these; see the
+          // InstallReporter contract. Persisted immediately so a crash between
+          // here and the end of install still leaves the right runtime behind.
+          runtime: async (detected) => {
+            if (detected.javaMajor === undefined && detected.version === undefined) return;
+            await prisma.server.update({
+              where: { id: server.id },
+              data: {
+                ...(detected.javaMajor !== undefined ? { javaMajor: detected.javaMajor } : {}),
+                ...(detected.version !== undefined ? { version: detected.version } : {}),
+              },
+            });
+          },
         });
 
         // Install writes as the API user (often root). The game container runs
