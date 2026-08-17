@@ -287,7 +287,7 @@ export async function installCustomPack(
  * the packs' own scripts default to it: it tracks loader changes, and a
  * version pinned here would rot against packs published afterwards.
  */
-const SERVER_STARTER_JAR_URL =
+export const SERVER_STARTER_JAR_URL =
   'https://github.com/neoforged/ServerStarterJar/releases/latest/download/server.jar';
 
 export interface PackVariables {

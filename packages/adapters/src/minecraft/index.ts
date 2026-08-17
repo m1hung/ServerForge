@@ -29,7 +29,7 @@ import {
   resolveVanillaDownload,
   type ResolvedDownload,
 } from './versions.js';
-import { installCustomPack, installModrinthPack } from './modpacks.js';
+import { SERVER_STARTER_JAR_URL, installCustomPack, installModrinthPack } from './modpacks.js';
 
 const VARIANTS: GameVariant[] = [
   {
@@ -129,9 +129,6 @@ const EULA: EulaRequirement = {
   file: 'eula.txt',
   contents: '# Accepted through ServerForge\neula=true\n',
 };
-
-/** Mojang requires the loader to run its own installer for these. */
-const INSTALLER_VARIANTS = new Set(['forge', 'neoforge']);
 
 export const minecraftAdapter: GameAdapter = {
   id: 'minecraft-java',
@@ -309,7 +306,7 @@ export const minecraftAdapter: GameAdapter = {
         '-Djava.awt.headless=true',
         '-Dlog4j2.formatMsgNoLookups=true',
         '-jar',
-        serverJarFor(loader),
+        SERVER_JAR,
         'nogui',
       ],
       workingDir: '/home/container',
@@ -458,22 +455,65 @@ async function runLoaderInstaller(
     );
   }
 
-  // Modern Forge/NeoForge produce run scripts plus an args file rather than a
-  // fat jar. Normalise both layouts to a single `server.jar` entry point so
-  // the startup command stays uniform across loaders.
   await tools.remove(installerJar);
   await tools.remove(`${installerJar}.log`);
+
+  await normaliseLoaderEntryPoint(ctx, tools);
 }
 
 /**
- * Which jar the container launches. Forge/NeoForge write a version-stamped
- * jar, but both also emit `@libraries/...` arg files; we normalise during
- * install so this stays a constant.
+ * Gives both loader layouts the single `server.jar` the startup command names.
+ *
+ * This used to be a comment above the two `remove` calls claiming the work was
+ * done, and nothing did it. What the installer leaves depends on the Minecraft
+ * version, and neither shape is `server.jar`:
+ *
+ *   ≤ 1.16   a launchable `forge-<mc>-<ver>.jar` next to the world data
+ *   ≥ 1.17   `run.sh` plus `libraries/…/unix_args.txt`, and no fat jar at all
+ *
+ * The old layout only needs renaming. The new one cannot be renamed into
+ * shape — the server jar under `libraries/` is not self-contained, and the
+ * real entry point is an argument file. NeoForge's ServerStarterJar exists for
+ * exactly this: it is a real jar whose first act is to run `run.sh`, so
+ * dropping it in as `server.jar` makes the uniform command work again.
  */
-function serverJarFor(variantId: string): string {
-  if (INSTALLER_VARIANTS.has(variantId)) return 'server.jar';
-  return 'server.jar';
+export async function normaliseLoaderEntryPoint(ctx: ServerContext, tools: InstallTools): Promise<void> {
+  if (await tools.exists('server.jar')) return;
+
+  const root = await tools.listDir('.');
+  const fatJar = root.find(
+    (name) => /^(forge|neoforge)-.*\.jar$/i.test(name) && !/-(installer|sources|javadoc)\.jar$/i.test(name),
+  );
+
+  if (fatJar) {
+    await tools.rename(fatJar, 'server.jar');
+    return;
+  }
+
+  if (await tools.exists('run.sh')) {
+    await tools.download(SERVER_STARTER_JAR_URL, 'server.jar');
+    return;
+  }
+
+  // Neither shape appeared. Saying so here names the installer as the culprit;
+  // the alternative is a container exiting with "Unable to access jarfile
+  // server.jar", which points at nothing.
+  throw new Error(
+    `The ${ctx.variantId} installer finished but left nothing to launch — no loader jar and no run.sh.\n\n` +
+      `The server folder contains: ${root.slice(0, 20).join(', ')}`,
+  );
 }
+
+/**
+ * Which jar the container launches — the same one for every variant.
+ *
+ * Vanilla and the Paper family download it under this name already, and
+ * `normaliseLoaderEntryPoint` gives the Forge/NeoForge layouts the same shape
+ * after their installer runs. That is what lets `startup()` stay a pure
+ * function of the context: it never has to look at the disk to find out what
+ * it is launching.
+ */
+const SERVER_JAR = 'server.jar';
 
 export { minecraftSettingsSchema };
 export type { SettingValues };

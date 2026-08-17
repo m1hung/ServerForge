@@ -23,6 +23,9 @@ vi.mock('../packages/adapters/src/minecraft/versions.js', async (importOriginal)
 const { installCustomPack, readPackVariables } = await import(
   '../packages/adapters/src/minecraft/modpacks.js'
 );
+const { normaliseLoaderEntryPoint } = await import(
+  '../packages/adapters/src/minecraft/index.js'
+);
 
 /**
  * A server pack on disk, in memory. `installCustomPack` only ever reaches the
@@ -145,5 +148,108 @@ describe('curseforge server packs', () => {
 
     expect(downloads).toHaveLength(0);
     expect(containerRuns).toHaveLength(0);
+  });
+});
+
+describe('forge and neoforge loader normalisation', () => {
+  /**
+   * A server directory after a loader installer has run. The two shapes below
+   * are what Forge actually produced when each was run for real: 1.16.5 leaves
+   * a launchable jar in the root, 1.20.1 leaves run.sh and an args file.
+   */
+  const PRE_117 = {
+    'forge-1.16.5-36.2.42.jar': '',
+    'minecraft_server.1.16.5.jar': '',
+    'libraries': '',
+    'eula.txt': '',
+  };
+
+  const POST_117 = {
+    'run.sh': '',
+    'user_jvm_args.txt': '',
+    'libraries': '',
+    'eula.txt': '',
+  };
+
+  function fakeInstalled(files: Record<string, string>) {
+    const present = new Set(Object.keys(files));
+    const renames: { from: string; to: string }[] = [];
+    const downloads: { url: string; dest: string }[] = [];
+
+    const tools = {
+      exists: async (p: string) => present.has(p),
+      listDir: async () => [...present].filter((p) => !p.includes('/')),
+      rename: async (from: string, to: string) => {
+        renames.push({ from, to });
+        present.delete(from);
+        present.add(to);
+      },
+      download: async (url: string, dest: string) => {
+        downloads.push({ url, dest });
+        present.add(dest);
+        return 1;
+      },
+      remove: async (p: string) => void present.delete(p),
+      readFile: async () => null,
+      writeFile: async () => undefined,
+      mkdir: async () => undefined,
+      unzip: async () => undefined,
+      runInContainer: async () => ({ exitCode: 0, output: '' }),
+    };
+
+    return { tools, renames, downloads, present };
+  }
+
+  it('renames the fat jar a pre-1.17 installer leaves', async () => {
+    const { tools, renames, downloads } = fakeInstalled(PRE_117);
+
+    await normaliseLoaderEntryPoint({ variantId: 'forge' } as never, tools as never);
+
+    expect(renames).toEqual([{ from: 'forge-1.16.5-36.2.42.jar', to: 'server.jar' }]);
+    // Nothing to fetch: that jar launches on its own.
+    expect(downloads).toHaveLength(0);
+  });
+
+  it('adds the ServerStarterJar when the installer leaves only run.sh', async () => {
+    const { tools, renames, downloads } = fakeInstalled(POST_117);
+
+    await normaliseLoaderEntryPoint({ variantId: 'neoforge' } as never, tools as never);
+
+    // The jar under libraries/ is not self-contained, so there is nothing to
+    // rename — the real entry point is an args file run.sh passes to java.
+    expect(renames).toHaveLength(0);
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]!.dest).toBe('server.jar');
+    expect(downloads[0]!.url).toContain('ServerStarterJar');
+  });
+
+  it('leaves an existing server.jar alone', async () => {
+    const { tools, renames, downloads } = fakeInstalled({ 'server.jar': '', 'run.sh': '' });
+
+    await normaliseLoaderEntryPoint({ variantId: 'forge' } as never, tools as never);
+
+    expect(renames).toHaveLength(0);
+    expect(downloads).toHaveLength(0);
+  });
+
+  it('never mistakes the installer jar for the launcher', async () => {
+    // The installer is removed before normalising, but a failed cleanup must
+    // not leave it to be renamed into the entry point.
+    const { tools, renames } = fakeInstalled({
+      'forge-1.16.5-36.2.42-installer.jar': '',
+      'forge-1.16.5-36.2.42.jar': '',
+    });
+
+    await normaliseLoaderEntryPoint({ variantId: 'forge' } as never, tools as never);
+
+    expect(renames).toEqual([{ from: 'forge-1.16.5-36.2.42.jar', to: 'server.jar' }]);
+  });
+
+  it('fails loudly when the installer left nothing launchable', async () => {
+    const { tools } = fakeInstalled({ 'libraries': '', 'eula.txt': '' });
+
+    await expect(
+      normaliseLoaderEntryPoint({ variantId: 'forge' } as never, tools as never),
+    ).rejects.toThrow(/nothing to launch[\s\S]*eula\.txt/);
   });
 });

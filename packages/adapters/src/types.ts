@@ -104,6 +104,8 @@ export interface InstallTools {
   exists(relative: string): Promise<boolean>;
   mkdir(relative: string): Promise<void>;
   remove(relative: string): Promise<void>;
+  /** Moves a path within the server directory. Both ends are containment-checked. */
+  rename(fromRelative: string, toRelative: string): Promise<void>;
   listDir(relative: string): Promise<string[]>;
   /**
    * Runs a throwaway container for install work that needs a real runtime

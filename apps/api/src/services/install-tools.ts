@@ -138,6 +138,13 @@ export function createInstallTools(options: {
       await fs.rm(resolve(relative), { recursive: true, force: true });
     },
 
+    async rename(fromRelative, toRelative) {
+      // Both ends resolved against the server directory, like everything else
+      // here: a loader jar's name comes from an upstream installer, so it is
+      // no more trustworthy than any other outside input.
+      await fs.rename(resolve(fromRelative), resolve(toRelative));
+    },
+
     async listDir(relative) {
       try {
         return await fs.readdir(resolve(relative));
