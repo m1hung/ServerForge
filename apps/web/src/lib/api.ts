@@ -1,11 +1,7 @@
-const DEFAULT = 'http://localhost:8080';
-
 export function apiBase(): string {
-  const configured = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT;
-  if (configured !== 'auto') return configured.replace(/\/$/, '');
-  if (typeof window === 'undefined') return DEFAULT;
-  const port = process.env.NEXT_PUBLIC_API_PORT ?? '8080';
-  return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  const configured = process.env.NEXT_PUBLIC_API_URL ?? 'auto';
+  // Keep cookies, uploads and live streams on the same HTTPS origin on LAN and Tailscale.
+  return configured === 'auto' ? '' : configured.replace(/\/$/, '');
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -13,7 +9,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...init,
     credentials: 'include',
     headers: {
-      ...(init.body instanceof FormData ? {} : { 'content-type': 'application/json' }),
+      ...(typeof init.body === 'string' ? { 'content-type': 'application/json' } : {}),
       ...(init.headers ?? {}),
     },
   });

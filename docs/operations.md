@@ -1,206 +1,222 @@
-# Operations
+# Operating and recovering ServerForge
 
-## Server configuration and allocation
+Use one API process and its supervisor per installation. Multiple-host
+orchestration and horizontal API scaling are outside this release.
+All host commands below use the supplied launcher with `SERVERFORGE_HOME` set to
+the installation directory.
 
-The deployment form lets you set RAM, CPU cores, storage budget, and the game’s
-settings before installation. Hardware starts with the selected edition’s
-recommendations; use **Show advanced & expert settings** for additional game options.
+## Configuration, resources, and installations
 
-For an existing server, open **Configuration**, edit the fields, and choose
-**Save changes**. Game settings and hardware changes take effect on the next
-start or restart. Saving does not interrupt a running game. Configuration
-changes require `server.settings` permission and are blocked while an install,
-start, stop, or restore is in progress.
+Choose game settings and hardware when creating a server, or edit them later
+under **Configuration**. Saved values take effect on the next start/restart;
+the editor also shows allocation actually applied to the running container.
+Saving configuration never silently restarts a game.
 
-RAM and storage use GiB; CPU supports fractional cores. Zero removes the
-corresponding limit. Docker enforces RAM and CPU limits; storage is a tracked
-budget, not an enforced disk quota. Existing saved passwords are kept unless
-you enter a replacement or explicitly clear them. Game version, modpack, and
-Steam branch are installation choices and cannot be changed in this form.
+CPU is measured in cores: 250% means 2.5 cores. When Docker provides per-core
+counters, individual meters show real logical-core measurements. Otherwise,
+capacity blocks represent aggregate usage and are labelled accordingly. They
+are not measurements of physical cores. Unavailable or stale telemetry is
+shown explicitly. Storage is a measured budget, not a portable hard quota.
 
-## Backups
+Memory allocation is checked against all saved allocations and host headroom
+(at least 512 MiB and the configured reserve percentage). CPU overcommit warns.
+Additional swap is added to memory for Docker's combined memory-and-swap limit;
+zero disables swap and an unset value keeps Docker's default. Unsupported
+controls and invalid legacy I/O weights are reported rather than claimed as
+active limits. Game containers and installation jobs have process/resource
+limits, dropped capabilities and no-new-privileges.
 
-### What the panel backs up
+Installation progress survives panel restarts. An interrupted attempt becomes
+failed with a reason and a retry action. Retry uses fresh staging files. Cancel
+stops at a safe boundary and cannot interrupt the final atomic replacement.
+Uploaded server-pack ZIPs remain available after failure until installation
+succeeds or the owner removes the uploaded pack. Client/profile exports are
+not server packs. Windows-oriented packs may provide supported version metadata;
+the panel does not execute uploaded batch scripts.
 
-`npm run` is not involved — backups are created from the UI or on a schedule,
-and written as plain `.tar.gz` under `BACKUP_ROOT/<server-uid>/`.
+## Three backup products
 
-Archives contain the full server directory, including binaries, mods, worlds,
-and configuration. Links and special files are rejected. The saved panel
-configuration and hardware allocation are attached to the backup record in Postgres.
-Downloading the archive downloads the files; retain the database to restore
-panel configuration through the UI.
-
-A running server stops for a consistent backup and resumes afterwards. Operations
-are serialized per server. Different servers can back up concurrently, so choose
-schedules that fit the host's disk capacity and I/O budget.
-
-### What the panel does _not_ back up
-
-**The database.** Server rows, users, permissions, schedules and backup records
-all live in Postgres. Restoring game files without it leaves orphaned
-directories with nothing pointing at them.
-
-```bash
-docker exec -t serverforge_postgres_1 pg_dump -U serverforge serverforge \
-  | gzip > panel-$(date +%F).sql.gz
-```
-
-Run that on a schedule alongside your server backups.
-
-### Restoring
-
-Restore from **More tools → Backups & restore**. The archive checksum and extraction are checked first, and a fresh recovery backup is made before replacement. The server stops, the archive is unpacked into a
-staging directory, and only then is the live directory swapped out — the
-current world is kept until the restore succeeds, so a failed restore changes
-nothing.
-
-The server stays offline afterwards, deliberately: check the world is what you
-expected before letting people back in.
-
-## Locked out of the panel
-
-Passwords are Argon2id hashes, so a forgotten one cannot be recovered — by you
-or by anyone else. Set a new one from the machine instead:
+| Product | Contents | Default retention | Game downtime |
+| --- | --- | --- | --- |
+| Game backup | One server's files; settings and allocation in the panel database | Manual or per schedule | Running game stops and resumes |
+| Automatic panel backup | Database and required panel configuration | Seven successful copies, daily | None |
+| Full recovery bundle | Panel backup, all game files/mods/worlds, game backups, themes and manifests | Three successful copies | Graceful stop during capture |
 
 ```bash
-npm run reset-password
+./serverforge backup
+./serverforge backup --full
+./serverforge verify /absolute/path/to/full-EXAMPLE.sfr
 ```
 
-It lists the accounts, asks which, and prompts twice without echoing. Add
-`-- --user admin --generate` to skip the prompts and have it print a strong
-password once.
+Bundles are directories ending in `.sfr`, with a versioned manifest, SHA-256
+checksums, database archive, configuration and file archives. Creation uses a
+temporary directory and verification before marking complete. Failed copies do
+not prune successful backups. Sensitive directories are mode 700 and bundle
+files mode 600. Preserve permissions when copying them off the host.
 
-Every session for that account is signed out, the same as changing a password
-in the dashboard: a reset is exactly when a session somebody else is holding
-must stop working.
+Full backups run only on demand or in an owner's explicit UTC maintenance
+window under **System status**. The panel drains operations, records running
+games, stops them gracefully, captures files and panel state, then resumes those
+games even if backup creation fails. A game that fails to stop cleanly prevents
+a full capture; inspect the failure and resume it before retrying.
 
-Two-factor is left alone deliberately — losing a password should not silently
-remove a second factor. If the authenticator is gone too, use a recovery code,
-or add `--clear-2fa` to turn it off as well.
+**Keep a verified off-host copy.** A local bundle cannot recover a lost disk or
+host. Bundles contain passwords hashes, TOTP encryption material and other
+secrets; they are not diagnostic exports. Built-in cloud storage is not provided.
+Internal symbolic/hard links are validated as a complete graph before extraction.
+Steam links rooted at the game container directory are made portable. Escaping
+links, cycles, writes through links and special files cause a clear failure;
+files are never silently omitted.
 
-This needs shell access to the machine, which already implies database access,
-so it grants nothing that was not there before.
+Game restores run through **More tools → Backups & restore**. The panel validates
+the checksum/archive, makes a recovery backup, stages replacement files and
+journals the swap. The restored game stays offline for inspection.
 
-## Scheduled tasks
+## Fresh-host recovery
 
-Five-field cron in the server's timezone. Actions run in order and can combine:
+1. Install Docker and load the matching candidate application images on the new
+   host. Copy the complete `.sfr` directory from the off-host backup.
+2. Select an empty installation directory and configure it without initializing
+   a panel database:
 
-| Want                  | Schedule    | Actions                    |
-| --------------------- | ----------- | -------------------------- |
-| Nightly restart       | `0 5 * * *` | warn command, then restart |
-| Hourly backup, keep 6 | `0 * * * *` | backup, retain 6           |
-| Weekly maintenance    | `0 4 * * 1` | stop, backup, start        |
+   ```bash
+   export SERVERFORGE_HOME="$HOME/serverforge-recovered"
+   ./serverforge setup --configure-only --port 3000
+   ./serverforge verify /absolute/path/to/full-EXAMPLE.sfr
+   ./serverforge restore /absolute/path/to/full-EXAMPLE.sfr
+   ./serverforge start
+   ```
 
-Enable "Only when online" to keep a stopped server from being woken up by its
-restart schedule. Leave it off for offline backups and crash alerts.
+3. Sign in with the preserved password and authenticator. Restored sessions and
+   API keys are revoked. Host paths are remapped, old container IDs are cleared,
+   and games remain offline. Password hashes, TOTP configuration and the required
+   encryption key are preserved.
+4. Inspect the games, start one at a time, check the console and actual saved
+   world content, and stop again if anything differs from expectations.
+5. Reauthenticate Tailscale, verify local/tailnet/public addresses from the
+   intended clients, and explicitly re-enable network exposure. Full recovery
+   clears stale networking state and disables public game exposure.
 
-Retention is per-schedule: an hourly backup pruning to 6 never deletes the
-manual backup you made before installing a mod.
+The destination database and game directories must be empty. Restore refuses
+existing data rather than overwriting worlds. Bundle format, schema compatibility,
+checksums and space are validated before restoration begins. Keep the source
+bundle unchanged until recovered games have passed inspection.
 
-## Running more than one instance
+If restoration is interrupted after the database was committed, the tool leaves
+a recovery report and staged configuration for inspection. Do not repeatedly
+restore into that partially populated destination. Preserve it, use another
+empty destination for a clean retry, and inspect the report. Automated completion
+of that interrupted finalization remains a release qualification item.
 
-Run one API instance with its supervisor enabled. Operation locks and pending
-event triggers are held in that process; horizontal API scaling is not supported.
-`WORKER=0` disables supervision for development or maintenance, including crash
-recovery, history collection, and scheduled tasks. It does not provide distributed
-write locking for additional API replicas.
+## Upgrade and rollback
 
-## Monitoring
-
-`GET /health` reports the database and Redis:
-
-```json
-{ "status": "ok", "brand": "ServerForge", "checks": { "database": true, "cache": true } }
-```
-
-Returns `degraded` when either is down. Point your uptime check at it.
-
-Open a server's Overview to watch live CPU, memory, network traffic, and uptime.
-Readings refresh every two seconds through `/api/servers/:uid/resources` and
-require `server.view` permission. CPU is measured per core (100% equals one
-fully used core); memory excludes reclaimable file cache. Offline or unreachable
-containers show unavailable readings, not zero consumption. Disk remains a
-configured limit, not a live disk measurement. The Overview graph covers the current page session. **More tools → Performance &
-recovery** adds persisted 30-second samples for the last seven days.
-
-The CPU panel displays usage in cores and shows the active container allocation.
-When Docker supplies both per-core counter samples, each host logical core has
-its own 0–100% meter for this server’s usage. When those counters are unavailable
-(including this Docker Desktop/cgroup v2 setup), a clearly labelled capacity view
-shows the aggregate as core-sized blocks: 250% becomes 2.5 filled blocks. These
-blocks represent CPU capacity, not measurements of individual physical cores.
-Changing the saved allocation does not change the displayed active limit until
-the game server restarts.
-
-The console streams the latest 500 stdout/stderr lines and new output through
-`/api/servers/:uid/console/stream`, requiring `server.console` permission. It
-reconnects automatically and shows installation output before a game container
-exists. A stopped container's recent logs remain readable until it is removed.
-If a reverse proxy sits in front of the API, disable response buffering on the
-stream endpoint and allow long-lived responses. Commands are only enabled for
-games whose adapter supports them.
-
-## Capacity
-
-Set each server’s RAM and CPU in the deployment form or its Configuration tab.
-Choose allocations that the host can support alongside the panel and other
-workloads; the panel does not currently check aggregate node capacity.
-
-The storage budget is recorded for each server but does not enforce a disk
-quota. Monitor free space on the host separately.
-
-## Upgrading
+Load the complete next-release image archive before upgrading:
 
 ```bash
-git pull && npm install && npm run build
+docker load -i serverforge-images.tar
+./serverforge upgrade VERSION
+./serverforge diagnostics
 ```
+
+The launcher verifies native matching image versions and the availability of
+previous images, checks space, stops the panel, makes and verifies a panel backup,
+applies migrations, starts the selected release and waits for readiness. Games
+remain running through a panel upgrade. Existing identities, accounts, paths,
+ports, secrets and networking preferences are preserved.
+
+`config/upgrade.json` records image IDs, migration versions, backup ID and the
+last completed step. Do not delete an unfinished journal or its backup.
 
 ```bash
-npm run db:push
+./serverforge rollback
 ```
 
-Restart the panel. **Running game servers are not disturbed** — containers keep
-running, and the supervisor re-attaches to them on boot. That is the point of
-reconciliation, and it means panel upgrades do not need a maintenance window.
+Rollback uses previous images alone only when their schema compatibility is
+explicitly declared. Otherwise it restores the matching verified pre-upgrade
+panel database and configuration. This is a snapshot restore, not a destructive
+migration downgrade. Newer tables are removed within the same database
+transaction that restores the old snapshot. Keep old release images available;
+the launcher retains aliases so a rebuilt development tag cannot erase rollback
+references. Changes made after the matching panel backup are lost on a database
+rollback; inspect the chosen journal and backup first.
 
-## Crash handling
+## Accounts and host recovery
 
-When a server expected to be running exits, it is marked crashed. If automatic
-recovery is enabled, the supervisor retries with 30-, 60-, and 120-second delays,
-then pauses after another failure. Ten minutes of stable operation reset the
-counter. Manual stops and kills remain offline. OOM exits are identified in the
-activity timeline and use the same retry guard; review memory allocation before
-manually starting a persistent OOM loop.
+Owners/admins create single-use 72-hour invitations in **Workspace accounts**.
+Only owners can grant workspace administrator access. Invitations carry their
+secret in the link fragment and exchange it through POST. Suspension immediately
+revokes access; the last owner cannot be removed or suspended.
 
-See [Server management](management.md) for backups, file editing, staged updates,
-players, shared access, diagnostics, and scheduled alerts.
-
-## Logs
-
-Development logs are human-readable; production logs are JSON for shipping.
-`LOG_LEVEL=debug` adds detail. Cookies, tokens and every known password field
-are redacted — logs from this panel end up pasted into support threads, so that
-is not optional.
-
-Container logs rotate at 20 MB × 3 files per server.
-
-## Common tasks
-
-**Move a server to a different port** — Network section on the server page. It
-must be stopped first, since the container's port mapping is fixed at creation.
-
-**Reinstall without losing a world** — Reinstall replaces server binaries and
-loader files only. Worlds, configs and mods are untouched.
-
-**Free disk fast** — delete completed backups first, then old servers. The
-Files tab shows what a server is actually using.
-
-**Reset a forgotten owner password**:
+**Account** provides password changes, sessions/revocation, authenticator setup,
+recovery-code regeneration and scoped API keys. Key secrets appear once and
+expire after 90 days by default. Sensitive changes require the password and the
+active second factor. Keep recovery codes outside the host.
 
 ```bash
-npm run db:studio
+./serverforge reset-password --user OWNER_USERNAME --generate
+# Only if the authenticator and recovery codes were also lost:
+./serverforge reset-password --user OWNER_USERNAME --generate --clear-2fa
 ```
 
-Or re-run the seed with `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD` set to
-create a fresh owner account.
+The generated password is displayed once. Host recovery revokes sessions and
+records an audit event. Do not include its output in diagnostic reports.
+
+## Health, jobs and diagnostics
+
+- `/health/live` reports whether the API process is responding.
+- `/health/ready` checks the database, expected schema, Docker, storage and
+  supervisor. It returns HTTP 503 when the panel cannot accept work.
+- `/health` retains its `ok`, `docker`, and `brand` shape with truthful HTTP status.
+- **System status** shows disk pressure, recovery failures, interrupted schedules,
+  pending restarts, invalid saved controls and active operations.
+
+Export redacted status in the dashboard, or run `./serverforge diagnostics` for
+host/version checks. Ordinary diagnostics exclude raw game logs, configuration
+and secrets. A diagnostic report is distinct from a recovery bundle.
+
+Panel shutdown blocks new mutations, drains work within a bounded timeout,
+closes streams and disconnects database clients. Healthy game containers remain
+running. Restart reconciliation adopts owned containers created just before a
+crash and flags duplicate claims instead of creating another container.
+Missed cron occurrences are recorded and skipped. Interrupted command/webhook
+runs require attention; uncertain operations are not automatically replayed.
+
+Console streams reconnect and recheck access. A disconnected browser does not
+cancel a running server operation. Archive traversal, oversized uploads and
+untrusted outbound URLs are rejected by the relevant API boundaries.
+
+## Palworld save and shutdown
+
+Set an admin password and keep the REST API enabled before starting Palworld.
+The panel uses its applied configuration to call the private save endpoint,
+request shutdown and verify process exit. The REST host port is bound to loopback.
+It refuses an unavailable or unauthenticated save API instead of claiming a
+consistent backup after a signal-only stop.
+
+For an older running game without these settings, save and shut down through
+in-game administration, then configure them before the next start. See the
+publisher's [save API](https://docs.palworldgame.com/api/rest-api/save/) and
+[shutdown API](https://docs.palworldgame.com/api/rest-api/shutdown/).
+
+## Database and Tailscale image updates
+
+Candidate archives include five matching native images. An ordinary upgrade
+preserves the installed database and Tailscale image IDs. To apply their reviewed
+updates after loading the complete candidate archive, select them explicitly:
+
+```bash
+./serverforge upgrade 0.1.0-rc.1 \
+  --postgres-image serverforge-postgres:0.1.0-rc.1 \
+  --tailscale-image serverforge-tailscale:0.1.0-rc.1
+```
+
+The database image must remain PostgreSQL major version 17. This command is not
+a PostgreSQL major-version migration. The verified pre-upgrade panel backup and
+previous image identifiers remain available for documented rollback.
+
+Legacy source adoption records the original API port bindings and API/web runtime
+environment in private `config/legacy-runtime.json`. Rollback to the legacy images
+restores those settings, including the direct API port used by older dashboards.
+Starting a rolled-back legacy panel does not run new migrations. Run an explicit
+backed-up upgrade to return to the candidate. Keep this private runtime file with
+the configuration backup; it contains the original service credentials.

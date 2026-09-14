@@ -155,10 +155,11 @@ export const valheimAdapter: GameAdapter = {
       },
       ports: [
         { containerPort: 2456, purpose: 'game', protocol: 'udp' },
-        { containerPort: 2457, purpose: 'query', protocol: 'udp' },
+        { containerPort: 2457, purpose: 'query', protocol: 'udp', public: true },
       ],
       // Valheim has no stdin shutdown command. SIGINT triggers a clean save.
       stopTimeoutSeconds: 60,
+      stopSignal: 'SIGINT',
       readyPattern: 'Game server connected',
     };
   },

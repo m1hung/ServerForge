@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="${SERVERFORGE_HOME:-$PWD}"
+mkdir -p "$root"
+root="$(cd "$root" && pwd -P)"
+command -v docker >/dev/null || { echo 'Install Docker Engine or Docker Desktop, then retry.' >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo 'Docker is unavailable. Start Docker and check access to its socket.' >&2; exit 1; }
+endpoint="${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}"
+case "$endpoint" in unix://*) socket="${endpoint#unix://}";; *) echo 'Use a local Linux-container Docker context (Windows: run this launcher inside WSL2).' >&2; exit 1;; esac
+case "$(docker info --format '{{.OperatingSystem}}')" in *Docker\ Desktop*) socket=/var/run/docker.sock;; esac
+image="${SERVERFORGE_MAINTENANCE_IMAGE:-serverforge-maintenance:0.1.0-rc.1}"
+docker image inspect "$image" >/dev/null 2>&1 || { echo "Load the candidate image archive first: docker load -i serverforge-images.tar" >&2; exit 1; }
+terminal=()
+if [ -t 0 ] && [ -t 1 ]; then terminal=(-it); fi
+snapshot=""
+if [ "${1:-}" = network ]; then
+  snapshot="$(mktemp -d "$root/.network-discovery.XXXXXX")"
+  chmod 700 "$snapshot"
+  if command -v tailscale >/dev/null; then
+    tailscale status --json --peers=false > "$snapshot/status.json" 2> "$snapshot/status.error" || true
+    tailscale serve status --json > "$snapshot/serve.json" 2> "$snapshot/serve.error" || true
+  fi
+  trap 'rm -rf "$snapshot"' EXIT
+fi
+docker run --rm "${terminal[@]}" --label serverforge.io/maintenance=true \
+  -v "$socket:/var/run/docker.sock" -v "$root:/installation" \
+  -e "SF_HOST_ROOT=$root" -e "DOCKER_SOCKET_FILE=$socket" \
+  -e "SF_MAINTENANCE_IMAGE=$image" \
+  -e "SF_HOST_OS=$(uname -s)" -e "SF_HOST_RELEASE=$(uname -r)" -e "SF_HOST_ARCH=$(uname -m)" \
+  -e SF_QUALIFY_EMULATION \
+  -e "SF_HOST_NETWORK_STATUS=${snapshot##*/}" \
+  --entrypoint node "$image" packages/maintenance/src/host.mjs "$@"

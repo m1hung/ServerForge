@@ -91,6 +91,13 @@ describe('curseforge server packs', () => {
     expect(await readPackVariables(tools as never)).toBeNull();
   });
 
+  it('reads Universalator metadata without executing batch commands or importing hardware flags', async () => {
+    const { tools } = fakePack({ 'settings-universalator.txt': 'set minecraft=1.21.1\nSET MODLOADER=NEOFORGE\nSET MODLOADERVERSION=21.1.133\nSET MAXRAMGIGS=6\nDEL world\n' });
+    expect(await readPackVariables(tools as never)).toEqual({ minecraftVersion: '1.21.1', modloader: 'NEOFORGE', modloaderVersion: '21.1.133' });
+    const malicious = fakePack({ 'variables.txt': 'MINECRAFT_VERSION=1.21.1\nMODLOADER=Forge\nMODLOADER_VERSION=../../payload' });
+    await expect(readPackVariables(malicious.tools as never)).rejects.toThrow('invalid');
+  });
+
   it('installs the loader and leaves a launchable server.jar', async () => {
     const { tools, report, downloads, containerRuns, images } = fakePack(SERVER_PACK);
 

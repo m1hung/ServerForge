@@ -119,6 +119,7 @@ export function validateManifest(manifest: GameManifest): string[] {
   } else {
     need(Boolean(runtime.image?.trim()), 'runtime.image is required.');
     need(Boolean(runtime.workingDir?.trim()), 'runtime.workingDir is required.');
+    need(runtime.stopSignal === undefined || ['SIGINT', 'SIGTERM'].includes(runtime.stopSignal), 'runtime.stopSignal must be SIGINT or SIGTERM.');
     need(
       typeof runtime.stopTimeoutSeconds === 'number' && runtime.stopTimeoutSeconds > 0,
       'runtime.stopTimeoutSeconds must be a positive number of seconds.',
@@ -133,6 +134,8 @@ export function validateManifest(manifest: GameManifest): string[] {
     }
 
     for (const port of runtime.ports ?? []) {
+      if (port.public && !['game', 'query'].includes(port.purpose))
+        issues.push('Only game and query ports may be marked public.');
       if (!purposes.has(port.purpose)) {
         issues.push(
           `runtime.ports maps the purpose "${port.purpose}", which is not one of the ports this game reserves (${[...purposes].join(', ')}).`,

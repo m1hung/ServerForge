@@ -184,7 +184,7 @@ export default function HomePage() {
           </div>
         )}
         <div className="server-panel">
-          <div className="server-tabs" aria-label="Filter by server status">
+          <div className="server-tabs" role="group" aria-label="Filter by server status">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -229,7 +229,7 @@ export default function HomePage() {
                   </option>
                 ))}
               </select>
-              <div className="view-toggle" aria-label="Server view">
+              <div className="view-toggle" role="group" aria-label="Server view">
                 <button
                   className={view === 'list' ? 'selected' : ''}
                   aria-label="List view"

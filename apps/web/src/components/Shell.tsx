@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { api } from '@/lib/api';
+import { useBrand } from './BrandProvider';
 
 type User = { username: string; displayName: string; role: string };
 
@@ -18,13 +19,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const firstNavLink = useRef<HTMLAnchorElement>(null);
   const menuToggle = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
-  const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? 'ServerForge';
+  const brand = useBrand().name;
   const page =
-    pathname === '/deploy'
-      ? 'Deploy a server'
-      : pathname.startsWith('/servers/')
-        ? 'Server details'
-        : 'Overview';
+    pathname === '/network'
+      ? 'Network & access'
+      : pathname === '/deploy'
+        ? 'Deploy a server'
+        : pathname.startsWith('/servers/')
+          ? 'Server details'
+          : pathname === '/account'
+            ? 'Account'
+            : pathname === '/accounts'
+              ? 'Workspace accounts'
+              : pathname === '/system'
+                ? 'System status'
+                : 'Overview';
 
   useEffect(() => {
     setDarkMode(document.documentElement.dataset.theme === 'dark');
@@ -123,15 +132,59 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Icon name="server" />
             My servers
           </Link>
+          {user && ['owner', 'admin'].includes(user.role) && (
+            <Link
+              className={pathname === '/deploy' ? 'active' : ''}
+              aria-current={pathname === '/deploy' ? 'page' : undefined}
+              href="/deploy"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon name="plus" />
+              Deploy a server
+            </Link>
+          )}
+          {user && ['owner', 'admin'].includes(user.role) && (
+            <Link
+              className={pathname === '/network' ? 'active' : ''}
+              aria-current={pathname === '/network' ? 'page' : undefined}
+              href="/network"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon name="network" />
+              Network & access
+            </Link>
+          )}
           <Link
-            className={pathname === '/deploy' ? 'active' : ''}
-            aria-current={pathname === '/deploy' ? 'page' : undefined}
-            href="/deploy"
+            className={pathname === '/account' ? 'active' : ''}
+            aria-current={pathname === '/account' ? 'page' : undefined}
+            href="/account"
             onClick={() => setMenuOpen(false)}
           >
-            <Icon name="plus" />
-            Deploy a server
+            <Icon name="user" />
+            Account
           </Link>
+          {user && ['owner', 'admin'].includes(user.role) && (
+            <Link
+              className={pathname === '/accounts' ? 'active' : ''}
+              aria-current={pathname === '/accounts' ? 'page' : undefined}
+              href="/accounts"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon name="users" />
+              Workspace accounts
+            </Link>
+          )}
+          {user && ['owner', 'admin'].includes(user.role) && (
+            <Link
+              className={pathname === '/system' ? 'active' : ''}
+              aria-current={pathname === '/system' ? 'page' : undefined}
+              href="/system"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon name="activity" />
+              System status
+            </Link>
+          )}
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note">

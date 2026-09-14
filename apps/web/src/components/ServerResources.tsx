@@ -8,7 +8,11 @@ import { memoryLabel, type Server } from '@/lib/servers';
 import { Icon, type IconName } from './Icon';
 import { CpuUsage } from './CpuUsage';
 
-type Reading = { usage: ResourceUsage | null; containerId: string | null };
+type Reading = {
+  usage: ResourceUsage | null;
+  containerId: string | null;
+  diskBytes: number | null;
+};
 type Sample = ResourceUsage & { rxRate: number | null; txRate: number | null };
 
 function Sparkline({ values }: { values: number[] }) {
@@ -39,6 +43,7 @@ export function ServerResources({ server }: { server: Server }) {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [status, setStatus] = useState('Connecting to resource monitor…');
   const [available, setAvailable] = useState(false);
+  const [diskBytes, setDiskBytes] = useState<number | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -47,6 +52,7 @@ export function ServerResources({ server }: { server: Server }) {
     let previous: Reading | undefined;
     setSamples([]);
     setAvailable(false);
+    setDiskBytes(null);
     setStatus('Connecting to resource monitor…');
     const poll = async () => {
       const started = Date.now();
@@ -58,6 +64,7 @@ export function ServerResources({ server }: { server: Server }) {
         });
         if (disposed) return;
         const usage = next.usage;
+        setDiskBytes(next.diskBytes ?? null);
         setAvailable(!!usage);
         setStatus(
           usage
@@ -172,6 +179,12 @@ export function ServerResources({ server }: { server: Server }) {
           </div>
         ))}
       </div>
+      <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>
+        Storage: {diskBytes === null ? 'measurement unavailable' : formatBytes(diskBytes)}
+        {' · '}
+        {server.diskMib ? `${formatBytes(server.diskMib * 1024 ** 2)} budget` : 'No storage budget'}
+        {' · Measured approximately every minute; this is not a disk quota.'}
+      </p>
     </section>
   );
 }

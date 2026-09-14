@@ -5,7 +5,7 @@
   "description": "Self-hosted game server hosting platform. Launch a game server in minutes, not hours.",
   "license": "AGPL-3.0-or-later",
   "engines": {
-    "node": ">=20.11.0"
+    "node": ">=22.12.0"
   },
   "workspaces": [
     "packages/*",
@@ -37,23 +37,29 @@
     "stack:down": "node scripts/compose.mjs down",
     "stack:logs": "node scripts/compose.mjs logs -f",
     "stack:full": "node scripts/compose.mjs --profile full up -d --build",
-    "stack:tls": "node scripts/compose.mjs --profile full --profile tls up -d --build"
+    "stack:tls": "node scripts/compose.mjs --profile full --profile tls up -d --build",
+    "network:setup": "node --import tsx scripts/network-setup.mts",
+    "test:unit": "node scripts/test-unit.mjs",
+    "test:integration": "node scripts/test-integration.mjs",
+    "test:packaged": "node scripts/test-packaged.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
-    "@next/eslint-plugin-next": "^15.1.6",
-    "@types/node": "22.10.7",
+    "@next/eslint-plugin-next": "15.5.25",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.2",
     "@typescript-eslint/eslint-plugin": "8.21.0",
     "@typescript-eslint/parser": "8.21.0",
-    "eslint": "9.18.0",
+    "axe-core": "4.13.0",
+    "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0",
-    "happy-dom": "^15.11.7",
+    "happy-dom": "20.14.5",
     "prettier": "3.4.2",
-    "tsx": "4.19.2",
+    "tsx": "4.23.13",
     "typescript": "5.7.3",
     "typescript-eslint": "^8.21.0",
-    "vitest": "2.1.8"
+    "vitest": "4.1.11"
   },
   "allowScripts": {
     "esbuild@0.23.1": true,
@@ -61,6 +67,11 @@
     "prisma@6.2.1": true,
     "@prisma/client@6.2.1": true,
     "@prisma/engines@6.2.1": true,
-    "sharp@0.33.5": true
+    "sharp@0.33.5": true,
+    "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "postcss": "8.5.28",
+    "uuid": "11.1.1"
   }
 }

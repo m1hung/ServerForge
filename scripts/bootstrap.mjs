@@ -8,7 +8,7 @@
  * directories, and prints exactly what to run next. Idempotent: re-running it
  * never overwrites an existing secret.
  */
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,6 +115,11 @@ async function main() {
   const before = contents;
   contents = fillIfEmpty(contents, "SESSION_SECRET", secret());
   contents = fillIfEmpty(contents, "ENCRYPTION_KEY", secret());
+  if (!readValue(contents, "SETUP_TOKEN_HASH")) {
+    const setupToken = secret();
+    contents = fillIfEmpty(contents, "SETUP_TOKEN_HASH", createHash("sha256").update(setupToken).digest("hex"));
+    console.log(`One-time owner setup token: ${setupToken}`);
+  }
   // Resolved here rather than relying on the absolutise pass below: these two
   // are the values Docker binds game containers against, and a relative one is
   // silently wrong rather than loudly broken.
@@ -176,6 +181,16 @@ async function main() {
       `${c.green("✓")} pointed DATABASE_URL / REDIS_URL at 127.0.0.1`,
     );
   }
+
+  // Upgrade the former loopback browser URL to the same-origin proxy. A remote
+  // browser's localhost is its own machine, never this game host.
+  const browserApi = readValue(contents, "NEXT_PUBLIC_API_URL");
+  const apiPort = readValue(contents, "API_PORT") || "8080";
+  if ([`http://localhost:${apiPort}`, `http://127.0.0.1:${apiPort}`, `http://[::1]:${apiPort}`].includes(browserApi?.replace(/\/$/, ""))) {
+    contents = contents.replace(/^NEXT_PUBLIC_API_URL=.*$/m, 'NEXT_PUBLIC_API_URL="auto"');
+    console.log(`${c.green("✓")} enabled same-origin dashboard API access`);
+  }
+  contents = fillIfEmpty(contents, "NEXT_PUBLIC_API_URL", "auto");
 
   await fs.writeFile(envPath, contents, { mode: 0o600 });
 

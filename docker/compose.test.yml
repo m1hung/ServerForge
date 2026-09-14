@@ -1,0 +1,19 @@
+# Only scripts/test-integration.mjs starts this stack. No production volumes,
+# fixed ports, Docker socket mounts, or installation .env are inherited.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: serverforge_test
+      POSTGRES_DB: serverforge_test
+      POSTGRES_PASSWORD: ${SF_TEST_PASSWORD:?use npm run test:integration}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - '127.0.0.1::5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U serverforge_test -d serverforge_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30

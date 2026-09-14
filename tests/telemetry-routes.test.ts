@@ -49,6 +49,7 @@ beforeEach(async () => {
     gameId: 'minecraft-java',
     variantId: 'fabric',
     state: 'running',
+    dataPath: '/nonexistent/serverforge-test',
     allocations: [],
     subusers: [{ userId: 'viewer', permissions: ['server.view'], roles: [] }],
   };

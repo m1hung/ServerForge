@@ -139,7 +139,7 @@ export const palworldAdapter: GameAdapter = {
     sections[CONFIG_SECTION] ??= {};
 
     const currentTuple = sections[CONFIG_SECTION]!['OptionSettings'];
-    const options = currentTuple ? parseTuple(currentTuple) : {};
+    const options = currentTuple ? parseTuple(currentTuple, { preserveQuotes: true }) : {};
 
     for (const setting of schema) {
       if (setting.target.kind !== 'ini') continue;
@@ -205,12 +205,13 @@ export const palworldAdapter: GameAdapter = {
       },
       ports: [
         { containerPort: 8211, purpose: 'game', protocol: 'udp' },
-        { containerPort: 27015, purpose: 'query', protocol: 'udp' },
+        { containerPort: 27015, purpose: 'query', protocol: 'udp', public: true },
         { containerPort: 8212, purpose: 'rest', protocol: 'tcp' },
       ],
-      // Palworld has no console command interface on stdin. SIGINT triggers
-      // its clean shutdown path, which flushes the world save.
+      // The panel uses authenticated REST save/shutdown. A signal alone is
+      // not evidence that this game's world was flushed.
       stopTimeoutSeconds: 60,
+      stopSignal: 'SIGINT',
       readyPattern: 'Setting breakpad minidump AppID|Running Palworld dedicated server',
     };
   },

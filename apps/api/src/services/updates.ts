@@ -7,6 +7,7 @@ import { badRequest, conflict } from '@serverforge/core';
 import { contextOf, loadServer, startServer } from '../routes/servers.js';
 import { localDataPath, hostDataPath } from '../lib/storage-paths.js';
 import { installToolsFor } from './install-tools.js';
+import { selectGamePlatform } from './platform.js';
 import { saveServerPack } from './server-pack-upload.js';
 import { serverFile } from '../lib/server-files.js';
 import {
@@ -158,7 +159,7 @@ export async function prepareUpdate(
       configuration.settings.modpack_version = packVersion;
     if (upload) configuration.settings.modpack_zip_url = '';
     const ctx = contextOf({ ...server, ...configuration, dataPath: hostDataPath(staged) });
-    await adapter.install(ctx, installToolsFor(hostDataPath(staged)), {
+    await adapter.install(ctx, installToolsFor(hostDataPath(staged), undefined, await selectGamePlatform(server.gameId, server.environment as Record<string, string>)), {
       phase: async (phase, message) => {
         await prisma.installLog.create({ data: { serverId: server.id, phase, message } });
       },

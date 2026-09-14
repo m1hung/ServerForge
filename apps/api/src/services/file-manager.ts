@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
 import { badRequest, conflict, notFound, relativeTo } from '@serverforge/core';
-import { serverFile } from '../lib/server-files.js';
+import { serverFile, openServerFile } from '../lib/server-files.js';
 import { extractZip } from '../lib/extract-zip.js';
 
 export const TEXT_LIMIT = 2 * 1024 ** 2;
@@ -42,11 +42,22 @@ export async function listFiles(root: string, relative: string) {
   };
 }
 export async function readTextFile(root: string, relative: string) {
-  const target = await managedFile(root, relative);
-  const stat = await fs.stat(target);
-  if (!stat.isFile() || stat.size > TEXT_LIMIT)
-    throw badRequest('The editor supports text files up to 2 MiB. Download larger files instead.');
-  const content = await fs.readFile(target);
+  await managedFile(root, relative);
+  const file = await openServerFile(root, relative);
+  let content: Buffer;
+  try {
+    if ((await file.stat()).size > TEXT_LIMIT)
+      throw badRequest('The editor supports text files up to 2 MiB. Download larger files instead.');
+    const buffer = Buffer.alloc(TEXT_LIMIT + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await file.read(buffer, length, buffer.length - length, null);
+      if (!bytesRead) break;
+      length += bytesRead;
+    }
+    if (length > TEXT_LIMIT) throw badRequest('The file grew beyond the 2 MiB editor limit. Download it instead.');
+    content = buffer.subarray(0, length);
+  } finally { await file.close(); }
   if (content.includes(0)) throw badRequest('This is a binary file. Download it instead.');
   try {
     new TextDecoder('utf-8', { fatal: true }).decode(content);

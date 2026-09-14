@@ -34,6 +34,7 @@ export const passwordSchema = z
   .max(200, 'That password is too long.');
 
 export const registerSchema = z.object({
+  setupToken: z.string().max(200).optional(),
   username: usernameSchema,
   password: passwordSchema,
   /** Optional profile name; defaults to the username when omitted. */
@@ -42,7 +43,7 @@ export const registerSchema = z.object({
 
 export const loginSchema = z.object({
   username: usernameSchema,
-  password: z.string().min(1, 'Enter your password.'),
+  password: z.string().min(1, 'Enter your password.').max(200, 'That password is too long.'),
 });
 
 /**
@@ -104,7 +105,7 @@ export const resourceLimitsSchema = z.object({
     .max(1024 * 1024)
     .nullable()
     .optional(),
-  ioWeight: z.number().int().min(1).max(1000).nullable().optional(),
+  ioWeight: z.number().int().min(10).max(1000).nullable().optional(),
 });
 
 /** Body for the deploy wizard's final step. */
@@ -122,6 +123,8 @@ export const createServerSchema = z.object({
   /** Requested primary port. Omit to let the allocator choose. */
   port: z.number().int().min(1024).max(65535).optional(),
   startOnCreate: z.boolean().default(true),
+  runtimePlatform: z.enum(['linux/amd64', 'linux/arm64']).optional(),
+  allowExperimental: z.boolean().default(false),
   acceptedEula: z.string().max(100).optional(),
 });
 

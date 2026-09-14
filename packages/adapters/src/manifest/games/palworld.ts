@@ -147,11 +147,12 @@ export const palworldManifest: GameManifest = {
       key: 'AdminPassword',
       type: 'string',
       label: 'Admin password',
-      help: 'Lets you run admin commands from inside the game. Keep it different from the join password.',
+      help: 'Required for safe saves and shutdown. Keep it different from the join password.',
       tier: 'basic',
       group: 'Server',
       default: '',
       secret: true,
+      minLength: 1,
       maxLength: 64,
       target: {
         kind: 'ini',
@@ -527,7 +528,7 @@ export const palworldManifest: GameManifest = {
       key: 'RESTAPIEnabled',
       type: 'boolean',
       label: 'Enable the REST API',
-      help: 'Lets tools query players and run admin commands over HTTP. The panel uses it for the live player list when it is on.',
+      help: 'Required for safe panel saves and shutdown. Its host port is limited to loopback; the dashboard uses the private game network.',
       tier: 'advanced',
       group: 'Performance',
       default: true,
@@ -622,12 +623,13 @@ export const palworldManifest: GameManifest = {
     },
     ports: [
       { containerPort: 8211, purpose: 'game', protocol: 'udp' },
-      { containerPort: 27015, purpose: 'query', protocol: 'udp' },
+      { containerPort: 27015, purpose: 'query', protocol: 'udp', public: true },
       { containerPort: 8212, purpose: 'rest', protocol: 'tcp' },
     ],
-    // No console command interface on stdin. SIGINT triggers Palworld's clean
-    // shutdown path, which flushes the world save.
+    // The panel saves and shuts down through the authenticated private REST
+    // API. SIGINT is only the container's fallback signal, not a save guarantee.
     stopTimeoutSeconds: 60,
+    stopSignal: 'SIGINT',
     readyPattern: 'Setting breakpad minidump AppID|Running Palworld dedicated server',
   },
 

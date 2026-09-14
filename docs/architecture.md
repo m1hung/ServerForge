@@ -1,160 +1,92 @@
 # Architecture
 
-## The shape of it
+ServerForge runs one API process and one supervisor per installation. PostgreSQL
+is the source of truth. The Next.js dashboard proxies API requests and console
+streams through its own origin; the packaged API and database have no published
+host ports. Redis and a separate queue service are not required by the release
+Compose file.
 
-```
-┌──────────────┐        HTTPS / WSS        ┌──────────────────────────────┐
-│  Dashboard   │ ────────────────────────► │            API               │
-│  Next.js 15  │ ◄──────────────────────── │          Fastify 5           │
-└──────────────┘   REST + one WebSocket    │                              │
-                                           │  routes · services · workers │
-                                           └───────┬──────────────┬───────┘
-                                                   │              │
-                                     ┌─────────────▼───┐   ┌──────▼──────────┐
-                                     │   PostgreSQL    │   │      Redis      │
-                                     │  (source of     │   │  queues, pubsub │
-                                     │   truth)        │   │  console buffer │
-                                     └─────────────────┘   └─────────────────┘
-                                                   │
-                                        ┌──────────▼───────────┐
-                                        │   RuntimeDriver      │
-                                        │  ┌────────────────┐  │
-                                        │  │ DockerRuntime  │  │  ← today
-                                        │  ├────────────────┤  │
-                                        │  │ AgentRuntime   │  │  ← next
-                                        │  └────────────────┘  │
-                                        └──────────┬───────────┘
-                                                   │
-                              ┌────────────────────┼────────────────────┐
-                              ▼                    ▼                    ▼
-                        ┌──────────┐         ┌──────────┐         ┌──────────┐
-                        │ Paper    │         │ Palworld │         │  Fabric  │
-                        │container │         │container │         │container │
-                        └──────────┘         └──────────┘         └──────────┘
+```mermaid
+flowchart LR
+  Browser -->|same origin| Web[Next.js dashboard]
+  Web -->|signed proxy headers| API[Fastify API and supervisor]
+  API --> DB[(PostgreSQL)]
+  API --> Docker[Host Docker socket]
+  Docker --> Games[Non-root game containers]
+  API --> Files[Server files and game backups]
+  Maintenance[Maintenance image] --> DB
+  Maintenance --> Bundles[Verified recovery bundles]
+  Maintenance -->|maintenance lease| API
 ```
 
-One API process runs the HTTP server, the job workers and the supervisor. That
-is deliberate: a self-hosted panel should be one thing to run. `WORKER=0`
-splits them when one machine stops being enough.
+The Docker socket gives the API authority over the host daemon. Keep dashboard
+access private and restrict administrator access accordingly. Game containers do
+not receive that socket. They run as UID/GID 1000, with dropped capabilities,
+no-new-privileges, process/resource limits and rotating logs. Ownership repair is
+a separate short-lived helper. See [security](security.md).
 
-## The four extension points
+## Game and runtime code
 
-Everything game-specific lives behind one of these. Nothing else in the
-codebase should branch on which game it is handling.
+`packages/adapters` contains the game registry, Minecraft loader logic, compiled
+Valheim/Palworld manifests, settings schemas and configuration writers. Manifests
+can describe ordinary installs and startup commands; Minecraft retains code for
+publisher APIs, runtime selection and modpack inspection. Palworld save/shutdown
+uses its authenticated private REST API because a process signal does not prove
+a world save completed.
 
-### 1. `GameAdapter` — what a game _is_
+`apps/api/src/runtime` implements the local Docker driver. It reports Docker's
+actual resource-control capabilities and applied limits. Saved configuration is
+separate from the running container; a configuration fingerprint marks changes
+that require restart. Disk allocation is a monitored budget, not a hard quota.
 
-`packages/adapters/src/types.ts`
+`InstallTools` confines adapter operations to a staging directory. Downloads are
+bounded and checked, ZIP traversal/links are rejected, and temporary install
+containers receive limits. Explicit platform selection applies to image pulls,
+installation and game startup. Compatibility labels do not substitute for real
+platform tests.
 
-A single object describes version resolution, install steps, the startup
-command, the settings schema, log interpretation and where mods go. The
-registry in `registry.ts` is the complete list of supported games.
+## State and long operations
 
-### 2. `SettingsSchema` — what a user can change
+Mutations use per-server in-process locks. Installation attempts persist status,
+progress, timestamps, cancellation requests and failure reasons in PostgreSQL.
+Each retry uses a new staging directory. Uploaded packs survive failure and are
+removed after successful installation or explicit failed-upload removal.
 
-`packages/core/src/settings-schema.ts`
+Updates, restores and installation completion use a filesystem journal around
+atomic directory replacement. Cancellation is refused once that final replacement
+begins. On restart the supervisor recovers journals, checks installation markers,
+and reconciles containers using ownership labels and exact configured bind paths.
+Uncertain jobs become failed or require attention; arbitrary commands/webhooks
+are not replayed. Missed cron occurrences are skipped and recorded.
 
-A declarative array of typed settings, each with a `tier` (`basic` /
-`advanced` / `expert`), plain-language `help`, an optional `showWhen` guard,
-and a `target` describing where the value is materialised — a properties key,
-an INI tuple entry, a JSON path, an env var, or adapter-internal.
+Shutdown closes mutation admission, pauses dispatch, drains bounded active work,
+closes streams and disconnects the database. Healthy games remain running when
+the panel restarts. Liveness means the process can answer; readiness additionally
+checks database/schema, Docker, storage and supervisor health.
 
-From one declaration you get: the deploy wizard, the settings page, server-side
-validation, and the write into the game's own config format. Adding a setting
-is a one-object change.
+Console output uses server-sent events, with bounded buffering and periodic
+reconnection to recheck account access. Docker provides live resource readings.
+Unavailable per-core counters and stale telemetry remain explicit. Persistent
+history is sampled separately from the live display.
 
-### 3. `RuntimeDriver` — where servers actually run
+## Accounts and maintenance
 
-`apps/api/src/runtime/types.ts`
+Local passwords, sessions, API-key hashes, encrypted TOTP secrets, recovery-code
+hashes, invitations and audit events live in PostgreSQL. Invitation tokens appear
+only in a link fragment and a POST body. Sensitive security changes require the
+current password and enabled second factor. Permissions and key scopes are
+checked server-side, including streams and file access.
 
-Create, start, stop, stream logs, sample stats, write stdin, run a throwaway
-install container. `DockerRuntime` talks to a local socket. A future
-`AgentRuntime` will post the same operations to a remote daemon; business logic
-does not change, because it never imports dockerode.
+The maintenance image contains migration, backup, restore, installation and
+upgrade commands. Committed Prisma migrations replace production `db push`.
+Only recognized legacy catalogs can be adopted automatically. Full recovery
+bundles combine consistent game files, panel state, configuration and encryption
+material; restored games stay offline and restored sessions/keys are revoked.
 
-### 4. `InstallTools` — what an adapter may touch
+The backup worker runs the same maintenance image on a schedule. It is not a
+second API supervisor. Daily panel backups and explicit full-backup windows are
+separate policies. See [operations](operations.md) for recovery and rollback.
 
-`apps/api/src/services/install-tools.ts`
-
-Download, unzip, read, write, list, and run a container. Every path is resolved
-through `resolveWithin` against the server's own directory, so an adapter —
-which acts on remote data like a modpack index — physically cannot write
-outside its server.
-
-## Key flows
-
-### Deploying a server
-
-1. `POST /api/servers` validates the body, then validates settings against the
-   adapter's schema. A bad deploy costs nothing.
-2. Capacity is checked against the node's headroom. Refusing now beats two
-   servers fighting over RAM at 3am.
-3. One transaction creates the server row and claims its ports.
-4. The data directory is created outside the transaction (it cannot be rolled
-   back), with a cleanup path if it fails.
-5. An install job is queued and the request returns `202`. The user watches
-   progress live; closing the tab changes nothing.
-6. The worker resolves `latest` to a concrete version, records it, runs the
-   adapter's install, materialises settings, and marks the server installed.
-
-### Port allocation
-
-Allocations are pre-materialised rows, one per port in the node's range.
-Claiming one is a conditional `UPDATE ... WHERE serverId IS NULL`. Two
-concurrent deploys racing for the last port produce one winner and one clean
-"no ports available" error — never a double-bind that fails at container start.
-
-### Live updates
-
-The server page opens an authenticated Server-Sent Events connection at
-`/api/servers/:uid/console/stream`. The API checks `server.console` permission,
-replays the latest 500 Docker log lines, then follows stdout and stderr. Before
-the first game launch, it reads the installation transcript instead. Closing
-the page releases the Docker attachment. Connections renew every minute to
-recheck sessions and permissions; the browser replaces its recent history on
-reconnect to avoid duplicate lines. Reverse proxies must allow streaming and
-disable response buffering for this route.
-
-The page polls `/api/servers/:uid/resources` every two seconds without overlapping
-requests. Docker supplies CPU, memory excluding reclaimable file cache, network
-byte counters, and uptime. The browser calculates traffic rates and keeps a
-short in-memory graph history. Measurements are not persisted. Server state
-is refreshed separately every four seconds.
-
-### State
-
-`setServerState()` in `lib/events.ts` is the only writer. It updates the row,
-the per-server channel and the fleet channel together — a split between them is
-exactly what leaves a dashboard stuck on "Starting…" forever.
-
-The supervisor reconciles against reality every 15 seconds and on boot. That is
-what lets the panel restart without disturbing running game servers: the
-containers keep running and we re-attach to them.
-
-## Data model notes
-
-- Every user-facing row has a short public `uid` used in URLs, so sequential
-  ids never leak into the address bar.
-- Settings live in a JSON column validated by the adapter's schema, not one
-  column per game. Adding a game must not require a migration.
-- Tokens are stored as SHA-256 only. A database dump cannot be replayed as a
-  session.
-- Secrets that must be recoverable (integration keys) are AES-256-GCM encrypted
-  with `ENCRYPTION_KEY`.
-
-## Why these choices
-
-**Fastify over Next route handlers for the API.** Long-lived WebSockets, a
-Docker log stream per running server, and background workers do not belong in a
-serverless-shaped request lifecycle.
-
-**Postgres as the only source of truth.** Redis holds nothing that cannot be
-rebuilt — queues, pub/sub, a console ring buffer, rate-limit counters. Losing
-Redis costs you in-flight jobs, not data.
-
-**One container per server, bind-mounted data.** Restartable, resource-capped,
-and the files stay plain files on the host that a user can inspect, back up or
-copy away without the panel.
-
-**Plain `tar.gz` backups.** A user must be able to take their data and leave.
-Lock-in through file format is not a feature.
+Multiple API replicas, multi-host orchestration, billing, SMTP and integrated
+cloud backup storage are outside this candidate's scope. Qualification status
+and remaining work are recorded in [the release report](release-candidate.md).

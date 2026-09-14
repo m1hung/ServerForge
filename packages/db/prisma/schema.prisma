@@ -47,6 +47,8 @@ model User {
   totpSecret         String?
   /// Set when enrolment was confirmed with a working code.
   totpEnabledAt      DateTime?
+  /// Last accepted TOTP time step; prevents reuse across tickets and API restarts.
+  totpLastCounter    Int?
   /// SHA-256 of each *unused* recovery code. Using one removes it.
   recoveryCodeHashes String[]  @default([])
 
@@ -178,6 +180,8 @@ model Server {
   uid         String      @unique
   name        String
   description String?
+  /// Explicit opt-in to router forwarding; the panel-wide UPnP switch must also be enabled.
+  publicAccess Boolean @default(false)
   state       ServerState @default(creating)
 
   ownerId     String
@@ -233,6 +237,7 @@ model Server {
   activity    Activity[]
   metrics     MetricSample[]
   installLogs InstallLog[]
+  installationAttempts InstallationAttempt[]
 
   @@index([ownerId])
   @@index([nodeId, state])
@@ -420,6 +425,45 @@ model InstallLog {
   message  String
 
   @@index([serverId, at])
+}
+
+/// A durable record for one initial installation. Retries never reuse staging.
+model InstallationAttempt {
+  id                String   @id @default(cuid())
+  uid               String   @unique
+  serverId          String
+  server            Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  state             String   @default("queued")
+  phase             String   @default("preparing")
+  progress          Int      @default(0)
+  message           String?
+  error             String?
+  stagingPath       String
+  sourcePackPath    String?
+  cancelRequestedAt DateTime?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([serverId, createdAt])
+  @@index([state])
+}
+
+model Invitation {
+  id           String   @id @default(cuid())
+  uid          String   @unique
+  tokenHash    String   @unique
+  inviterId    String
+  role         Role     @default(user)
+  grants       Json     @default("[]")
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  acceptedAt   DateTime?
+  acceptedById String?
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 model AuditLog {

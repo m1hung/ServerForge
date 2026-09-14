@@ -1,0 +1,297 @@
+[
+  {
+    "vulnerability": "CVE-2025-69720",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "libtinfo6": "6.5+20250216-2",
+      "ncurses-base": "6.5+20250216-2",
+      "ncurses-bin": "6.5+20250216-2",
+      "libncursesw6": "6.5+20250216-2"
+    },
+    "reason": "The affected infocmp command is removed from the application and PostgreSQL images. Node, Prisma and PostgreSQL clients do not invoke it. Debian flags the shared ncurses source package; the retained terminal libraries do not contain the vulnerable CLI analyze_string path.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2025-69720",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-9538",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "perl-base": "5.40.1-6+deb13u1",
+      "libperl5.40": "5.40.1-6+deb13u1",
+      "perl": "5.40.1-6+deb13u1",
+      "perl-modules-5.40": "5.40.1-6+deb13u1"
+    },
+    "reason": "ServerForge creates and extracts archives with the patched npm tar package, never Perl Archive::Tar. API and web contain only perl-base. Maintenance uses PostgreSQL custom archive tools, and the database does not enable PL/Perl or execute Perl archive parsing. This exception does not cover unrelated Perl workloads added to these images.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-9538",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-5435",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "libc-bin": "2.41-12+deb13u4",
+      "libc6": "2.41-12+deb13u4",
+      "libc-l10n": "2.41-12+deb13u4",
+      "locales": "2.41-12+deb13u4"
+    },
+    "reason": "The affected glibc functions are deprecated DNS debugging printers (ns_printrrf, ns_printrr, fp_nquery). ServerForge uses Node DNS lookup and Prisma database connections, and does not call these printers. Debian rates the issue minor; the retained glibc package is still reported and must be re-reviewed on a code or base change.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-5435",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-85091",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "zlib1g": "1:1.3.dfsg+really1.3.1-1+b1"
+    },
+    "reason": "The trigger requires gzprintf/gzvprintf after a stalled non-blocking gzwrite. Application backups use Node createGzip/deflate streams, not the gz file-printing API. PostgreSQL custom-format backups use normal file compression, not non-blocking gzprintf. The distro mapping remains reported; this is a call-path assessment, not a claim that zlib is patched.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-85091",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-76642",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "bsdutils": "1:2.41.5-0+deb13u1",
+      "libblkid1": "2.41.5-0+deb13u1",
+      "liblastlog2-2": "2.41.5-0+deb13u1",
+      "libmount1": "2.41.5-0+deb13u1",
+      "libsmartcols1": "2.41.5-0+deb13u1",
+      "libuuid1": "2.41.5-0+deb13u1",
+      "login": "1:4.16.0-2+really2.41.5-0+deb13u1",
+      "mount": "2.41.5-0+deb13u1",
+      "util-linux": "2.41.5-0+deb13u1"
+    },
+    "reason": "The affected mount command is removed, all inherited SUID/SGID bits are cleared, and no privileged fstab entries are configured. Container bind mounts are configured through the host Docker API; the application never invokes mount helpers or post-mount hooks.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-76642",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-78409",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "bsdutils": "1:2.41.5-0+deb13u1",
+      "libblkid1": "2.41.5-0+deb13u1",
+      "liblastlog2-2": "2.41.5-0+deb13u1",
+      "libmount1": "2.41.5-0+deb13u1",
+      "libsmartcols1": "2.41.5-0+deb13u1",
+      "libuuid1": "2.41.5-0+deb13u1",
+      "login": "1:4.16.0-2+really2.41.5-0+deb13u1",
+      "mount": "2.41.5-0+deb13u1",
+      "util-linux": "2.41.5-0+deb13u1"
+    },
+    "reason": "The mount command is removed and there are no fstab-authorized X-mount.subdir entries. Application containers do not execute privileged mount helpers. Docker bind mounting is performed by the host daemon, outside this image.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-78409",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-78408",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "bsdutils": "1:2.41.5-0+deb13u1",
+      "libblkid1": "2.41.5-0+deb13u1",
+      "liblastlog2-2": "2.41.5-0+deb13u1",
+      "libmount1": "2.41.5-0+deb13u1",
+      "libsmartcols1": "2.41.5-0+deb13u1",
+      "libuuid1": "2.41.5-0+deb13u1",
+      "login": "1:4.16.0-2+really2.41.5-0+deb13u1",
+      "mount": "2.41.5-0+deb13u1",
+      "util-linux": "2.41.5-0+deb13u1"
+    },
+    "reason": "The affected nsenter command is removed. Neither services nor maintenance invoke nsenter --join-cgroup or join a user-provided namespace. No host cgroup filesystem is mounted into these images.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-78408",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-78410",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "bsdutils": "1:2.41.5-0+deb13u1",
+      "libblkid1": "2.41.5-0+deb13u1",
+      "liblastlog2-2": "2.41.5-0+deb13u1",
+      "libmount1": "2.41.5-0+deb13u1",
+      "libsmartcols1": "2.41.5-0+deb13u1",
+      "libuuid1": "2.41.5-0+deb13u1",
+      "login": "1:4.16.0-2+really2.41.5-0+deb13u1",
+      "mount": "2.41.5-0+deb13u1",
+      "util-linux": "2.41.5-0+deb13u1"
+    },
+    "reason": "The affected SUID mount helper is removed and inherited SUID/SGID bits are cleared. ServerForge does not configure fstab or X-mount.owner/group/mode. Host Docker bind mounting does not execute this image\u2019s mount helper.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-78410",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-54369",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "libacl1": "2.3.2-2+b1"
+    },
+    "reason": "ServerForge does not use libacl pathname ACL APIs. File access uses Node filesystem operations and its archive/path checks; ownership repair runs in a separate restricted helper. Maintenance uses Node tar and PostgreSQL dump/restore, without preserving filesystem ACLs.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-54369",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-54370",
+    "images": [
+      "api",
+      "web",
+      "maintenance",
+      "postgres"
+    ],
+    "packages": {
+      "libacl1": "2.3.2-2+b1"
+    },
+    "reason": "The affected getfacl/setfacl/chacl executables are not installed and are never invoked by ServerForge. The remaining libacl shared package is a base dependency; application file operations do not use its recursive ACL walker.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-54370",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-6653",
+    "images": [
+      "postgres"
+    ],
+    "packages": {
+      "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
+    },
+    "reason": "The affected XML internal-subset parser is reachable through PostgreSQL XML operations, but this application schema has no XML columns and its queries, migrations and PostgreSQL custom archive recovery do not parse user XML. The database has no public host port. This exception applies only to the packaged ServerForge database, not a general-purpose PostgreSQL deployment.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-6653",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-74860",
+    "images": [
+      "postgres"
+    ],
+    "packages": {
+      "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
+    },
+    "reason": "The affected libxml2 Python SAX bindings are not installed or used in this PostgreSQL image. ServerForge does not execute Python or feed XML to a SAX callback.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-74860",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "CVE-2026-86140",
+    "images": [
+      "postgres"
+    ],
+    "packages": {
+      "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
+    },
+    "reason": "ServerForge does not perform XML validation, DTD formatting or PostgreSQL XML operations. Its committed schema uses no XML types and the API provides no arbitrary SQL interface. The affected xmlSnprintfElements path is outside the documented database workload; this is not a patch claim.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-86140",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "not-reachable-in-documented-runtime"
+  },
+  {
+    "vulnerability": "GO-2026-6355",
+    "images": [
+      "tailscale"
+    ],
+    "packages": {
+      "golang.org/x/crypto": "v0.54.0"
+    },
+    "reason": "The affected code is golang.org/x/crypto/ssh. The packaged dashboard sidecar sets TS_DISABLE_SSH_SERVER=true in both its image and launcher, preventing even previously configured SSH from starting. ServerForge never invokes an SSH client in this sidecar. The exception does not cover enabling Tailscale SSH or running unrelated workloads in this image. The module remains reported until the upstream binary is updated.",
+    "source": "https://pkg.go.dev/vuln/GO-2026-6355",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "disabled-feature-in-packaged-sidecar"
+  },
+  {
+    "vulnerability": "GO-2026-6303",
+    "images": [
+      "tailscale"
+    ],
+    "packages": {
+      "golang.org/x/crypto": "v0.54.0"
+    },
+    "reason": "The affected code is golang.org/x/crypto/ssh. The packaged dashboard sidecar sets TS_DISABLE_SSH_SERVER=true in both its image and launcher, preventing even previously configured SSH from starting. ServerForge never invokes an SSH client in this sidecar. The exception does not cover enabling Tailscale SSH or running unrelated workloads in this image. The module remains reported until the upstream binary is updated.",
+    "source": "https://pkg.go.dev/vuln/GO-2026-6303",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "disabled-feature-in-packaged-sidecar"
+  },
+  {
+    "vulnerability": "GO-2026-6354",
+    "images": [
+      "tailscale"
+    ],
+    "packages": {
+      "golang.org/x/crypto": "v0.54.0"
+    },
+    "reason": "The affected code is golang.org/x/crypto/ssh. The packaged dashboard sidecar sets TS_DISABLE_SSH_SERVER=true in both its image and launcher, preventing even previously configured SSH from starting. ServerForge never invokes an SSH client in this sidecar. The exception does not cover enabling Tailscale SSH or running unrelated workloads in this image. The module remains reported until the upstream binary is updated.",
+    "source": "https://pkg.go.dev/vuln/GO-2026-6354",
+    "reviewedAt": "2026-09-14",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "disabled-feature-in-packaged-sidecar"
+  }
+]

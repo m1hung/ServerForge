@@ -37,3 +37,4 @@ export { parseIni, parseTuple, stringifyIni, stringifyTuple } from './util/ini.j
 export { minecraftConsoleGlossary } from './minecraft/console-commands.js';
 export { palworldConsoleGlossary } from './palworld/console-commands.js';
 export { valheimConsoleGlossary } from './valheim/console-commands.js';
+export { preparePalworldLauncher } from './palworld/launcher.js';

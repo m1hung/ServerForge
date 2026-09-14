@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import QRCode from 'qrcode';
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -70,17 +70,28 @@ export function verifyTotp(
   code: string,
   options: { atMs?: number; window?: number; digits?: number; period?: number } = {},
 ): boolean {
+  return matchingTotpCounter(secret, code, options) !== null;
+}
+
+export function matchingTotpCounter(
+  secret: string,
+  code: string,
+  options: { atMs?: number; window?: number; digits?: number; period?: number } = {},
+): number | null {
   const cleaned = code.replace(/\s+/g, '');
   const digits = options.digits ?? 6;
-  if (!new RegExp(`^\\d{${digits}}$`).test(cleaned)) return false;
+  if (!new RegExp(`^\\d{${digits}}$`).test(cleaned)) return null;
   const atMs = options.atMs ?? Date.now();
   const period = options.period ?? 30;
   const window = options.window ?? 1;
   const counter = Math.floor(atMs / 1000 / period);
+  let matched: number | null = null;
   for (let delta = -window; delta <= window; delta += 1) {
-    if (hotp(secret, counter + delta, digits) === cleaned) return true;
+    if (counter + delta < 0) continue;
+    if (timingSafeEqual(Buffer.from(hotp(secret, counter + delta, digits)), Buffer.from(cleaned)))
+      matched = counter + delta;
   }
-  return false;
+  return matched;
 }
 
 export function generateSecret(): string {

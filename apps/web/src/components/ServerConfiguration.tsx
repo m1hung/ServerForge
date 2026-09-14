@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
-import type { SettingsSchema, SettingValues } from '@serverforge/core';
+import type {
+  SettingsSchema,
+  SettingValues,
+  NodeCapacity,
+  AppliedAllocation,
+} from '@serverforge/core';
 import { api } from '@/lib/api';
 import type { Server } from '@/lib/servers';
 import { GameSettingsFields } from './GameSettingsFields';
@@ -14,10 +19,12 @@ import {
 import { Icon } from './Icon';
 
 type Configuration = {
+  appliedAllocation: AppliedAllocation | null;
   schema: SettingsSchema;
   values: SettingValues;
   configuredSecrets: string[];
   server: Server;
+  capacity: NodeCapacity | null;
 };
 
 export function ServerConfiguration({
@@ -136,6 +143,60 @@ export function ServerConfiguration({
       <p className="muted">
         Changes apply on the next start or restart. Saving keeps the current game session running.
       </p>
+      {data && (
+        <div className="card" style={{ marginBottom: 16, padding: 14 }}>
+          <table style={{ width: '100%', fontSize: 13 }}>
+            <caption style={{ textAlign: 'left', marginBottom: 8 }}>
+              Saved allocation and running container
+            </caption>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left' }}>Resource</th>
+                <th>Saved</th>
+                <th>Applied now</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th style={{ textAlign: 'left' }}>Memory</th>
+                <td style={{ textAlign: 'center' }}>{data.server.memoryMib || 'Unlimited'} MiB</td>
+                <td style={{ textAlign: 'center' }}>
+                  {data.appliedAllocation
+                    ? `${data.appliedAllocation.memoryMib || 'Unlimited'} MiB`
+                    : 'Unavailable / offline'}
+                </td>
+              </tr>
+              <tr>
+                <th style={{ textAlign: 'left' }}>CPU</th>
+                <td style={{ textAlign: 'center' }}>{data.server.cpuCores || 'Unlimited'}</td>
+                <td style={{ textAlign: 'center' }}>
+                  {data.appliedAllocation ? data.appliedAllocation.cpuCores || 'Unlimited' : '—'}
+                </td>
+              </tr>
+              <tr>
+                <th style={{ textAlign: 'left' }}>Additional swap</th>
+                <td style={{ textAlign: 'center' }}>
+                  {data.server.swapMib == null ? 'Docker default' : `${data.server.swapMib} MiB`}
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  {data.appliedAllocation
+                    ? data.appliedAllocation.swapMib === -1
+                      ? 'Unlimited'
+                      : data.appliedAllocation.swapMib == null
+                        ? 'Docker default'
+                        : `${data.appliedAllocation.swapMib} MiB`
+                    : '—'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          {data.appliedAllocation?.warnings.map((warning) => (
+            <p className="muted" key={warning} style={{ fontSize: 12 }}>
+              {warning}
+            </p>
+          ))}
+        </div>
+      )}
       {busy && (
         <p className="summary-notice" role="status">
           Wait for the current server operation to finish before saving.
@@ -192,7 +253,7 @@ export function ServerConfiguration({
               <div className="form-section-heading">
                 <h3>Hardware allocation</h3>
               </div>
-              <HardwareFields value={limits} onChange={setLimits} />
+              <HardwareFields value={limits} onChange={setLimits} capacity={data.capacity} />
             </section>
             <section className="form-section">
               <div className="form-section-heading">

@@ -5,6 +5,8 @@ import { pipeline } from 'node:stream/promises';
 import type { MultipartFile } from '@fastify/multipart';
 import { openPromise } from 'yauzl';
 import { badRequest } from '@serverforge/core';
+import { requireFreeSpace } from '../lib/storage-space.js';
+import { Transform } from 'node:stream';
 
 export const SERVER_PACK_UPLOAD_LIMIT = 2 * 1024 ** 3;
 
@@ -15,7 +17,26 @@ export async function saveServerPack(root: string, upload: MultipartFile) {
   const directory = path.join(root, '.serverforge');
   await fs.mkdir(directory, { recursive: true });
   const target = path.join(directory, 'pack.zip');
-  await pipeline(upload.file, createWriteStream(target, { flags: 'wx' }));
+  let received = 0;
+  await requireFreeSpace(root);
+  await pipeline(
+    upload.file,
+    new Transform({
+      async transform(chunk: Buffer, _encoding, callback) {
+        try {
+          received += chunk.length;
+          if (received > SERVER_PACK_UPLOAD_LIMIT)
+            throw badRequest('Server pack uploads are limited to 2 GiB.');
+          if (received % (16 * 1024 ** 2) < chunk.length)
+            await requireFreeSpace(root, chunk.length);
+          callback(null, chunk);
+        } catch (error) {
+          callback(error as Error);
+        }
+      },
+    }),
+    createWriteStream(target, { flags: 'wx' }),
+  );
   const size = (await fs.stat(target)).size;
   if (upload.file.truncated || size > SERVER_PACK_UPLOAD_LIMIT)
     throw badRequest('Server pack uploads are limited to 2 GiB.');

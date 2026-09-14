@@ -8,15 +8,17 @@ import { downloadResponse } from '../lib/download.js';
 import { extractZip } from '../lib/extract-zip.js';
 import { serverFile } from '../lib/server-files.js';
 import { DockerRuntime } from '../runtime/docker.js';
-import { PathEscapeError, relativeTo } from '@serverforge/core';
+import { PathEscapeError, relativeTo, type RuntimePlatform } from '@serverforge/core';
 import type { InstallTools } from '@serverforge/adapters';
 import { localDataPath } from '../lib/storage-paths.js';
+import { requireFreeSpace } from '../lib/storage-space.js';
 
-export function installToolsFor(dataPath: string): InstallTools {
+export function installToolsFor(dataPath: string, signal?: AbortSignal, platform?: RuntimePlatform): InstallTools {
   const root = localDataPath(dataPath);
 
   return {
     async download(url, destRelative, options) {
+      signal?.throwIfAborted();
       const dest = await serverFile(root, destRelative);
       await fs.mkdir(path.dirname(dest), { recursive: true });
       const temporary = `${dest}.${randomUUID()}.download`;
@@ -26,17 +28,25 @@ export function installToolsFor(dataPath: string): InstallTools {
       let size = 0;
       try {
         const response = await downloadResponse(url, options?.headers);
+        await requireFreeSpace(root);
         await pipeline(
           response,
           new Transform({
-            transform(chunk: Buffer, _encoding, callback) {
-              size += chunk.length;
-              if (size > 2 * 1024 ** 3) return callback(new Error('Download exceeds 2 GiB.'));
-              for (const { hash } of hashes) hash.update(chunk);
-              callback(null, chunk);
+            async transform(chunk: Buffer, _encoding, callback) {
+              try {
+                size += chunk.length;
+                if (size > 2 * 1024 ** 3) throw new Error('Download exceeds 2 GiB.');
+                if (size % (16 * 1024 ** 2) < chunk.length)
+                  await requireFreeSpace(root, chunk.length);
+                for (const { hash } of hashes) hash.update(chunk);
+                callback(null, chunk);
+              } catch (error) {
+                callback(error as Error);
+              }
             },
           }),
           createWriteStream(temporary, { flags: 'wx' }),
+          { signal },
         );
         if (hashes.some(({ hash, expected }) => hash.digest('hex') !== expected.toLowerCase())) {
           throw new Error('Downloaded file checksum does not match the publisher.');
@@ -106,20 +116,18 @@ export function installToolsFor(dataPath: string): InstallTools {
       }
     },
     async runInContainer(options) {
+      signal?.throwIfAborted();
       const runtime = new DockerRuntime();
-      const [installed] = await Promise.allSettled([runtime.runOnce({ ...options, dataPath })]);
-      // Root in the throwaway container must not leave files the host API
-      // cannot edit. chown runs inside the mount, including on failed jobs.
+      await runtime.repairOwnership(dataPath, '1000:1000');
+      const [installed] = await Promise.allSettled([
+        runtime.runOnce({ ...options, dataPath, signal, platform }),
+      ]);
+      // The installer runs unprivileged; only the fixed ownership helper can
+      // change ownership. Restore host editability even after installation fails.
       const owner = `${process.getuid?.() || 1000}:${process.getgid?.() || 1000}`;
-      const ownership = await runtime.runOnce({
-        image: options.image,
-        entrypoint: ['/bin/chown'],
-        command: ['-R', owner, '/home/container'],
-        dataPath,
-        timeoutMs: 60000,
-      });
+      const [ownership] = await Promise.allSettled([runtime.repairOwnership(dataPath, owner)]);
       if (installed.status === 'rejected') throw installed.reason;
-      if (ownership.exitCode !== 0) throw new Error('Could not set install file ownership.');
+      if (ownership.status === 'rejected') throw ownership.reason;
       return installed.value;
     },
   };

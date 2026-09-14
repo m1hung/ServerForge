@@ -3,6 +3,8 @@ export interface DeclaredPort {
   purpose: string;
   protocol: 'tcp' | 'udp';
   fixed?: boolean;
+  /** Public discovery traffic only; administration ports never qualify. */
+  public?: boolean;
 }
 
 export interface PortBinding {
@@ -21,7 +23,7 @@ export function mapPorts(
     const allocation = allocations.find((row) => row.purpose === port.purpose);
     if (!allocation) continue;
     bindings.push({
-      hostIp: allocation.ip,
+      hostIp: ['game', 'query'].includes(port.purpose) ? allocation.ip : '127.0.0.1',
       hostPort: allocation.port,
       containerPort: port.fixed ? port.containerPort : allocation.port,
       protocol: port.protocol,
@@ -30,13 +32,15 @@ export function mapPorts(
   return bindings;
 }
 
-/** Only the game port is ever handed to UPnP — never rcon, query, or rest. */
+/** Game traffic and explicitly declared discovery ports only; never administration. */
 export function forwardablePorts(
   declared: DeclaredPort[],
   allocations: { ip: string; port: number; purpose: string }[],
 ): PortBinding[] {
   return mapPorts(
-    declared.filter((port) => port.purpose === 'game'),
+    declared.filter(
+      (port) => port.purpose === 'game' || (port.purpose === 'query' && port.public === true),
+    ),
     allocations,
   );
 }

@@ -1,4 +1,7 @@
 node_modules
+.env
+.env.*
+!.env.example
 .git
 data
 **/.next
@@ -8,3 +11,6 @@ data
 packages/db/generated
 apps/web/.next
 apps/api/dist
+coverage
+playwright-report
+test-results

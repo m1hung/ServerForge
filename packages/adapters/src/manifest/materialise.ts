@@ -215,7 +215,9 @@ export async function applyMaterialisation(
       const current = parsed[section] ?? {};
       for (const [outerKey, fields] of tuples) {
         const existingTuple = current[outerKey];
-        const merged = { ...(existingTuple ? parseTuple(existingTuple) : {}), ...fields };
+        // Keep unknown string fields quoted. Unreal treats an unquoted URL's
+        // double slash as a comment and discards every later tuple field.
+        const merged = { ...(existingTuple ? parseTuple(existingTuple, { preserveQuotes: true }) : {}), ...fields };
         current[outerKey] = stringifyTuple(merged);
       }
       parsed[section] = current;

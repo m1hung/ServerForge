@@ -9,7 +9,7 @@ internally. Tools and actions require the corresponding server permissions.
 Choose a name and select **Back up now**. Progress appears in the list. A running
 server stops gracefully while all its files are archived and starts again after
 the backup. Offline servers remain offline. Archives are plain gzip-compressed
-tar files with SHA-256 checksums; links and special files are rejected.
+tar files with SHA-256 checksums. Safe internal Steam links are preserved; escaping links, link cycles and special files are rejected. A failed graceful stop aborts the snapshot.
 
 **Restore** checks the archive, stages its contents, and creates a new recovery
 backup before replacing the live files. It restores the saved game configuration,
@@ -69,7 +69,7 @@ uses its median when available. CPU alone does not measure game tick health.
 Create either a five-field cron schedule with an IANA timezone, or an event
 trigger (ready, stopped, crashed, player joined, player left). Add ordered actions:
 power, console command, backup with retention, apply an already prepared update,
-or webhook. Restarts can broadcast a countdown on Minecraft and Palworld. Set
+or webhook. Minecraft restarts can broadcast a countdown through its console. Palworld uses its private REST save/shutdown path; its displayed in-game commands are not panel-console commands. Set
 **Only when online** according to the task; turn it off for crash alerts or
 backups of offline servers.
 
@@ -92,8 +92,7 @@ the operation locks and event queue are local to that process.
 The player list contains joins and leaves observed since the panel connected to
 the current console. It is explicitly partial: players already connected before
 observation may be missing. Minecraft supports allowlisting, kicking, banning,
-pardoning, and granting or removing operator status. Other games show their
-supported administration commands for use in the console.
+pardoning, and granting or removing operator status. Other games show their supported administration commands and where they can be used; Palworld and Valheim panel consoles are read-only.
 
 **Shared access** grants an existing panel account selected permissions on this
 server. The account must already exist. You can edit or revoke grants, and cannot

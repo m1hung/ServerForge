@@ -131,7 +131,7 @@ async function main(): Promise<void> {
         // only their password should not have their second factor silently
         // removed as a side effect of fixing that.
         ...(args.clearTwoFactor
-          ? { totpSecret: null, totpEnabledAt: null, recoveryCodeHashes: [] }
+          ? { totpSecret: null, totpEnabledAt: null, totpLastCounter: null, recoveryCodeHashes: [] }
           : {}),
       },
     });
@@ -140,6 +140,8 @@ async function main(): Promise<void> {
     // dashboard does. A reset is exactly the moment where a session someone
     // else is holding must stop working.
     await tx.session.deleteMany({ where: { userId: user.id } });
+    await tx.apiKey.updateMany({ where: { userId: user.id }, data: { revokedAt: new Date() } });
+    await tx.auditLog.create({ data: { action: 'account.host_recovery', targetType: 'user', targetId: user.id, metadata: { secondFactorCleared: args.clearTwoFactor, sessionsAndKeysRevoked: true } } });
   });
 
   console.log(`\n✓ Password updated for ${user.username}, and all of their sessions signed out.`);

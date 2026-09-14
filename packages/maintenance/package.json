@@ -1,0 +1,12 @@
+{
+  "name": "@serverforge/maintenance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@serverforge/core": "*",
+    "@serverforge/db": "*",
+    "prisma": "6.2.1",
+    "tar": "7.5.22"
+  }
+}

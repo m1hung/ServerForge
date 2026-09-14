@@ -25,6 +25,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/dist/**',
       '**/.next/**',
+      'apps/web/next-env.d.ts',
       'packages/db/generated/**',
       'apps/api/dist/**',
       // Runtime data: game servers, backups, caches, operator manifests. Not
@@ -37,7 +38,7 @@ export default tseslint.config(
 
   // ── TypeScript, everywhere ──────────────────────────────────────────────
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.mts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2023,

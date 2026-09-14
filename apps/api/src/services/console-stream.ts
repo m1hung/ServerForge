@@ -3,6 +3,12 @@ import { stripAnsi, truncateLine } from '@serverforge/core';
 import { prisma } from '@serverforge/db';
 import type { LogHandle, RuntimeDriver } from '../runtime/types.js';
 
+const streams = new Set<() => void>();
+export function closeConsoleStreams() {
+  for (const close of streams) close();
+  streams.clear();
+}
+
 /** Called only after the route has checked server.console permission. */
 export function streamConsole(
   reply: FastifyReply,
@@ -24,6 +30,8 @@ export function streamConsole(
   let handle: LogHandle | undefined;
   let installTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: { line: string; stream: string }[] = [];
+  const close = () => reply.raw.end();
+  streams.add(close);
   const send = (event: string, data: unknown) => {
     if (closed) return;
     if (reply.raw.writableLength > 1024 * 1024) return reply.raw.end();
@@ -47,6 +55,7 @@ export function streamConsole(
     reply.raw.end();
   }, 60_000);
   reply.raw.on('close', () => {
+    streams.delete(close);
     closed = true;
     clearInterval(batch);
     clearInterval(heartbeat);

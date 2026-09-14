@@ -1,16 +1,27 @@
 import os from 'node:os';
+import net from 'node:net';
 import { config } from '../lib/config.js';
 
 export type AddressKind = 'public' | 'private' | 'cgnat' | 'unknown';
 
 export function classifyAddress(address: string | null | undefined): AddressKind {
-  if (!address) return 'unknown';
+  if (!address || !net.isIPv4(address)) return 'unknown';
   const parts = address.split('.').map((part) => Number(part));
   if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
     return 'unknown';
   }
   const [a, b] = parts as [number, number, number, number];
-  if (a === 10 || a === 127 || (a === 192 && b === 168) || (a === 169 && b === 254)) return 'private';
+  const c = parts[2];
+  if (
+    a === 0 ||
+    a >= 224 ||
+    (a === 192 && b === 0) ||
+    (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+    (a === 203 && b === 0 && c === 113)
+  )
+    return 'unknown';
+  if (a === 10 || a === 127 || (a === 192 && b === 168) || (a === 169 && b === 254))
+    return 'private';
   if (a === 172 && b >= 16 && b <= 31) return 'private';
   if (a === 100 && b >= 64 && b <= 127) return 'cgnat';
   return 'public';
@@ -84,7 +95,8 @@ export function resolveNetworkChoice(
   },
 ): { publicHost: string | null; forwarding: boolean; error?: string } {
   if (choice.mode === 'lan') {
-    if (!report.lanIp) return { publicHost: null, forwarding: false, error: 'No LAN address was found.' };
+    if (!report.lanIp)
+      return { publicHost: null, forwarding: false, error: 'No LAN address was found.' };
     return { publicHost: report.lanIp, forwarding: false };
   }
   if (choice.mode === 'vpn') {

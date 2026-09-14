@@ -15,3 +15,6 @@ backups/
 *.log
 .DS_Store
 packages/db/generated/
+config/
+playwright-report/
+test-results/

@@ -12,6 +12,8 @@ export type Server = {
   variantId: string;
   version: string;
   memoryMib: number;
+  swapMib?: number | null;
+  ioWeight?: number | null;
   cpuCores: number;
   diskMib: number;
   allocations: { port: number; primary: boolean; purpose: string }[];

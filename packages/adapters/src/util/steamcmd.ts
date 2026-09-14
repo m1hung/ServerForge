@@ -1,4 +1,5 @@
 import type { SettingsSchema, SettingValues } from '@serverforge/core';
+import { redactText } from '@serverforge/core';
 import type { InstallTools } from '../types.js';
 
 /** Shared image for SteamCMD install containers and Steam-based game runtimes. */
@@ -141,6 +142,14 @@ export async function steamAppUpdate(
 ): Promise<void> {
   const branchArgs = steamBranchArgs(options);
   const timeoutMs = options.timeoutMs ?? 60 * 60 * 1000;
+  let lastReport = 0;
+  let pendingReport: Promise<void> | undefined;
+  const onLine = (line: string) => {
+    if (!options.report || pendingReport || Date.now() - lastReport < 2000) return;
+    lastReport = Date.now();
+    pendingReport = options.report(redactText(line.slice(-1000), [options.branchPassword || '']))
+      .catch(() => {}).finally(() => { pendingReport = undefined; });
+  };
 
   const command = [
     '+force_install_dir',
@@ -177,6 +186,7 @@ export async function steamAppUpdate(
     env: { HOME: '/home/container' },
     command: ['+login', 'anonymous', '+quit'],
     timeoutMs: Math.min(timeoutMs, 10 * 60 * 1000),
+    onLine,
   });
 
   let result = await tools.runInContainer({
@@ -184,6 +194,7 @@ export async function steamAppUpdate(
     env: { HOME: '/home/container' },
     command,
     timeoutMs,
+    onLine,
   });
 
   // One retry, and only for the race above. Steam hands out that error for a
@@ -197,12 +208,15 @@ export async function steamAppUpdate(
       env: { HOME: '/home/container' },
       command,
       timeoutMs,
+      onLine,
     });
   }
 
   if (result.exitCode !== 0) {
     throw new Error(describeSteamFailure(result, options));
   }
+  await pendingReport;
+  await options.report?.(redactText(result.output.slice(-4000), [options.branchPassword || '']));
 }
 
 /** The "not ready yet" failure, as opposed to a genuinely wrong request. */

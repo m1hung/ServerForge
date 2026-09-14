@@ -11,6 +11,9 @@ import { ModsPanel } from '@/components/ModsPanel';
 import { Shell } from '@/components/Shell';
 import { Icon } from '@/components/Icon';
 import { api } from '@/lib/api';
+import { ServerShare } from '@/components/ServerShare';
+import { InstallationStatus } from '@/components/InstallationStatus';
+import { copyText } from '@/lib/clipboard';
 import { displayName, joinAddress, memoryLabel, statusTone, type Server } from '@/lib/servers';
 
 export default function ServerPage() {
@@ -85,7 +88,7 @@ export default function ServerPage() {
   async function copyAddress() {
     if (!join) return;
     try {
-      await navigator.clipboard.writeText(join);
+      await copyText(join);
       setCopied(true);
     } catch {
       setError('Could not copy the address. Select it to copy manually.');
@@ -126,6 +129,9 @@ export default function ServerPage() {
           </div>
         ) : (
           <>
+            {['creating', 'installing', 'install_failed'].includes(server.state) && (
+              <InstallationStatus server={server} onChange={() => void refresh()} />
+            )}
             <div className="page-heading server-detail-heading">
               <div className="server-identity">
                 <span className={`game-icon game-${server.gameId}`}>
@@ -211,21 +217,24 @@ export default function ServerPage() {
                     ))}
                 </select>
               </div>
-              <div className="server-join join-address">
-                <span>Join</span>
-                <code>{join ?? 'No address assigned'}</code>
-                <button
-                  className="icon-button"
-                  disabled={!join}
-                  title={copied ? 'Copied' : 'Copy join address'}
-                  aria-label={copied ? 'Address copied' : 'Copy join address'}
-                  onClick={() => void copyAddress()}
-                >
-                  <Icon name={copied ? 'check' : 'copy'} size={15} />
-                </button>
-                <span className="sr-only" role="status">
-                  {copied ? 'Address copied to clipboard.' : ''}
-                </span>
+              <div className="server-connect-actions">
+                <div className="server-join join-address">
+                  <span>Join</span>
+                  <code>{join ?? 'No address assigned'}</code>
+                  <button
+                    className="icon-button"
+                    disabled={!join}
+                    title={copied ? 'Copied' : 'Copy join address'}
+                    aria-label={copied ? 'Address copied' : 'Copy join address'}
+                    onClick={() => void copyAddress()}
+                  >
+                    <Icon name={copied ? 'check' : 'copy'} size={15} />
+                  </button>
+                  <span className="sr-only" role="status">
+                    {copied ? 'Address copied to clipboard.' : ''}
+                  </span>
+                </div>
+                <ServerShare server={server} onSaved={() => void refresh()} />
               </div>
             </div>
             <div

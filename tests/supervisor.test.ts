@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { defaultsFor } from '@serverforge/core';
+import { defaultsFor, brand } from '@serverforge/core';
 import { getAdapter } from '@serverforge/adapters';
 
 const state = vi.hoisted(() => ({
@@ -14,7 +14,10 @@ const state = vi.hoisted(() => ({
   timeline: [] as any[],
   schedules: [] as any[],
   scheduleUpdates: [] as any[],
+  managed: [] as any[],
+  installLogs: [] as any[],
 }));
+vi.mock('../apps/api/src/services/platform.js', () => ({ selectGamePlatform: async () => 'linux/amd64' }));
 vi.mock('@serverforge/db', () => ({
   uid: () => 'id',
   serializeBigInts: (v: unknown) => v,
@@ -35,7 +38,14 @@ vi.mock('@serverforge/db', () => ({
         return state.server;
       },
     },
-    backup: { updateMany: async () => ({ count: 0 }) },
+    backup: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+    installLog: {
+      create: async ({ data }: any) => {
+        state.installLogs.push(data);
+        return data;
+      },
+    },
+    installationAttempt: { findFirst: async () => null },
     activity: {
       create: async ({ data }: any) => {
         state.timeline.push(data);
@@ -48,10 +58,12 @@ vi.mock('@serverforge/db', () => ({
       findMany: async (args: any) =>
         state.schedules.filter(
           (s) =>
-            s.enabled &&
-            (args.where.triggerType
-              ? s.triggerType === args.where.triggerType
-              : s.cron && s.nextRunAt <= args.where.nextRunAt.lte),
+            (args.where.enabled === undefined || s.enabled === args.where.enabled) &&
+            (!args.where.triggerType || s.triggerType === args.where.triggerType) &&
+            (!args.where.cron || !!s.cron) &&
+            (!args.where.nextRunAt || s.nextRunAt <= args.where.nextRunAt.lte) &&
+            (!args.where.lastRunAt || s.lastRunAt != null) &&
+            (args.where.lastRunOk !== null || s.lastRunOk == null),
         ),
       updateMany: async ({ where, data }: any) => {
         const row = state.schedules.find(
@@ -82,6 +94,7 @@ vi.mock('../apps/api/src/lib/config.js', () => ({
 }));
 vi.mock('../apps/api/src/runtime/docker.js', () => ({
   DockerRuntime: class {
+    listManaged = async () => state.managed;
     status = state.status;
     start = state.starts;
     create = async () => 'replacement';
@@ -108,6 +121,8 @@ beforeEach(async () => {
   state.timeline = [];
   state.schedules = [];
   state.scheduleUpdates = [];
+  state.managed = [];
+  state.installLogs = [];
   state.server = {
     id: 'id',
     uid: 'test',
@@ -139,6 +154,14 @@ beforeEach(async () => {
     allocations: [],
   };
   await fs.mkdir(state.server.dataPath);
+  state.managed = [
+    {
+      id: 'old',
+      name: `${brand.resourcePrefix}-test`,
+      dataPath: state.server.dataPath,
+      labels: { [`${brand.labelNamespace}/server`]: 'test' },
+    },
+  ];
   state.status.mockResolvedValue({ exists: true, running: false, exitCode: 137, oomKilled: true });
   state.starts.mockResolvedValue(undefined);
 });
@@ -189,17 +212,65 @@ it('claims a due schedule once and refuses to execute after its creator loses ac
       cooldownSeconds: 0,
       onlyWhenOnline: false,
       lastRunAt: null,
-      nextRunAt: new Date(Date.now() - 1000),
+      nextRunAt: new Date(Date.now() + 1000),
       actions: [{ type: 'power', action: 'start' }],
     },
   ];
   await startSupervisor();
+  await vi.advanceTimersByTimeAsync(15000);
   await vi.waitFor(() => expect(isServerBusy('test')).toBe(false));
   expect(state.starts).not.toHaveBeenCalled();
   expect(state.scheduleUpdates.at(-1).lastRunOk).toBe(false);
   expect(state.schedules[0].nextRunAt.getTime()).toBeGreaterThan(Date.now());
   await vi.advanceTimersByTimeAsync(15000);
   expect(state.scheduleUpdates).toHaveLength(1);
+});
+
+it('recovers an interrupted installation and reattaches an owned running container without creating another', async () => {
+  state.server.state = 'installing';
+  const stop = await startSupervisor();
+  expect(state.server.state).toBe('install_failed');
+  expect(state.installLogs[0].message).toContain('restarted during installation');
+  await stop();
+  state.server.state = 'starting';
+  state.server.containerId = null;
+  state.managed = [
+    {
+      id: 'recovered',
+      name: `${brand.resourcePrefix}-test`,
+      state: 'running',
+      dataPath: state.server.dataPath,
+      labels: { [`${brand.labelNamespace}/server`]: 'test' },
+    },
+  ];
+  state.status.mockResolvedValue({ exists: true, running: true });
+  const stopAgain = await startSupervisor();
+  expect(state.server.containerId).toBe('recovered');
+  expect(state.server.state).toBe('running');
+  expect(state.starts).not.toHaveBeenCalled();
+  await stopAgain();
+});
+
+it('skips missed cron occurrences instead of replaying their actions', async () => {
+  state.server.state = 'offline';
+  state.schedules = [
+    {
+      id: 'missed',
+      serverId: 'id',
+      name: 'Missed command',
+      enabled: true,
+      cron: '* * * * *',
+      timezone: 'UTC',
+      lastRunAt: null,
+      lastRunOk: null,
+      nextRunAt: new Date(Date.now() - 60000),
+    },
+  ];
+  const stop = await startSupervisor();
+  expect(state.schedules[0].lastRunError).toContain('Missed while');
+  expect(state.schedules[0].nextRunAt.getTime()).toBeGreaterThan(Date.now());
+  expect(state.starts).not.toHaveBeenCalled();
+  await stop();
 });
 
 it('retains every schedule triggered by one event while another operation holds the server lock', async () => {

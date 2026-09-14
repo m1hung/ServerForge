@@ -91,7 +91,7 @@ describe('forwardablePorts', () => {
     expect(forwardable.map((b) => b.hostPort)).toEqual([25500]);
   });
 
-  it('palworld: forwards the udp game port, not query or rest', () => {
+  it('palworld: forwards game and declared discovery traffic, never REST', () => {
     const allocations = [
       { ip: '0.0.0.0', port: 25600, purpose: 'game', primary: true },
       { ip: '0.0.0.0', port: 25601, purpose: 'query', primary: false },
@@ -102,7 +102,7 @@ describe('forwardablePorts', () => {
     );
     const forwardable = forwardablePorts(plan.ports, allocations);
 
-    expect(forwardable).toHaveLength(1);
+    expect(forwardable.map((port) => port.hostPort)).toEqual([25600, 25601]);
     expect(forwardable[0]?.hostPort).toBe(25600);
     // Palworld is UDP; a TCP-only forward would look correct and work for
     // nobody, so the protocol has to survive the filter.
@@ -115,5 +115,22 @@ describe('forwardablePorts', () => {
       [{ ip: '0.0.0.0', port: 25501, purpose: 'rcon' }],
     );
     expect(forwardable).toEqual([]);
+  });
+});
+
+describe('public discovery declarations', () => {
+  it('cannot make RCON or REST public even when an adapter sets the flag', () => {
+    expect(
+      forwardablePorts(
+        [
+          { containerPort: 1, purpose: 'rcon', protocol: 'tcp', public: true },
+          { containerPort: 2, purpose: 'rest', protocol: 'tcp', public: true },
+        ],
+        [
+          { ip: '0.0.0.0', port: 1, purpose: 'rcon' },
+          { ip: '0.0.0.0', port: 2, purpose: 'rest' },
+        ],
+      ),
+    ).toEqual([]);
   });
 });

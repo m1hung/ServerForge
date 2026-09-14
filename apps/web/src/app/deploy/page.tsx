@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import type { SettingsSchema, SettingValues } from '@serverforge/core';
+import type { SettingsSchema, SettingValues, NodeCapacity } from '@serverforge/core';
 import { GameSettingsFields } from '@/components/GameSettingsFields';
 import {
   HardwareFields,
@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { memoryLabel } from '@/lib/servers';
 
 type Game = { id: string; name: string; summary: string };
+type Compatibility = { platform: 'linux/amd64' | 'linux/arm64'; status: 'supported' | 'experimental' | 'unsupported'; reason: string };
 type Variant = {
   id: string;
   name: string;
@@ -43,6 +44,24 @@ export default function DeployPage() {
   const [limits, setLimits] = useState<HardwareDraft>({ memory: '', cpu: '', disk: '' });
   const [packSource, setPackSource] = useState('upload');
   const [packFile, setPackFile] = useState<File | null>(null);
+  const [capacity, setCapacity] = useState<NodeCapacity | null>(null);
+  const [compatibility, setCompatibility] = useState<Compatibility | null>(null);
+  const [allowExperimental, setAllowExperimental] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ nodes: { capacity: NodeCapacity | null; transport: string }[] }>('/api/nodes', {
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (!controller.signal.aborted)
+          setCapacity(result.nodes.find((node) => node.transport === 'docker')?.capacity ?? null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCapacity(null);
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -62,11 +81,13 @@ export default function DeployPage() {
     if (!gameId) return;
     const controller = new AbortController();
     setVariants([]);
+    setCompatibility(null); setAllowExperimental(false);
     setVariantId('');
     setError('');
-    api<{ variants: Variant[] }>(`/api/games/${gameId}`, { signal: controller.signal })
+    api<{ variants: Variant[]; compatibility: Compatibility }>(`/api/games/${gameId}`, { signal: controller.signal })
       .then((data) => {
         setVariants(data.variants);
+        setCompatibility(data.compatibility);
         setVariantId(
           data.variants.find((item) => item.recommended)?.id ?? data.variants[0]?.id ?? '',
         );
@@ -109,6 +130,8 @@ export default function DeployPage() {
     setPending(true);
     try {
       const configuration = JSON.stringify({
+        runtimePlatform: compatibility?.platform,
+        allowExperimental,
         name: name.trim(),
         gameId,
         variantId,
@@ -380,7 +403,8 @@ export default function DeployPage() {
                   <span className="step-number">3</span>
                   <h2>Allocate hardware</h2>
                 </div>
-                <HardwareFields value={limits} onChange={setLimits} />
+                <HardwareFields value={limits} onChange={setLimits} capacity={capacity} />
+                {compatibility && <div className="stack" style={{ marginTop: 12 }}><p className="muted">{compatibility.platform} · {compatibility.status}. {compatibility.reason}</p>{compatibility.status === 'experimental' && <label className="row"><input type="checkbox" checked={allowExperimental} onChange={(event) => setAllowExperimental(event.target.checked)} />I understand this game/platform combination is experimental.</label>}</div>}
                 <button
                   className="text-button reset-hardware"
                   type="button"
@@ -423,7 +447,7 @@ export default function DeployPage() {
             <button
               className="btn"
               type="submit"
-              disabled={!variant || name.trim().length < 2 || pending}
+              disabled={!variant || !compatibility || compatibility.status === 'unsupported' || (compatibility.status === 'experimental' && !allowExperimental) || name.trim().length < 2 || pending}
             >
               <Icon
                 name={pending ? 'refresh' : 'plus'}

@@ -1,9 +1,8 @@
 # Multi-stage build for the API service.
 #
-# The runtime image needs the docker CLI's socket (mounted, not installed) and
-# `tar` for backups — everything else is plain Node.
+# The API talks to the mounted Docker socket through the Docker API.
 
-FROM node:22-bookworm-slim AS deps
+FROM node:22.23.2-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284 AS deps
 WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl \
@@ -12,6 +11,7 @@ COPY package.json package-lock.json* ./
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/adapters/package.json packages/adapters/
+COPY packages/maintenance/package.json packages/maintenance/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 # `--omit=dev` happens in the runner stage; the build needs TypeScript here.
@@ -33,20 +33,47 @@ RUN find . -name '*.tsbuildinfo' -delete \
  && npm run build --workspace @serverforge/api \
  && test -f apps/api/dist/index.js
 
-FROM node:22-bookworm-slim AS runner
+FROM deps AS production-deps
+RUN PRISMA_SKIP_POSTINSTALL_GENERATE=true npm ci --omit=dev --omit=peer --workspace @serverforge/api --workspace @serverforge/db \
+    --workspace @serverforge/adapters --workspace @serverforge/core --include-workspace-root=false \
+ && rm -rf node_modules/prisma node_modules/.bin/prisma
+
+FROM deps AS maintenance-deps
+RUN PRISMA_SKIP_POSTINSTALL_GENERATE=true npm ci --omit=dev --workspace @serverforge/maintenance --workspace @serverforge/db --workspace @serverforge/core --include-workspace-root=false
+
+FROM node:22.23.2-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="ServerForge API" \
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/m1hung/ServerForge" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
-# tar for backups; ca-certificates for upstream registry downloads.
+# Backups use the application tar library. Package managers are build tools.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tar ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get upgrade -y \
+ && apt-get install -y --no-install-recommends ca-certificates openssl \
+ && rm -rf /var/lib/apt/lists/* /usr/local/lib/node_modules /opt/yarn* \
+ && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+ && rm -f /usr/bin/infocmp /usr/bin/mount /usr/bin/umount /usr/bin/nsenter /usr/bin/unshare \
+ && find /usr -xdev -type f -perm /6000 -exec chmod a-s '{}' +
 
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
+COPY --from=production-deps /app/node_modules ./node_modules
+COPY --from=build /app/packages/core/dist ./packages/core/dist
+COPY --from=build /app/packages/core/package.json ./packages/core/
+COPY --from=build /app/packages/adapters/dist ./packages/adapters/dist
+COPY --from=build /app/packages/adapters/package.json ./packages/adapters/
+COPY --from=build /app/packages/db/dist ./packages/db/dist
+COPY --from=build /app/packages/db/generated ./packages/db/generated
+COPY --from=build /app/packages/db/prisma ./packages/db/prisma
+COPY --from=build /app/packages/db/package.json ./packages/db/
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/
 COPY --from=build /app/package.json ./
+COPY release.json ./release.json
 # Built-in CSS themes (operators add more under THEMES_ROOT / data/themes).
 COPY themes ./themes
 
@@ -54,3 +81,40 @@ COPY themes ./themes
 # boundary here — see docs/security.md.
 EXPOSE 8080
 CMD ["node", "apps/api/dist/index.js"]
+
+# pg_dump/pg_restore must match the supported Postgres major. The maintenance
+# image carries Prisma's CLI, but neither service carries build/test tooling.
+FROM docker:29-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66 AS docker-cli
+FROM postgres:17-trixie@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675 AS maintenance
+WORKDIR /app
+ENV NODE_ENV=production
+RUN apt-get update && apt-get upgrade -y \
+ && apt-mark manual postgresql-client-17 ca-certificates libstdc++6 libgcc-s1 \
+ && apt-get purge -y postgresql-17 gnupg gnupg-l10n dirmngr gpg gpg-agent gpgconf gpgsm \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -f /usr/bin/infocmp /usr/bin/mount /usr/bin/umount /usr/bin/nsenter /usr/bin/unshare \
+ && find /usr -xdev -type f -perm /6000 -exec chmod a-s '{}' +
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="ServerForge maintenance" \
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/m1hung/ServerForge" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
+COPY --from=runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=runtime /app/packages/core ./packages/core
+COPY --from=runtime /app/packages/db ./packages/db
+COPY --from=maintenance-deps /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./
+COPY --from=build /app/packages/maintenance/package.json ./packages/maintenance/
+COPY --from=build /app/packages/maintenance/src ./packages/maintenance/src
+COPY release.json ./release.json
+COPY release ./release
+ENTRYPOINT ["node"]
+CMD ["packages/maintenance/src/cli.mjs", "release-info"]
+
+# Keep the default build target compatible with the existing source Compose file.
+FROM runtime AS runner

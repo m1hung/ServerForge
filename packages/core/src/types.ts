@@ -93,16 +93,53 @@ export interface ResourceLimits {
   memoryMib: number;
   /** Fractional CPU cores, e.g. 2.5. 0 = unlimited. */
   cpuCores: number;
-  /** Disk quota in MiB, enforced by the disk watcher. 0 = unlimited. */
+  /** Monitored storage budget in MiB, not a filesystem quota. 0 = no budget. */
   diskMib: number;
   /**
-   * Container swap in MiB. Defaults to memoryMib (i.e. no extra swap).
+   * Additional swap in MiB. Zero disables swap when memory is limited.
    * Null and undefined both mean "not set" — null is what the database and
    * therefore the API return, so both must be representable here.
    */
   swapMib?: number | null;
-  /** Linux CPU shares style priority, 1–1000. */
+  /** Block I/O weight, 10–1000, applied only where the host supports it. */
   ioWeight?: number | null;
+}
+
+export type RuntimePlatform = 'linux/amd64' | 'linux/arm64';
+export interface AppliedAllocation {
+  imageId?: string;
+  imageReference?: string;
+  platform?: string;
+  memoryMib: number;
+  cpuCores: number;
+  swapMib: number | null;
+  ioWeight: number | null;
+  pidsLimit: number | null;
+  protected: boolean;
+  logRotation: boolean;
+  warnings: string[];
+}
+
+export interface RuntimeCapabilities {
+  dockerVersion: string;
+  os: string;
+  architecture: string;
+  cpuCores: number;
+  memoryMib: number;
+  memoryLimit: boolean;
+  cpuLimit: boolean;
+  swapLimit: boolean;
+  pidsLimit: boolean;
+  ioWeight: boolean;
+  cgroupVersion: string;
+}
+
+export interface NodeCapacity {
+  capabilities: RuntimeCapabilities;
+  memory: { totalMib: number; headroomMib: number; reservedMib: number; availableMib: number };
+  cpu: { totalCores: number; reservedCores: number; overcommitted: boolean };
+  disk: { freeBytes: number; totalBytes: number } | null;
+  warnings: string[];
 }
 
 export interface ResourceUsage {

@@ -696,6 +696,17 @@ describe('palworld writes the same config as the hand-written adapter', () => {
     return files.get(CONFIG) ?? '';
   }
 
+  it('preserves quoted publisher URLs before later REST settings across repeated edits', async () => {
+    const original = '[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(BanListURL="https://api.example.test/banlist.txt",FutureString="with, comma",RESTAPIEnabled=False)\n';
+    const ctx = pwContext();
+    const once = await writeWith(compiled, ctx, { [CONFIG]: original });
+    const twice = await writeWith(compiled, ctx, { [CONFIG]: once });
+    expect(twice).toContain('BanListURL="https://api.example.test/banlist.txt"');
+    expect(twice).toContain('FutureString="with, comma"');
+    expect(twice).toContain('RESTAPIEnabled=True');
+    expect(twice).toContain('RESTAPIPort=25602');
+  });
+
   /** PvP on, so no setting is hidden and the two must agree exactly. */
   function allVisible(overrides: Record<string, string | number | boolean> = {}) {
     const ctx = pwContext();

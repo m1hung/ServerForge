@@ -14,9 +14,8 @@ import type { ContainerSpec, RuntimeDriver } from '../apps/api/src/runtime/types
  * or a log demuxer that drops the last line — none of which a mock can fail
  * on, because a mock agrees with whatever the code asks it.
  *
- * It skips rather than fails when Docker is unreachable, so `npm test` stays
- * green on a machine without it. Being in the `docker` group is what makes
- * the difference; if these skip unexpectedly, that is usually why.
+ * Release checks set SF_REQUIRE_INTEGRATION=1 and fail if Docker is unavailable.
+ * Developers can run the separate unit suite without Docker.
  *
  * Everything created here is named `sf-selftest-*` and removed afterwards.
  * It never touches containers it did not create.
@@ -34,6 +33,9 @@ const reachable = await new Docker({ socketPath: SOCKET })
   .ping()
   .then(() => true)
   .catch(() => false);
+
+if (!reachable && process.env.SF_REQUIRE_INTEGRATION === '1')
+  throw new Error('Docker is unavailable; required integration tests cannot be skipped.');
 
 /**
  * Where the bind-mounted scratch directory goes.
@@ -253,15 +255,19 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
   it('stops in-band when the adapter provides a stop command', async () => {
     // Exits 0 only on the expected word, so the exit code proves the command
     // arrived on stdin rather than the container being signalled.
-    const id = await launch('read line; [ "$line" = "stop" ] && exit 0; exit 7');
+    const id = await launch('echo ready; read line; echo "received: $line"; [ "$line" = "stop" ] && exit 0; exit 7');
     await runtime.start(id);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
+    const lines: string[] = [];
+    const handle = await runtime.streamLogs(id, { onLine: (line) => lines.push(line) });
+    const deadline = Date.now() + 10000;
+    while (!lines.includes('ready') && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(lines).toContain('ready');
     await runtime.stop(id, { stopCommand: 'stop\n', timeoutSeconds: 15 });
-
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    handle.close();
     const status = await runtime.status(id);
     expect(status.running).toBe(false);
-    expect(status.exitCode).toBe(0);
+    expect({ exitCode: status.exitCode, lines }).toMatchObject({ exitCode: 0, lines: expect.arrayContaining(['received: stop']) });
   }, 90_000);
 
   it('falls back to signalling when there is no stop command', async () => {
@@ -309,7 +315,7 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
   }, 90_000);
 
   it('publishes a port binding on the host interface it was given', async () => {
-    const hostPort = 25599;
+    const hostPort = 0; // Docker chooses a free port; never reserve a real game's port.
     const id = await launch('sleep 30', {
       ports: [{ hostIp: '127.0.0.1', hostPort, containerPort: 25565, protocol: 'tcp' }],
     });
@@ -317,7 +323,7 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
 
     const info = await new Docker({ socketPath: SOCKET }).getContainer(id).inspect();
     expect(info.NetworkSettings.Ports['25565/tcp']).toEqual([
-      { HostIp: '127.0.0.1', HostPort: String(hostPort) },
+      { HostIp: '127.0.0.1', HostPort: expect.stringMatching(/^[1-9]\d+$/) },
     ]);
   }, 90_000);
 
@@ -335,10 +341,62 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
     expect(lines).toContain('done');
   }, 120_000);
 
+  it('enforces non-root identity, dropped capabilities, no-new-privileges, process and log limits', async () => {
+    const id = await launch('sleep 30', {
+      limits: { memoryMib: 64, cpuCores: 0.5, diskMib: 0, swapMib: 0 },
+    });
+    await runtime.start(id);
+    const container = new Docker({ socketPath: SOCKET }).getContainer(id);
+    const info = await container.inspect();
+    expect(info.Config.User).toBe('1000:1000');
+    expect(info.HostConfig.CapDrop).toEqual(['ALL']);
+    expect(info.HostConfig.SecurityOpt).toContain('no-new-privileges:true');
+    expect(info.HostConfig.PidsLimit).toBe(2048);
+    expect(info.HostConfig.MemorySwap).toBe(info.HostConfig.Memory);
+    expect(info.HostConfig.LogConfig).toEqual({
+      Type: 'json-file',
+      Config: { 'max-size': '20m', 'max-file': '3' },
+    });
+    const execution = await container.exec({
+      Cmd: ['/bin/sh', '-c', 'id -u; cat /proc/self/status'],
+      AttachStdout: true,
+    });
+    const output = await execution.start({ Detach: false, Tty: false });
+    let text = '';
+    for await (const chunk of output) text += chunk.toString();
+    expect(text).toContain('1000');
+    expect(text).toMatch(/CapEff:\s+0000000000000000/);
+    expect(text).toMatch(/NoNewPrivs:\s+1/);
+  }, 90000);
+
+  it('runs installers without root and repairs restrictive file ownership separately', async () => {
+    const result = await runtime.runOnce({
+      image: IMAGE,
+      command: [
+        '/bin/sh',
+        '-c',
+        'id -u; cat /proc/self/status; mkdir -p locked; touch locked/file; chmod 700 locked; ln -sf /etc/passwd locked/external-link',
+      ],
+      dataPath: dataRoot,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toMatch(/CapEff:\s+0000000000000000/);
+    expect(result.output).toMatch(/NoNewPrivs:\s+1/);
+    await runtime.repairOwnership(
+      dataRoot,
+      `${process.getuid?.() || 1000}:${process.getgid?.() || 1000}`,
+    );
+    await chmod(path.join(dataRoot, 'locked'), 0o700);
+  }, 120000);
+
   it('writes into the mounted data directory from a throwaway job', async () => {
     const result = await runtime.runOnce({
       image: IMAGE,
-      command: ['/bin/sh', '-c', 'echo hello > /home/container/proof.txt && cat /home/container/proof.txt'],
+      command: [
+        '/bin/sh',
+        '-c',
+        'echo hello > /home/container/proof.txt && cat /home/container/proof.txt',
+      ],
       dataPath: dataRoot,
     });
 

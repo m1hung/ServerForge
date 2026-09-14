@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { openServerFile } from '../lib/server-files.js';
 import path from 'node:path';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -42,6 +43,7 @@ import {
 import { observations, acceptTickOutput } from '../services/telemetry.js';
 import { activity } from '../services/server-events.js';
 import { logger } from '../lib/logger.js';
+import { closeConsoleStreams } from '../services/console-stream.js';
 
 function serverUid(request: FastifyRequest) {
   return z.object({ uid: z.string().min(1).max(64) }).parse(request.params).uid;
@@ -97,7 +99,7 @@ export async function managementRoutes(app: FastifyInstance) {
       localDataPath(server.dataPath),
       filePathQuerySchema.parse(request.query).path,
     );
-    if (!(await fs.stat(target)).isFile()) throw badRequest('Choose a file to download.');
+    const file = await openServerFile(localDataPath(server.dataPath), filePathQuerySchema.parse(request.query).path);
     return reply
       .type('application/octet-stream')
       .header('Cache-Control', 'no-store')
@@ -105,7 +107,7 @@ export async function managementRoutes(app: FastifyInstance) {
         'Content-Disposition',
         `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(target))}`,
       )
-      .send(createReadStream(target));
+      .send(file.createReadStream());
   });
   app.put('/servers/:uid/files/content', { bodyLimit: TEXT_LIMIT + 65536 }, async (request) => {
     const server = await permissions(request, ['server.files']);
@@ -525,6 +527,7 @@ export async function managementRoutes(app: FastifyInstance) {
       `Updated server access for ${member.username}.`,
       requireUser(request).id,
     );
+    closeConsoleStreams();
     return { ok: true };
   });
   app.delete('/servers/:uid/access/:username', async (request) => {
@@ -540,6 +543,7 @@ export async function managementRoutes(app: FastifyInstance) {
       `Removed server access for ${username}.`,
       requireUser(request).id,
     );
+    closeConsoleStreams();
     return { ok: true };
   });
 }

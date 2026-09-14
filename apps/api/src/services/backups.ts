@@ -3,13 +3,14 @@ import path from 'node:path';
 import * as tar from 'tar';
 import { z } from 'zod';
 import { prisma, uid, type Server, type Backup } from '@serverforge/db';
-import { badRequest, conflict, safeExtractTarget } from '@serverforge/core';
+import { badRequest, conflict, safeExtractTarget, portableGameLink, validateArchivePaths, type ArchivePath } from '@serverforge/core';
 import { config } from '../lib/config.js';
 import { localDataPath } from '../lib/storage-paths.js';
 import { serverFile, prepareServerOwnership } from '../lib/server-files.js';
 import { fileChecksum } from './file-manager.js';
 import { runtime, startServer, stopServer } from '../routes/servers.js';
 import { activity } from './server-events.js';
+import { requireFreeSpace } from '../lib/storage-space.js';
 
 export const savedConfigurationSchema = z.object({
   gameId: z.string(),
@@ -42,6 +43,7 @@ export async function backupFile(backup: Pick<Backup, 'filePath'>) {
 export async function archiveDirectory(root: string, destination: string) {
   let count = 0;
   let invalid: unknown;
+  const entries: ArchivePath[] = [];
   await tar.c(
     {
       cwd: root,
@@ -49,16 +51,20 @@ export async function archiveDirectory(root: string, destination: string) {
       gzip: true,
       portable: true,
       strict: true,
+      onWriteEntry(entry) {
+        try { if (entry.type === 'SymbolicLink') entry.linkpath = portableGameLink(entry.path, entry.linkpath || ''); }
+        catch (error) { invalid ||= error; }
+        entries.push({ path: entry.path, type: entry.type || '', linkpath: entry.linkpath });
+      },
       filter(entry, stat) {
         if (invalid) return false;
         try {
           safeExtractTarget(root, entry);
           if (
             !('isFile' in stat) ||
-            (!stat.isFile() && !stat.isDirectory()) ||
-            (stat.isFile() && stat.nlink > 1)
+            (!stat.isFile() && !stat.isDirectory() && !stat.isSymbolicLink())
           )
-            throw badRequest(`Backup cannot include links or special files: ${entry}`);
+            throw badRequest(`Backup cannot include special files: ${entry}`);
           if (++count > 500000) throw badRequest('Backup exceeds the 500,000-entry limit.');
           return true;
         } catch (error) {
@@ -70,11 +76,13 @@ export async function archiveDirectory(root: string, destination: string) {
     ['.'],
   );
   if (invalid) throw invalid;
+  validateArchivePaths(entries);
 }
 export async function extractBackup(archive: string, destination: string) {
   let bytes = 0,
     count = 0;
   let invalid: unknown;
+  const entries: ArchivePath[] = [];
   await fs.mkdir(destination, { recursive: true });
   const disk = await fs.statfs(destination);
   const available = Number(disk.bavail) * Number(disk.bsize);
@@ -86,8 +94,7 @@ export async function extractBackup(archive: string, destination: string) {
       if (invalid) return;
       try {
         safeExtractTarget(destination, entry.path);
-        if (!['File', 'Directory'].includes(entry.type))
-          throw badRequest('Backup contains a link or special file.');
+        entries.push({ path: entry.path, type: entry.type, linkpath: entry.linkpath });
         bytes += entry.size;
         if (++count > 500000 || bytes > available - 64 * 1024 ** 2)
           throw badRequest('Not enough free disk space to restore this archive.');
@@ -97,6 +104,7 @@ export async function extractBackup(archive: string, destination: string) {
     },
   });
   if (invalid) throw invalid;
+  validateArchivePaths(entries);
   await tar.x({ file: archive, cwd: destination, strict: true, noChmod: true, noMtime: true });
 }
 export async function createBackup(
@@ -107,6 +115,7 @@ export async function createBackup(
 ): Promise<Backup> {
   if (!['running', 'offline', 'crashed'].includes(server.state))
     throw conflict('Wait for the current operation before making a backup.');
+  await requireFreeSpace(config.backupRoot);
   const record = await prisma.backup.create({
     data: {
       uid: uid(),
@@ -124,7 +133,7 @@ export async function createBackup(
   let stopped = false;
   try {
     if (running) {
-      await stopServer(server.id);
+      await stopServer(server.id, { forceAfterTimeout: false });
       stopped = true;
     }
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -165,7 +174,7 @@ export async function replaceServerFiles(
   server: Server,
   staged: string,
   configuration: SavedConfiguration,
-  operation: 'restoring' | 'updating' = 'restoring',
+  operation: 'restoring' | 'updating' | 'installing' = 'restoring',
 ) {
   const work = operationRoot(server.uid),
     live = localDataPath(server.dataPath),
@@ -173,6 +182,9 @@ export async function replaceServerFiles(
   const journal = path.join(work, 'swap.json');
   if (await fs.lstat(previous).catch(() => null))
     throw conflict('A previous operation needs recovery before another restore or update.');
+  // Finish ownership work while the directory still has its staging name.
+  // No helper bind mount should survive into the atomic replacement.
+  await prepareServerOwnership(staged);
   await fs.mkdir(work, { recursive: true });
   await fs.writeFile(
     journal,
@@ -184,7 +196,6 @@ export async function replaceServerFiles(
     if (server.containerId) await runtime.remove(server.containerId, { force: false });
     await fs.rename(live, previous);
     await fs.rename(staged, live);
-    await prepareServerOwnership(live);
     await prisma.server.update({
       where: { id: server.id },
       data: { ...configuration, state: 'offline', containerId: null },

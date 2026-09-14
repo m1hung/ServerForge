@@ -337,24 +337,29 @@ export interface PackVariables {
  * runtime picker nothing, and guessing lands modern packs on the wrong JDK.
  */
 export async function readPackVariables(tools: InstallTools): Promise<PackVariables | null> {
-  const raw = await tools.readFile('variables.txt');
+  const raw = (await tools.readFile('variables.txt')) || (await tools.readFile('settings-universalator.txt'));
   if (!raw) return null;
 
   const values: Record<string, string> = {};
   for (const line of raw.split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+    const match = line.match(/^\s*(?:SET\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i);
     if (!match) continue;
-    values[match[1]!] = match[2]!.trim().replace(/^["']|["']$/g, '');
+    values[match[1]!.toUpperCase()] = match[2]!.trim().replace(/^["']|["']$/g, '');
   }
 
-  const minecraftVersion = values.MINECRAFT_VERSION ?? '';
+  const minecraftVersion = values.MINECRAFT_VERSION ?? values.MINECRAFT ?? '';
   const modloader = values.MODLOADER ?? '';
   if (!minecraftVersion || !modloader) return null;
+  const modloaderVersion = values.MODLOADER_VERSION ?? values.MODLOADERVERSION ?? '';
+  if (!/^\d+\.\d+(?:\.\d+)?$/.test(minecraftVersion) ||
+      !/^(forge|neoforge|fabric|quilt|vanilla)$/i.test(modloader) ||
+      !/^[a-zA-Z0-9.+_-]{0,80}$/.test(modloaderVersion))
+    throw new Error('The server pack contains invalid Minecraft or loader version metadata.');
 
   return {
     minecraftVersion,
     modloader,
-    modloaderVersion: values.MODLOADER_VERSION ?? '',
+    modloaderVersion,
   };
 }
 
@@ -370,8 +375,9 @@ async function flattenExtractedPack(
   let source = extractedRelative;
   if (meaningful.length === 1) {
     const only = meaningful[0]!;
-    // Heuristic: a single directory that is not a jar/zip is a wrapper folder.
-    if (!/\.(jar|zip|mrpack)$/i.test(only)) {
+    // Only a nonempty directory can wrap the pack. A lone manifest or
+    // README is a file, and must reach the actionable pack validation below.
+    if (!/\.(jar|zip|mrpack)$/i.test(only) && (await tools.listDir(`${extractedRelative}/${only}`)).length) {
       source = `${extractedRelative}/${only}`;
     }
   }

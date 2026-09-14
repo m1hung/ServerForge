@@ -124,7 +124,13 @@ export interface ManifestRuntime {
    * Container-side ports, matched to allocations by purpose. See
    * `StartupPlan.ports` for why `fixed` is almost never what you want.
    */
-  ports: { containerPort: number; purpose: string; protocol: 'tcp' | 'udp'; fixed?: boolean }[];
+  ports: {
+    containerPort: number;
+    purpose: string;
+    protocol: 'tcp' | 'udp';
+    fixed?: boolean;
+    public?: boolean;
+  }[];
   /**
    * How a typed command reaches the game. Absent means stdin.
    *
@@ -144,6 +150,7 @@ export interface ManifestRuntime {
 
   /** Written to stdin for a graceful stop, e.g. "stop\n". */
   stopCommand?: string;
+  stopSignal?: 'SIGINT' | 'SIGTERM';
   stopTimeoutSeconds: number;
   /** A line matching this promotes the server from "starting" to "running". */
   readyPattern?: string;

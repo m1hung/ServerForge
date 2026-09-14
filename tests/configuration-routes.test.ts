@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../apps/api/src/services/platform.js', () => ({ selectGamePlatform: async () => 'linux/amd64' }));
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +16,9 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('@serverforge/db', () => ({
   prisma: {
+    async $transaction(work: (tx: unknown) => unknown) {
+      return work(this);
+    },
     server: {
       findUnique: async () => state.server,
       findUniqueOrThrow: async () => state.server,
@@ -23,6 +27,12 @@ vi.mock('@serverforge/db', () => ({
   },
   serializeBigInts: (value: unknown) => value,
   uid: () => 'unused',
+}));
+vi.mock('../apps/api/src/services/resources.js', () => ({
+  validateAllocation: async () => undefined,
+  nodeCapacity: async () => null,
+  requireFreeSpace: async () => undefined,
+  measuredServerBytes: () => null,
 }));
 vi.mock('../apps/api/src/plugins/auth.js', () => ({
   requireUser: (request: FastifyRequest) => {
@@ -40,6 +50,7 @@ vi.mock('../apps/api/src/lib/server-files.js', async (importOriginal) => ({
 }));
 vi.mock('../apps/api/src/runtime/docker.js', () => ({
   DockerRuntime: class {
+    appliedAllocation = async () => null;
     create = state.create;
     start = state.start;
     status = state.status;
@@ -202,12 +213,19 @@ describe('server configuration', () => {
         variantId,
         settings: defaultsFor(adapter.settingsSchema(variantId)),
         version: 'latest',
+        allocations: adapter.requiredPorts(variantId).map((entry, index) => ({
+          ip: '0.0.0.0',
+          port: 25565 + index,
+          purpose: entry.purpose,
+          primary: index === 0,
+        })),
       });
       const response = await save({
-        settings: { ServerName: 'Saturday crew' },
+        settings: { ServerName: 'Saturday crew', ...(gameId === 'valheim' ? { Password: 'qualification-password' } : { AdminPassword: 'qualification-admin-password' }) },
         limits: { memoryMib: 8192, cpuCores: 2.5 },
       });
       expect(response.statusCode, response.body).toBe(200);
+      if (gameId === 'palworld') await fs.writeFile(path.join(root, 'PalServer.sh'), '#!/bin/sh\n"$UE_PROJECT_ROOT/Pal/Binaries/Linux/PalServer-Linux-Shipping" Pal "$@"\n');
       const launch = await app.inject({
         method: 'POST',
         url: '/servers/test/power',

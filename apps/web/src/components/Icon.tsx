@@ -1,6 +1,12 @@
 import type { CSSProperties } from 'react';
 
 const paths = {
+  user: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M4 21v-2a8 8 0 0 1 16 0v2',
+  users: 'M14 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M2 21v-2a8 8 0 0 1 16 0v2 M18 4a4 4 0 0 1 0 8 M21 21v-3a6 6 0 0 0-3-5',
+  network: 'M8 3h8v6H8z M12 9v5 M4 14h16 M4 14v3 M20 14v3 M1 17h6v5H1z M17 17h6v5h-6z',
+  share:
+    'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6 M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6 M18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6 M8.6 10.5l6.8-4 M8.6 13.5l6.8 4',
+  qr: 'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h2v2h-2z M21 15v6h-6 M12 3v3 M3 12h3 M12 12h9 M12 18v3',
   grid: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
   server:
     'M5 3h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M5 13h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z M7 7h.01 M7 17h.01 M11 7h6 M11 17h6',

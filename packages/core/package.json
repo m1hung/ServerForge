@@ -21,6 +21,10 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "default": "./dist/types.js"
+    },
+    "./connectivity": {
+      "types": "./dist/connectivity.d.ts",
+      "default": "./dist/connectivity.js"
     }
   },
   "scripts": {

@@ -53,7 +53,7 @@ export function stringifyIni(sections: IniSections): string {
  * level. Quoted strings keep their quotes stripped; nested tuples are kept
  * verbatim so we round-trip settings we do not model.
  */
-export function parseTuple(value: string): Record<string, string> {
+export function parseTuple(value: string, options: { preserveQuotes?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {};
   const body = value.trim().replace(/^\(/, '').replace(/\)$/, '');
 
@@ -64,7 +64,7 @@ export function parseTuple(value: string): Record<string, string> {
   let readingKey = true;
 
   const flush = () => {
-    if (key.trim() !== '') out[key.trim()] = stripQuotes(buffer.trim());
+    if (key.trim() !== '') out[key.trim()] = options.preserveQuotes ? buffer.trim() : stripQuotes(buffer.trim());
     key = '';
     buffer = '';
     readingKey = true;

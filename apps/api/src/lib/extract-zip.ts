@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import { openPromise } from 'yauzl';
 import { safeExtractTarget } from '@serverforge/core';
 import { serverFile } from './server-files.js';
+import { requireFreeSpace } from './storage-space.js';
 
 export async function extractZip(archive: string, root: string, strip = 0): Promise<void> {
   if (!Number.isInteger(strip) || strip < 0) throw new Error('Invalid ZIP strip count.');
@@ -32,6 +33,7 @@ export async function extractZip(archive: string, root: string, strip = 0): Prom
         continue;
       }
       await fs.mkdir(path.dirname(target), { recursive: true });
+      await requireFreeSpace(root, entry.uncompressedSize);
       const input = await zip.openReadStreamPromise(entry);
       // Preserve executable bits for Linux server packs, never setuid/setgid.
       await pipeline(input, createWriteStream(target, { mode: mode & 0o111 ? 0o755 : 0o644 }));

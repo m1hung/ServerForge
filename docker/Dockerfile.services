@@ -1,0 +1,26 @@
+# Keep upstream service binaries and entrypoints; apply distribution fixes and
+# remove unused administration tools. These images are versioned with the panel.
+FROM postgres:17-trixie@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675 AS postgres
+RUN apt-get update && apt-get upgrade -y \
+ && apt-get purge -y gnupg gnupg-l10n dirmngr gpg gpg-agent gpgconf gpgsm \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -f /usr/bin/infocmp /usr/bin/mount /usr/bin/umount /usr/bin/nsenter /usr/bin/unshare \
+ && find /usr -xdev -type f -perm /6000 -exec chmod a-s '{}' +
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="ServerForge PostgreSQL" \
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/m1hung/ServerForge"
+
+FROM tailscale/tailscale@sha256:8c42c4574ab066384fcb72f69e086a2ff1dd3652eb6f56856cee34bcf0d2f680 AS tailscale
+ENV TS_DISABLE_SSH_SERVER=true
+RUN apk upgrade --no-cache \
+ && find /usr /bin /sbin -xdev -type f -perm /6000 -exec chmod a-s '{}' +
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="ServerForge Tailscale" \
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/m1hung/ServerForge"

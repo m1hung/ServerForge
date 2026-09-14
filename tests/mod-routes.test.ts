@@ -13,6 +13,7 @@ vi.mock('@serverforge/db', () => ({
   uid: () => 'new-server',
 }));
 vi.mock('../apps/api/src/plugins/auth.js', () => ({
+  requireAdmin: () => ({ id: 'owner', role: 'owner' }),
   requireUser: (request: FastifyRequest) => ({
     id: request.headers['x-user'] ?? 'owner',
     role: 'user',

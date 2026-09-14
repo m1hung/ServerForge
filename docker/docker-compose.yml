@@ -35,7 +35,8 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-serverforge} -d ${POSTGRES_DB:-serverforge}']
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-serverforge} -d ${POSTGRES_DB:-serverforge}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -70,6 +71,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.api
     restart: unless-stopped
+    stop_grace_period: 100s
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,15 +115,16 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # Automatic router port forwarding.
       #
-      # UPNP_CONTROL_URL is not optional in this deployment shape, even though
-      # it is elsewhere: discovery is SSDP multicast, and multicast does not
-      # cross Docker's bridge, so a container can never find the router by
-      # itself. The SOAP calls afterwards are ordinary unicast HTTP and work
-      # fine from here — the address just has to be handed over.
+      # npm start refreshes the host's LAN/router snapshot before Compose.
+      # These optional values seed Network & access before settings are saved.
       UPNP_ENABLED: ${UPNP_ENABLED:-false}
       UPNP_CONTROL_URL: ${UPNP_CONTROL_URL:-}
-      UPNP_LEASE_SECONDS: ${UPNP_LEASE_SECONDS:-0}
+      UPNP_LEASE_SECONDS: ${UPNP_LEASE_SECONDS:-3600}
       UPNP_INTERNAL_IP: ${UPNP_INTERNAL_IP:-}
+      WEB_PORT: ${WEB_PORT:-3000}
+      TS_HOSTNAME: ${TS_HOSTNAME:-serverforge}
+      TAILSCALE_SOCKET: /var/run/serverforge-tailscale/tailscaled.sock
+      SETUP_TOKEN_HASH: ${SETUP_TOKEN_HASH:-}
     ports:
       # BIND_HOST exists for the tls profile: set it to 127.0.0.1 and the only
       # way in from outside the machine is through Caddy on 443. Left at
@@ -138,8 +141,15 @@ services:
       # Operator game manifests (*.json), read once at start. See docs/adding-a-game.md.
       - ${HOST_GAMES_ROOT:?empty — run npm run bootstrap to fill it with an absolute path}:/var/lib/serverforge/games
       - serverforge-cache:/var/lib/serverforge/cache
+      - tailscale-run:/var/run/serverforge-tailscale
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -151,9 +161,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.web
       args:
-        # 'auto' uses the browser hostname + NEXT_PUBLIC_API_PORT so LAN access
-        # keeps the session cookie same-site. The host API_PORT must be baked in
-        # at build time — otherwise the dashboard forever talks to :8080.
+        # 'auto' streams API requests through the dashboard's same-origin proxy,
+        # including LAN HTTP and Tailscale HTTPS. No browser API port is needed.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-auto}
         NEXT_PUBLIC_API_PORT: ${API_PORT:-8080}
         NEXT_PUBLIC_BRAND_NAME: ${BRAND_NAME:-ServerForge}
@@ -164,6 +173,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      API_INTERNAL_URL: http://api:8080
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET required}
+      DASHBOARD_SCHEME: ${DASHBOARD_SCHEME:-http}
+      BRAND_NAME: ${BRAND_NAME:-ServerForge}
+      BRAND_TAGLINE: ${BRAND_TAGLINE:-Launch a game server in minutes, not hours.}
+      BRAND_ACCENT: '${BRAND_ACCENT:-#f97316}'
     ports:
       # See the API's ports block for why the bind address is a variable.
       - '${BIND_HOST:-0.0.0.0}:${WEB_PORT:-3000}:3000'
@@ -175,9 +190,9 @@ services:
   # running Docker. The URL is then https://serverforge.<tailnet>.ts.net, with
   # a real certificate Tailscale gets and renews itself.
   #
-  # Why a sidecar rather than `tailscale serve` on the host: serve on the host
-  # needs root, and it would hang the panel's name off the host's identity, so
-  # moving the panel to another box would change its URL.
+  # The host connection is preferred when detected. This dedicated dashboard
+  # device is an alternative with its own identity and browser login flow.
+  # It proxies dashboard traffic only; install host Tailscale for game traffic.
   #
   # The api and web services keep their own network namespaces here (unlike the
   # usual sidecar recipe, which shares one). That matters: the API attaches
@@ -189,6 +204,7 @@ services:
     profiles: ['full']
     image: tailscale/tailscale:stable
     restart: unless-stopped
+    entrypoint: ['/bin/sh', '/config/start.sh']
     depends_on:
       - api
       - web
@@ -197,33 +213,14 @@ services:
       # first login leaves the old name registered — rename in the admin
       # console instead, or delete the node and the state volume below.
       TS_HOSTNAME: ${TS_HOSTNAME:-serverforge}
-      # Required for the FIRST login; afterwards the node identity lives in the
-      # state volume and this can go back to being empty. Deliberately not
-      # `${TS_AUTHKEY:?}`, which would make every later `up -d` demand a key
-      # that is no longer needed:
-      #
-      #   TS_AUTHKEY=tskey-auth-... node scripts/compose.mjs --profile full up -d tailscale
-      #
-      # A key is not optional on first run, however much the login URL in the
-      # logs suggests otherwise. containerboot runs `tailscale up` under a hard
-      # 60-second deadline; when it expires it SIGTERMs tailscaled, throws the
-      # pending registration away and retries with a fresh node key. Clicking
-      # the URL races that deadline and loses, and every lap leaves another
-      # dead node behind in the admin console, squatting this node's name.
+      # Optional unattended first login. Browser authorization is also supported
+      # from Network & access; pending login never restarts the daemon.
       TS_AUTHKEY: ${TS_AUTHKEY:-}
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /config/serve.json
-      # Userspace networking: serve is a userspace proxy, so this needs neither
-      # NET_ADMIN nor /dev/net/tun. Less privilege for the same result.
-      TS_USERSPACE: 'true'
-      # Explicit because the serve config proxies to `web` and `api` by compose
-      # DNS name. Accepting the tailnet's DNS would replace the resolver that
-      # resolves them, and every request would 502.
-      TS_ACCEPT_DNS: 'false'
     volumes:
       # Node identity. Lose this and the node re-registers as serverforge-1.
       - tailscale-state:/var/lib/tailscale
-      - ./tailscale-serve.json:/config/serve.json:ro
+      - tailscale-run:/var/run/tailscale
+      - ./tailscale-entrypoint.sh:/config/start.sh:ro
 
   # ── TLS front door ────────────────────────────────────────────────────────
   #
@@ -274,5 +271,6 @@ volumes:
   redis-data:
   serverforge-cache:
   tailscale-state:
+  tailscale-run:
   caddy-data:
   caddy-config:

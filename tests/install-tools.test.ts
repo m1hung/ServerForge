@@ -5,10 +5,11 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 
-const mocks = vi.hoisted(() => ({ runOnce: vi.fn(), response: vi.fn() }));
+const mocks = vi.hoisted(() => ({ runOnce: vi.fn(), repairOwnership: vi.fn(), response: vi.fn() }));
 vi.mock('../apps/api/src/runtime/docker.js', () => ({
   DockerRuntime: class {
     runOnce = mocks.runOnce;
+    repairOwnership = mocks.repairOwnership;
   },
 }));
 vi.mock('../apps/api/src/lib/storage-paths.js', () => ({
@@ -20,6 +21,7 @@ import { installToolsFor } from '../apps/api/src/services/install-tools.js';
 let root: string;
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.repairOwnership.mockResolvedValue(undefined);
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-install-tools-'));
 });
 afterEach(async () => {
@@ -42,9 +44,7 @@ describe('installer primitives', () => {
   });
 
   it('runs the actual container driver and restores editable ownership', async () => {
-    mocks.runOnce
-      .mockResolvedValueOnce({ exitCode: 0, output: 'Installed.' })
-      .mockResolvedValueOnce({ exitCode: 0, output: '' });
+    mocks.runOnce.mockResolvedValueOnce({ exitCode: 0, output: 'Installed.' });
     const result = await installToolsFor(root).runInContainer({
       image: 'test-runtime',
       command: ['java', '-jar', 'installer.jar'],
@@ -57,20 +57,21 @@ describe('installer primitives', () => {
       timeoutMs: 5000,
       dataPath: root,
     });
-    expect(mocks.runOnce).toHaveBeenNthCalledWith(
+    expect(mocks.repairOwnership).toHaveBeenNthCalledWith(1, root, '1000:1000');
+    expect(mocks.repairOwnership).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ entrypoint: ['/bin/chown'], dataPath: root }),
+      root,
+      `${process.getuid?.() || 1000}:${process.getgid?.() || 1000}`,
     );
   });
 
   it('restores ownership after an installer failure and preserves the failure', async () => {
-    mocks.runOnce
-      .mockRejectedValueOnce(new Error('Installer timed out.'))
-      .mockResolvedValueOnce({ exitCode: 0, output: '' });
+    mocks.runOnce.mockRejectedValueOnce(new Error('Installer timed out.'));
     await expect(
       installToolsFor(root).runInContainer({ image: 'test-runtime', command: ['installer'] }),
     ).rejects.toThrow(/timed out/);
-    expect(mocks.runOnce).toHaveBeenCalledTimes(2);
+    expect(mocks.runOnce).toHaveBeenCalledOnce();
+    expect(mocks.repairOwnership).toHaveBeenCalledTimes(2);
   });
 
   it('copies an extracted pack into the server root, retaining files and executable bits', async () => {

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Partial Prisma delegates are in-memory test doubles, not production inputs. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../apps/api/src/services/platform.js', () => ({ selectGamePlatform: async () => 'linux/amd64' }));
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';

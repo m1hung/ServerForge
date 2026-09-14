@@ -46,6 +46,7 @@ describe('mapPorts', () => {
 
     expect(bindings.map((b) => b.hostPort)).toEqual([25501, 25500]);
     expect(bindings.every((b) => b.hostPort === b.containerPort)).toBe(true);
+    expect(bindings.map((b) => b.hostIp)).toEqual(['127.0.0.1', '0.0.0.0']);
   });
 
   it('keeps a fixed container port for games that cannot be reconfigured', () => {
@@ -146,5 +147,6 @@ describe('published port matches the configured listen port', () => {
     expect(plan.command).toContain('-queryport=25601');
     const query = bindings.find((b) => b.hostPort === 25601);
     expect(query?.containerPort).toBe(25601);
+    expect(bindings.find((b) => b.hostPort === 25602)?.hostIp).toBe('127.0.0.1');
   });
 });

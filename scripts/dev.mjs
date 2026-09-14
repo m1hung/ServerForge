@@ -9,10 +9,19 @@
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const webEnv = {};
+try {
+  const source = readFileSync(path.join(root, ".env"), "utf8");
+  const value = (key) => process.env[key] ?? source.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]?.trim().replace(/^["']|["']$/g, "");
+  webEnv.API_INTERNAL_URL = value("API_INTERNAL_URL") || `http://127.0.0.1:${value("API_PORT") || "8080"}`;
+  webEnv.NEXT_PUBLIC_API_URL = value("NEXT_PUBLIC_API_URL") || "auto";
+} catch { /* The API's startup check explains a missing .env. */ }
+
 
 const targets = [
   {
@@ -57,7 +66,7 @@ function shutdown(code = 0) {
 for (const target of targets) {
   const child = spawn(npm, target.args, {
     cwd: root,
-    env: { ...process.env, FORCE_COLOR: "1" },
+    env: { ...process.env, ...(target.name === "web" ? webEnv : {}), FORCE_COLOR: "1" },
     stdio: ["ignore", "pipe", "pipe"],
     shell: process.platform === "win32",
   });

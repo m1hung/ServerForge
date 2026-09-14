@@ -23,48 +23,41 @@ holds something valuable is a decision worth making deliberately.
 
 ### Authentication
 
-- **Passwords**: Argon2id at the OWASP 2024 interactive baseline
-  (19 MiB, t=2, p=1). Never logged, never returned.
-- **Sessions**: 256 bits of entropy in an httpOnly, SameSite=Lax cookie,
-  `Secure` in production. Only the SHA-256 is stored, so a database dump cannot
-  be replayed as a login.
-- **API keys**: same storage, prefixed `sf_live_` so a leaked key is greppable.
-  Shown once, scoped, revocable, optionally expiring.
-- **Login throttling**: 10 attempts per username+IP per 15 minutes. Counting both
-  means an attacker cannot lock a legitimate user out from elsewhere.
-- **Timing**: a non-existent username is verified against a real decoy hash, so
-  response time does not reveal which usernames have accounts.
-- **Password change** invalidates every other session.
-- **Suspension** deletes sessions immediately, not at next expiry.
+- **Passwords** use Argon2id with 19 MiB of memory, two iterations and one lane.
+  Missing usernames still perform a password verification against a decoy hash.
+- **Sessions** use random 256-bit tokens. Only SHA-256 token hashes are stored.
+  Cookies are HttpOnly and SameSite=Lax. Secure is controlled by the trusted
+  deployment scheme and `COOKIE_SECURE`, never by unsigned browser forwarding headers. Logout deletes the stored session.
+- **Suspended accounts** are rejected on every authenticated request. The host
+  password-reset command revokes all sessions and invalidates pending 2FA sign-ins.
+- **Stored API keys** are checked for scopes, expiry, revocation and suspension.
+  API keys are a separate credential and bypass interactive two-factor sign-in.
+- **Registration** creates the first owner under a database lock. Subsequent
+  anonymous registrations require `registration.mode` to be explicitly `open`.
+  The seeded `invite_only` policy and a missing policy both reject registration.
+  Owner setup also requires the installer’s one-time token. Workspace accounts
+  provides hashed, revocable, single-use invitations valid for 72 hours; fragment
+  tokens are exchanged through POST. Only owners grant administrator access.
 
-### Two-factor authentication
+### Two-factor sign-in
 
-TOTP (RFC 6238), implemented in `apps/api/src/lib/totp.ts` and pinned against
-the RFC's published test vectors in `tests/totp.test.ts`.
+For accounts already enrolled in TOTP, the API decrypts the stored AES-256-GCM
+secret and verifies RFC 6238 codes, including one time step of clock drift.
+Comparisons use constant-time buffers and check the whole time window.
 
-- The secret is **AES-256-GCM encrypted at rest**, so a database dump alone does
-  not let someone generate codes.
-- A correct password does **not** create a session when 2FA is on. It returns a
-  ticket that expires in 5 minutes, is single-use, and is destroyed after 5
-  wrong codes — six digits is only a million possibilities, so the attempt
-  limit is what makes the space large enough.
-- A code that has been accepted **cannot be replayed** inside its validity
-  window, so one observed over a shoulder or captured by a phishing page is
-  already spent.
-- Verification allows ±1 time step for clock drift and compares in constant
-  time, with no early exit between candidate steps.
-- **Recovery codes**: 10 single-use codes, stored only as SHA-256, removed as
-  they are used, shown exactly once. The alphabet excludes `0/O`, `1/I/L` and
-  `U/V` because these get written on paper.
-- Enrolment is confirmed with a live code before anything changes, so a
-  mis-scanned secret cannot lock someone out of their own panel.
-- Enabling, disabling and regenerating codes all re-ask for the password: a
-  stolen session should not be able to turn 2FA on to keep the real owner out,
-  or off to keep itself in.
+A correct password creates a five-minute ticket instead of a session. Tickets
+are single-use and expire after five failed code attempts. Suspension, password
+reset and disabling two-factor invalidate pending sign-ins. The dashboard accepts
+an authenticator code or recovery code in its verification form.
 
-**API keys deliberately bypass 2FA.** They are a separate credential with their
-own scopes and revocation, and a second factor cannot be typed by a script. If
-you turn 2FA on because an account may be compromised, revoke its keys too.
+Accepted TOTP time steps are recorded in the database, preventing reuse across
+tickets and API restarts. Recovery codes are stored as SHA-256 hashes and removed
+when used. A per-account database lock prevents concurrent requests from spending
+the same code twice. Preserve `ENCRYPTION_KEY` when migrating an installation.
+The Account page provides enrollment/confirmation, recovery-code regeneration
+and removal. Sensitive changes require the password and active second factor.
+Session and API-key secrets are shown only at creation; API keys have a default
+90-day expiry and explicit scope ceilings.
 
 ### Authorisation
 
@@ -89,7 +82,7 @@ A permission left out of a role's map is **neutral**: it neither grants nor
 blocks, leaving another source to decide. Neutral is expressed by absence, so
 there is exactly one way to say it.
 
-The same resolver produces the *effective* permission list the dashboard uses
+The same resolver produces the _effective_ permission list the dashboard uses
 to decide which tabs to show, and filters the server list so a denied server
 does not appear and then 403 when opened. A second implementation of these
 rules anywhere would be a way for the UI and the API to disagree.
@@ -125,24 +118,30 @@ those tests are the specification.
 Every game server runs with:
 
 - a non-root user (`1000:1000`)
-- `CapDrop: ALL`, and `no-new-privileges` **where the host supports it**
-- hard memory, CPU, PID and block-IO limits
-- `MemorySwap == Memory`, so a leaking server cannot drag the host into swap
+- `CapDrop: ALL` and `no-new-privileges`
+- configured memory and CPU limits, and a 2,048-process limit
+- the configured additional swap allowance; zero disables swap, while an unset
+  value preserves Docker's default
+- I/O weighting only when Docker reports support (a scheduling weight, not a
+  hard throughput limit)
 - only its own data directory bind-mounted
-- log rotation, so a spamming server cannot fill the disk
+- Docker stdout/stderr log rotation at 20 MiB × 3 files; game-written files
+  still consume the monitored storage budget
 
 Restart policy is `no` — the panel owns restarts. Letting Docker restart a
 crashed server behind our back would desync state and hide crash loops.
 
-**About `no-new-privileges`.** On some kernel and Docker combinations, setting
-this flag makes *every* exec fail with "operation not permitted", regardless of
-image or user — turning a defence-in-depth measure into a total outage. The
-runtime therefore probes it once at startup with a throwaway container and
-applies it only where it works, logging a warning when it does not. Capability
-dropping and the non-root user are unaffected and always apply.
+If the host rejects these protections, startup fails with the Docker error;
+the runtime never silently retries with weaker settings. Installation containers
+also run without root, with 2 GiB RAM, two CPU cores, bounded logs and a process
+limit by default. A separate, fixed-command ownership helper has only CHOWN and
+DAC_OVERRIDE, no network, a read-only root filesystem, and the target data mount.
+Unreadable host shares produce an actionable error; the helper cannot override
+filesystem policy imposed outside the Docker VM.
 
-If you see `no-new-privileges` disabled in your logs and want it back, the fix
-is at the host level (kernel or Docker version), not in the panel.
+The launcher does not edit host firewall rules. Access to the API's Docker socket
+still makes the panel a trusted host administration tool; game-container limits
+do not turn the API into an untrusted multi-tenant security boundary.
 
 ### Input handling
 
@@ -157,18 +156,21 @@ is at the host level (kernel or Docker version), not in the panel.
 
 ### Secrets
 
-- `SESSION_SECRET` and `ENCRYPTION_KEY` are 32-byte random values, length-
-  checked at boot so a truncated paste fails at start rather than at first login.
-- Stored integration secrets are AES-256-GCM encrypted.
-- Logs redact cookies, authorization headers, and every known password field.
-- Secret settings are never echoed back by the API; the UI shows set/not-set
-  and writes a new value only if you enter one.
+Bootstrap generates random `SESSION_SECRET` and `ENCRYPTION_KEY` values; keep
+`.env` out of version control and preserve the encryption key in backups.
+TOTP secrets use AES-256-GCM. Game configuration files and server settings can
+contain plaintext game passwords, so restrict access to database and game backups.
+
+The API omits secret settings from its configuration responses and returns
+set/not-set indicators instead. Request bodies and authentication headers are
+not included in normal request logging. The logger redacts secret fields and known environment secrets. Never add
+credentials or full request bodies to logs; redaction is an additional safeguard.
+Audit events describe changes without storing the new secret values.
 
 ### Outbound requests from user input
 
-A schedule's webhook action is the one place a user gets to name a URL that the
-panel itself then requests, from inside whatever network the panel runs on.
-Unguarded that is a probe for the Docker API on localhost, a router admin page
+A schedule's webhook action lets a user name a URL that the panel requests
+from inside its own network. Unguarded, that is a probe for the Docker API on localhost, a router admin page
 on the LAN, or the cloud metadata service on `169.254.169.254`, which on a
 hosted box hands out instance credentials.
 
@@ -186,12 +188,41 @@ hosted box hands out instance credentials.
 
 See `apps/api/src/lib/ssrf.ts`.
 
-### Rate limiting and CORS
+### Sign-in limits and browser origins
 
-Global limit of 300 requests/minute per IP, backed by Redis so it holds across
-replicas. `trustProxy` is on, so limits key on the real client IP rather than
-your reverse proxy's. CORS is an explicit allowlist with credentials enabled —
-`CORS_ORIGINS` must list your dashboard's exact origin.
+Password sign-in and registration share a limit of ten attempts per normalized
+username per fifteen minutes, plus sixty total attempts per minute. The username
+limit cannot be bypassed by changing forwarded IP headers. Limits and pending
+2FA tickets live in the API process and reset when it restarts; run one API
+process, or introduce shared storage before using replicas. This is not a global
+rate limit on authenticated game-management traffic.
+
+Browser writes must originate from the dashboard's own origin or an exact
+`CORS_ORIGINS` entry. Cross-site browser writes without an Origin header are
+also rejected. The streaming dashboard proxy supports LAN, public HTTPS and
+Tailscale URLs without embedding a separate API address in the browser.
+
+The browser stays on the same-origin web proxy. It strips incoming forwarded
+headers and signs the client/origin metadata with the installation secret. The
+API trusts only that signed proxy path. Scheme selection is explicit through
+DASHBOARD_SCHEME; spoofed forwarding headers cannot enable Secure cookies, bypass
+origin checks or change client throttling. The API has no published host port
+in the packaged installation. Keep the web service behind trusted infrastructure.
+
+### Networking permissions
+
+Network configuration and Tailscale device authorization require a panel owner
+or administrator. UPnP additionally requires a server manager's explicit opt-in.
+Only game and declared discovery ports can be forwarded; management ports stay
+private. Existing router rules are preserved and ownership is checked before
+updates or removal. Tailscale integration never enables public Funnel access.
+See [networking.md](networking.md) for router and tailnet limits.
+
+### Dependency maintenance
+
+Run `npm audit --omit=dev` when updating runtime dependencies. The root PostCSS
+and UUID overrides keep transitive dependencies on patched versions compatible
+with this release; recheck those overrides during future framework upgrades.
 
 ## Deploying safely
 
@@ -202,7 +233,7 @@ behind one hostname. Point a domain at the machine, then in `.env`:
 ```bash
 PANEL_DOMAIN="panel.example.com"
 BIND_HOST="127.0.0.1"
-NEXT_PUBLIC_API_URL="https://panel.example.com"
+NEXT_PUBLIC_API_URL="auto"
 CORS_ORIGINS="https://panel.example.com"
 COOKIE_SECURE="true"
 ```
@@ -220,8 +251,8 @@ skip the certificate entirely and sign in over plain HTTP. Setting it to
 the `Secure` flag will be sent over plain HTTP if anything ever downgrades the
 connection.
 
-See [setup.md](setup.md#https) for the full walkthrough, including why
-`NEXT_PUBLIC_API_URL` has to be right *before* the image is built.
+See [setup.md](setup.md#https) for the full walkthrough, including
+rebuilding older images that embedded a localhost API address.
 
 **Do not expose the game port range to the internet unless you mean to.** Only
 publish the ports for servers people should be able to reach.
@@ -249,3 +280,8 @@ Open a private security advisory rather than a public issue.
   behind a firewall policy you control.
 - **Backups are not encrypted at rest.** They are plain `tar.gz` — deliberately,
   so you can open them with any tool. Encrypt the volume if that matters.
+
+Game file reads validate the opened Linux file descriptor before reading bytes,
+so a directory swapped by a running game cannot redirect a download outside its
+server root. Text reads remain bounded if a file grows during reading. Run the
+API in its Linux image; the descriptor check depends on Linux `/proc/self/fd`.

@@ -123,6 +123,7 @@ export interface InstallTools {
     /** Extra env for the install container. */
     env?: Record<string, string>;
     timeoutMs?: number;
+    onLine?: (line: string) => void;
   }): Promise<{ exitCode: number; output: string }>;
 }
 
@@ -166,6 +167,8 @@ export interface StartupPlan {
     purpose: string;
     protocol: 'tcp' | 'udp';
     fixed?: boolean;
+    /** Public discovery traffic only; administration ports never qualify. */
+    public?: boolean;
   }[];
   /**
    * How a command typed in the panel console reaches the game.
@@ -195,6 +198,8 @@ export interface StartupPlan {
 
   /** Written to stdin to request a graceful shutdown, e.g. "stop\n". */
   stopCommand?: string;
+  /** Signal for games that save on SIGINT rather than Docker's SIGTERM default. */
+  stopSignal?: 'SIGINT' | 'SIGTERM';
   /** Seconds to wait after `stopCommand` before SIGKILL. */
   stopTimeoutSeconds: number;
   /**

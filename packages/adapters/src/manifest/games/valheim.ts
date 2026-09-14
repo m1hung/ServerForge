@@ -88,11 +88,12 @@ export const valheimManifest: GameManifest = {
       key: 'Password',
       type: 'string',
       label: 'Join password',
-      help: 'Leave empty for an open server. Players must enter this before joining.',
+      help: 'Valheim requires at least five characters. Players enter this before joining.',
       tier: 'basic',
       group: 'Server',
       default: '',
       secret: true,
+      minLength: 5,
       maxLength: 64,
       restartRequired: true,
       target: { kind: 'internal' },
@@ -160,10 +161,11 @@ export const valheimManifest: GameManifest = {
     },
     ports: [
       { containerPort: 2456, purpose: 'game', protocol: 'udp' },
-      { containerPort: 2457, purpose: 'query', protocol: 'udp' },
+      { containerPort: 2457, purpose: 'query', protocol: 'udp', public: true },
     ],
     // No stdin shutdown command. SIGINT triggers a clean save.
     stopTimeoutSeconds: 60,
+    stopSignal: 'SIGINT',
     readyPattern: 'Game server connected',
   },
 

@@ -53,7 +53,8 @@ const ARGON2_OPTIONS = {
 
 async function main() {
   const seedUsername = process.env.SEED_ADMIN_USERNAME?.trim().toLowerCase();
-  const password = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe123!';
+  const password = process.env.SEED_ADMIN_PASSWORD || '';
+  if (seedUsername && (password.length < 10 || password === 'ChangeMe123!')) throw new Error('Set a unique SEED_ADMIN_PASSWORD of at least 10 characters, or use protected browser setup.');
 
   if (seedUsername) {
     const existing = await prisma.user.findUnique({ where: { username: seedUsername } });
@@ -75,40 +76,17 @@ async function main() {
       }
     }
   } else {
-    // Historical installs seeded admin@example.com automatically, which hid the
-    // first-run create-account screen. Remove that default only when it still
-    // looks unused (no owned servers) so real installs are left alone.
-    // Legacy seed used username "admin" / displayName "Owner".
-    const leftovers = await prisma.user.findMany({
-      where: { username: 'admin', displayName: 'Owner' },
-      include: { _count: { select: { ownedServers: true } } },
-    });
-    let removed = 0;
-    for (const leftover of leftovers) {
-      if (leftover._count.ownedServers > 0) {
-        console.log(
-          `✓ keeping ${leftover.username} — owns ${leftover._count.ownedServers} server(s); sign in with that username`,
-        );
-        continue;
-      }
-      await prisma.user.delete({ where: { id: leftover.id } });
-      removed += 1;
-    }
-    if (removed > 0) {
-      console.log('✓ removed default seed owner so first-run setup can run');
-    } else if (leftovers.length === 0) {
-      console.log('✓ no seed owner — create the first account in the dashboard');
-    }
+    console.log('Owner accounts are managed through protected setup and workspace accounts. Existing accounts are preserved.');
   }
 
-  const dataRoot = path.resolve(process.env.DATA_ROOT ?? './data/servers');
-  const backupRoot = path.resolve(process.env.BACKUP_ROOT ?? './data/backups');
+  const dataRoot = path.resolve(process.env.HOST_DATA_ROOT || process.env.DATA_ROOT || './data/servers');
+  const backupRoot = path.resolve(process.env.HOST_BACKUP_ROOT || process.env.BACKUP_ROOT || './data/backups');
   const portStart = Number(process.env.PORT_RANGE_START ?? 25500);
   const portEnd = Number(process.env.PORT_RANGE_END ?? 25999);
 
   const publicHost = detectPublicHost();
 
-  let node = await prisma.node.findFirst({ where: { transport: 'docker', name: 'local' } });
+  let node = await prisma.node.findFirst({ where: { transport: 'docker' } });
   if (!node) {
     node = await prisma.node.create({
       data: {
@@ -126,19 +104,7 @@ async function main() {
     });
     console.log(`✓ registered local node — players join at ${publicHost}`);
   } else {
-    node = await prisma.node.update({
-      where: { id: node.id },
-      data: {
-        dataRoot,
-        backupRoot,
-        portRangeStart: portStart,
-        portRangeEnd: portEnd,
-        // Only correct a default that was never usable off-machine; a host
-        // someone deliberately set (a domain name) is left alone.
-        ...(node.publicHost === 'localhost' ? { publicHost } : {}),
-      },
-    });
-    console.log(`✓ local node refreshed — players join at ${node.publicHost}`);
+    console.log(`✓ keeping local node settings — players join at ${node.publicHost}`);
   }
 
   // Materialise the port range so allocation is a cheap indexed update.
@@ -148,7 +114,7 @@ async function main() {
   });
   const have = new Set(existingPorts.map((a) => a.port));
   const missing: { nodeId: string; ip: string; port: number }[] = [];
-  for (let port = portStart; port <= portEnd; port++) {
+  for (let port = node.portRangeStart; port <= node.portRangeEnd; port++) {
     if (!have.has(port)) missing.push({ nodeId: node.id, ip: '0.0.0.0', port });
   }
   if (missing.length > 0) {

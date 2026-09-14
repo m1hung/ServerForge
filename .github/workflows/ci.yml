@@ -1,0 +1,46 @@
+name: Release checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: docker build --file docker/Dockerfile.api --target maintenance --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-maintenance:check .
+      - run: docker build --file docker/Dockerfile.api --target runner --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-api:check .
+      - run: docker build --file docker/Dockerfile.web --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-web:check .
+      - run: docker build --file docker/Dockerfile.services --target postgres --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-postgres:$(node -p 'require("./release.json").version') .
+      - run: docker build --file docker/Dockerfile.services --target tailscale --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-tailscale:$(node -p 'require("./release.json").version') .
+      - run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:packaged
+      - run: npm audit --audit-level=high
+      - run: node scripts/scan-images.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: integration-results
+          path: |
+            data/release-tests/**/result.json
+            data/release-tests/**/recovery-result.json
+            data/release-tests/image-scans-current/*.sbom.json
+            data/release-tests/image-scans-current/*.scan.json
+          if-no-files-found: warn

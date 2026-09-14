@@ -46,13 +46,14 @@ export function slugify(value: string): string {
 export function resolveBrand(env: Record<string, string | undefined> = readEnv()): Brand {
   const name = env.BRAND_NAME || env.NEXT_PUBLIC_BRAND_NAME || DEFAULT_NAME;
   const slug = slugify(name);
+  const resourcePrefix = env.BRAND_RESOURCE_PREFIX ? slugify(env.BRAND_RESOURCE_PREFIX) : slug;
   return {
     name,
     slug,
     tagline: env.BRAND_TAGLINE || env.NEXT_PUBLIC_BRAND_TAGLINE || DEFAULT_TAGLINE,
     accent: env.BRAND_ACCENT || env.NEXT_PUBLIC_BRAND_ACCENT || DEFAULT_ACCENT,
-    resourcePrefix: slug,
-    labelNamespace: `${slug}.io`,
+    resourcePrefix,
+    labelNamespace: `${resourcePrefix}.io`,
   };
 }
 

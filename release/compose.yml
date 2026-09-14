@@ -1,0 +1,136 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: &logging
+      driver: json-file
+      options: { max-size: 20m, max-file: '3' }
+  api:
+    image: ${API_IMAGE:?required}
+    pull_policy: never
+    restart: unless-stopped
+    stop_grace_period: 100s
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      DATA_ROOT: /var/lib/serverforge/servers
+      BACKUP_ROOT: /var/lib/serverforge/backups
+      CACHE_ROOT: /var/lib/serverforge/cache
+      THEMES_ROOT: /var/lib/serverforge/themes
+      GAMES_ROOT: /var/lib/serverforge/games
+      DOCKER_SOCKET: /var/run/docker.sock
+      DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME}_games
+      TAILSCALE_SOCKET: /var/run/serverforge-tailscale/tailscaled.sock
+      TAILSCALE_PROXY_TARGET: http://web:3000
+    volumes:
+      - ${DOCKER_SOCKET_FILE:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${HOST_DATA_ROOT}:/var/lib/serverforge/servers
+      - ${HOST_BACKUP_ROOT}:/var/lib/serverforge/backups
+      - ${HOST_CACHE_ROOT}:/var/lib/serverforge/cache
+      - ${HOST_THEMES_ROOT}:/var/lib/serverforge/themes
+      - ${HOST_GAMES_ROOT}:/var/lib/serverforge/games
+      - tailscale-run:/var/run/serverforge-tailscale
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:8080'+(process.env.HEALTH_PATH||'/health/ready')).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    pids_limit: 1024
+    mem_limit: 1g
+    logging: *logging
+    networks: [default, games]
+  web:
+    image: ${WEB_IMAGE:?required}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      API_INTERNAL_URL: http://api:8080
+      SESSION_SECRET: ${SESSION_SECRET:?required}
+      DASHBOARD_SCHEME: ${DASHBOARD_SCHEME:-http}
+      BRAND_NAME: ${BRAND_NAME:-ServerForge}
+      BRAND_TAGLINE: ${BRAND_TAGLINE:-Launch a game server in minutes, not hours.}
+      BRAND_ACCENT: '${BRAND_ACCENT:-#f97316}'
+    ports: ['${BIND_HOST:-127.0.0.1}:${WEB_PORT:-3000}:3000']
+    depends_on: [api]
+    user: '1001:1001'
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    pids_limit: 512
+    mem_limit: 768m
+    logging: *logging
+  maintenance:
+    networks: [default, games]
+    image: ${MAINTENANCE_IMAGE:?required}
+    pull_policy: never
+    profiles: [tools]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      API_INTERNAL_URL: http://api:8080
+      DATA_ROOT: /var/lib/serverforge/servers
+      BACKUP_ROOT: /var/lib/serverforge/backups
+      THEMES_ROOT: /var/lib/serverforge/themes
+      GAMES_ROOT: /var/lib/serverforge/games
+      RECOVERY_ROOT: /var/lib/serverforge/recovery
+      INSTALLATION_ROOT: /etc/serverforge
+    volumes:
+      - ${HOST_CONFIG_ROOT}:/etc/serverforge
+      - ${HOST_DATA_ROOT}:/var/lib/serverforge/servers
+      - ${HOST_BACKUP_ROOT}:/var/lib/serverforge/backups
+      - ${HOST_THEMES_ROOT}:/var/lib/serverforge/themes
+      - ${HOST_GAMES_ROOT}:/var/lib/serverforge/games
+      - ${HOST_RECOVERY_ROOT}:/var/lib/serverforge/recovery
+    command: ['packages/maintenance/src/cli.mjs', 'release-info']
+    pids_limit: 512
+    mem_limit: 1g
+    logging: *logging
+  backup-worker:
+    extends: maintenance
+    profiles: [backups]
+    restart: unless-stopped
+    command: ['packages/maintenance/src/cli.mjs', 'schedule']
+    depends_on:
+      api: { condition: service_healthy }
+  tailscale:
+    image: ${TAILSCALE_IMAGE:-serverforge-tailscale:0.1.0-rc.1}
+    profiles: [tailscale]
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '/config/start.sh']
+    environment:
+      TS_HOSTNAME: ${TS_HOSTNAME:-serverforge}
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-run:/var/run/tailscale
+      - ${HOST_CONFIG_ROOT}/tailscale-entrypoint.sh:/config/start.sh:ro
+    depends_on: [web]
+    logging: *logging
+networks:
+  games:
+    name: ${COMPOSE_PROJECT_NAME}_games
+volumes:
+  postgres-data:
+    name: ${POSTGRES_VOLUME:-${COMPOSE_PROJECT_NAME}_postgres-data}
+  tailscale-state:
+  tailscale-run:

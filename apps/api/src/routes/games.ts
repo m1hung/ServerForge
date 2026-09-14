@@ -3,6 +3,8 @@ import { listAdapters, getAdapter, loadManifestsFrom } from '@serverforge/adapte
 import { defaultsFor } from '@serverforge/core';
 import { config } from '../lib/config.js';
 import { requireUser } from '../plugins/auth.js';
+import { gameCompatibility } from '../services/platform.js';
+import { runtime } from './servers.js';
 
 let manifestsLoaded = false;
 
@@ -33,11 +35,13 @@ export async function gameRoutes(app: FastifyInstance) {
     await ensureManifests();
     const { gameId } = request.params as { gameId: string };
     const adapter = getAdapter(gameId);
+    const capabilities = await runtime.capabilities();
     return {
       id: adapter.id,
       name: adapter.name,
       summary: adapter.summary,
       icon: adapter.icon,
+      compatibility: gameCompatibility(gameId, capabilities),
       variants: adapter.variants.map((variant) => ({
         ...variant,
         defaults: adapter.defaultLimits(variant.id),

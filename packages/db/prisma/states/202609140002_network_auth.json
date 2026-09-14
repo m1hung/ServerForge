@@ -1,0 +1,1497 @@
+[
+  {
+    "kind": "column",
+    "name": "AccessRole.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "AccessRole.description",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "AccessRole.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "AccessRole.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "AccessRole.permissions",
+    "definition": "jsonb:true:'{}'::jsonb"
+  },
+  {
+    "kind": "column",
+    "name": "AccessRole.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "AccessRole.updatedAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.action",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.actorId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.actorName",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.at",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.message",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.metadata",
+    "definition": "jsonb:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Activity.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.ip",
+    "definition": "text:true:'0.0.0.0'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.nodeId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.notes",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.port",
+    "definition": "integer:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.primary",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.purpose",
+    "definition": "text:true:'game'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Allocation.serverId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.expiresAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.lastUsedAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.prefix",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.revokedAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.scopes",
+    "definition": "text[]:false:ARRAY['*'::text]"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.tokenHash",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ApiKey.userId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.action",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.actorId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.at",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.ip",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.metadata",
+    "definition": "jsonb:false:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.targetId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "AuditLog.targetType",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.checksum",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.configuration",
+    "definition": "jsonb:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.error",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.filePath",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.finishedAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.scheduleId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.sizeBytes",
+    "definition": "bigint:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.startedAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Backup.state",
+    "definition": "\"BackupState\":true:'pending'::\"BackupState\""
+  },
+  {
+    "kind": "column",
+    "name": "Backup.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstallLog.at",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "InstallLog.id",
+    "definition": "bigint:true:nextval('\"InstallLog_id_seq\"'::regclass)"
+  },
+  {
+    "kind": "column",
+    "name": "InstallLog.message",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstallLog.phase",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstallLog.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.checksum",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.configuration",
+    "definition": "jsonb:false:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.enabled",
+    "definition": "boolean:true:true"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.fileName",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.installedAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.kind",
+    "definition": "text:true:'mod'::text"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.projectId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.sizeBytes",
+    "definition": "bigint:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.source",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.updateAvailable",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.versionId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "InstalledMod.versionName",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.at",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.cpuPercent",
+    "definition": "double precision:true:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.diskBytes",
+    "definition": "bigint:false:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.id",
+    "definition": "bigint:true:nextval('\"MetricSample_id_seq\"'::regclass)"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.memoryBytes",
+    "definition": "bigint:true:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.mspt",
+    "definition": "double precision:false:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.networkRx",
+    "definition": "bigint:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.networkTx",
+    "definition": "bigint:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.playersOnline",
+    "definition": "integer:false:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "MetricSample.tps",
+    "definition": "double precision:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.agentToken",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.agentUrl",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.backupRoot",
+    "definition": "text:true:'/var/lib/serverforge/backups'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Node.cpuCores",
+    "definition": "double precision:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "Node.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "Node.dataRoot",
+    "definition": "text:true:'/var/lib/serverforge/servers'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Node.diskMib",
+    "definition": "integer:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "Node.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.lastSeenAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.maintenance",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "Node.memoryMib",
+    "definition": "integer:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "Node.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.online",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "Node.overheadPct",
+    "definition": "integer:true:10"
+  },
+  {
+    "kind": "column",
+    "name": "Node.portRangeEnd",
+    "definition": "integer:true:25999"
+  },
+  {
+    "kind": "column",
+    "name": "Node.portRangeStart",
+    "definition": "integer:true:25500"
+  },
+  {
+    "kind": "column",
+    "name": "Node.publicHost",
+    "definition": "text:true:'localhost'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Node.transport",
+    "definition": "text:true:'docker'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Node.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Node.updatedAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.actions",
+    "definition": "jsonb:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.cooldownSeconds",
+    "definition": "integer:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.creatorId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.cron",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.enabled",
+    "definition": "boolean:true:true"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.lastRunAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.lastRunError",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.lastRunOk",
+    "definition": "boolean:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.nextRunAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.onlyWhenOnline",
+    "definition": "boolean:true:true"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.timezone",
+    "definition": "text:true:'UTC'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.triggerType",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Schedule.updatedAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.autoRestart",
+    "definition": "boolean:true:true"
+  },
+  {
+    "kind": "column",
+    "name": "Server.build",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.containerId",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.cpuCores",
+    "definition": "double precision:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.crashCount",
+    "definition": "integer:true:0"
+  },
+  {
+    "kind": "column",
+    "name": "Server.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "Server.customJavaFlags",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.dataPath",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.description",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.diskMib",
+    "definition": "integer:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.environment",
+    "definition": "jsonb:true:'{}'::jsonb"
+  },
+  {
+    "kind": "column",
+    "name": "Server.gameId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.installedAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.ioWeight",
+    "definition": "integer:true:500"
+  },
+  {
+    "kind": "column",
+    "name": "Server.javaFlagsPreset",
+    "definition": "text:true:'balanced'::text"
+  },
+  {
+    "kind": "column",
+    "name": "Server.javaMajor",
+    "definition": "integer:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.lastCrashAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.lastStartAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.memoryMib",
+    "definition": "integer:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.name",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.nodeId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.ownerId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.publicAccess",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "Server.settings",
+    "definition": "jsonb:true:'{}'::jsonb"
+  },
+  {
+    "kind": "column",
+    "name": "Server.startupOverride",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.state",
+    "definition": "\"ServerState\":true:'creating'::\"ServerState\""
+  },
+  {
+    "kind": "column",
+    "name": "Server.suspendedAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.swapMib",
+    "definition": "integer:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.updatedAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.variantId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Server.version",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ServerUser.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "ServerUser.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ServerUser.permissions",
+    "definition": "text[]:false:"
+  },
+  {
+    "kind": "column",
+    "name": "ServerUser.serverId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "ServerUser.userId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Session.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "Session.expiresAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Session.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Session.ip",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Session.tokenHash",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Session.userAgent",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "Session.userId",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Setting.encrypted",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "Setting.key",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Setting.updatedAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "Setting.value",
+    "definition": "jsonb:true:"
+  },
+  {
+    "kind": "column",
+    "name": "User.avatarColor",
+    "definition": "text:true:'#f97316'::text"
+  },
+  {
+    "kind": "column",
+    "name": "User.createdAt",
+    "definition": "timestamp(3) without time zone:true:CURRENT_TIMESTAMP"
+  },
+  {
+    "kind": "column",
+    "name": "User.displayName",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "User.id",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "User.lastLoginAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "User.passwordHash",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "User.recoveryCodeHashes",
+    "definition": "text[]:false:ARRAY[]::text[]"
+  },
+  {
+    "kind": "column",
+    "name": "User.role",
+    "definition": "\"Role\":true:'user'::\"Role\""
+  },
+  {
+    "kind": "column",
+    "name": "User.suspended",
+    "definition": "boolean:true:false"
+  },
+  {
+    "kind": "column",
+    "name": "User.totpEnabledAt",
+    "definition": "timestamp(3) without time zone:false:"
+  },
+  {
+    "kind": "column",
+    "name": "User.totpLastCounter",
+    "definition": "integer:false:"
+  },
+  {
+    "kind": "column",
+    "name": "User.totpSecret",
+    "definition": "text:false:"
+  },
+  {
+    "kind": "column",
+    "name": "User.uid",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "User.updatedAt",
+    "definition": "timestamp(3) without time zone:true:"
+  },
+  {
+    "kind": "column",
+    "name": "User.username",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "_ServerUserRoles.A",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "column",
+    "name": "_ServerUserRoles.B",
+    "definition": "text:true:"
+  },
+  {
+    "kind": "constraint",
+    "name": "AccessRole.AccessRole_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Activity.Activity_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Activity.Activity_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "Allocation.Allocation_nodeId_fkey",
+    "definition": "FOREIGN KEY (\"nodeId\") REFERENCES \"Node\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "Allocation.Allocation_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Allocation.Allocation_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+  },
+  {
+    "kind": "constraint",
+    "name": "ApiKey.ApiKey_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "ApiKey.ApiKey_userId_fkey",
+    "definition": "FOREIGN KEY (\"userId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "AuditLog.AuditLog_actorId_fkey",
+    "definition": "FOREIGN KEY (\"actorId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+  },
+  {
+    "kind": "constraint",
+    "name": "AuditLog.AuditLog_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Backup.Backup_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Backup.Backup_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "InstallLog.InstallLog_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "InstallLog.InstallLog_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "InstalledMod.InstalledMod_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "InstalledMod.InstalledMod_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "MetricSample.MetricSample_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "MetricSample.MetricSample_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "Node.Node_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Schedule.Schedule_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Schedule.Schedule_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "Server.Server_nodeId_fkey",
+    "definition": "FOREIGN KEY (\"nodeId\") REFERENCES \"Node\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+  },
+  {
+    "kind": "constraint",
+    "name": "Server.Server_ownerId_fkey",
+    "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+  },
+  {
+    "kind": "constraint",
+    "name": "Server.Server_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "ServerUser.ServerUser_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "ServerUser.ServerUser_serverId_fkey",
+    "definition": "FOREIGN KEY (\"serverId\") REFERENCES \"Server\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "ServerUser.ServerUser_userId_fkey",
+    "definition": "FOREIGN KEY (\"userId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "Session.Session_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "Session.Session_userId_fkey",
+    "definition": "FOREIGN KEY (\"userId\") REFERENCES \"User\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "Setting.Setting_pkey",
+    "definition": "PRIMARY KEY (key)"
+  },
+  {
+    "kind": "constraint",
+    "name": "User.User_pkey",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "kind": "constraint",
+    "name": "_ServerUserRoles._ServerUserRoles_AB_pkey",
+    "definition": "PRIMARY KEY (\"A\", \"B\")"
+  },
+  {
+    "kind": "constraint",
+    "name": "_ServerUserRoles._ServerUserRoles_A_fkey",
+    "definition": "FOREIGN KEY (\"A\") REFERENCES \"AccessRole\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "constraint",
+    "name": "_ServerUserRoles._ServerUserRoles_B_fkey",
+    "definition": "FOREIGN KEY (\"B\") REFERENCES \"ServerUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+  },
+  {
+    "kind": "enum",
+    "name": "BackupState",
+    "definition": "pending,running,completed,failed,deleting"
+  },
+  {
+    "kind": "enum",
+    "name": "Role",
+    "definition": "owner,admin,user"
+  },
+  {
+    "kind": "enum",
+    "name": "ServerState",
+    "definition": "creating,installing,install_failed,offline,starting,running,stopping,crashed,updating,restoring,suspended,deleting"
+  },
+  {
+    "kind": "index",
+    "name": "AccessRole_name_key",
+    "definition": "CREATE UNIQUE INDEX \"AccessRole_name_key\" ON public.\"AccessRole\" USING btree (name)"
+  },
+  {
+    "kind": "index",
+    "name": "AccessRole_pkey",
+    "definition": "CREATE UNIQUE INDEX \"AccessRole_pkey\" ON public.\"AccessRole\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "AccessRole_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"AccessRole_uid_key\" ON public.\"AccessRole\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "Activity_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Activity_pkey\" ON public.\"Activity\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Activity_serverId_at_idx",
+    "definition": "CREATE INDEX \"Activity_serverId_at_idx\" ON public.\"Activity\" USING btree (\"serverId\", at)"
+  },
+  {
+    "kind": "index",
+    "name": "Allocation_nodeId_ip_port_key",
+    "definition": "CREATE UNIQUE INDEX \"Allocation_nodeId_ip_port_key\" ON public.\"Allocation\" USING btree (\"nodeId\", ip, port)"
+  },
+  {
+    "kind": "index",
+    "name": "Allocation_nodeId_serverId_idx",
+    "definition": "CREATE INDEX \"Allocation_nodeId_serverId_idx\" ON public.\"Allocation\" USING btree (\"nodeId\", \"serverId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Allocation_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Allocation_pkey\" ON public.\"Allocation\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Allocation_serverId_idx",
+    "definition": "CREATE INDEX \"Allocation_serverId_idx\" ON public.\"Allocation\" USING btree (\"serverId\")"
+  },
+  {
+    "kind": "index",
+    "name": "ApiKey_pkey",
+    "definition": "CREATE UNIQUE INDEX \"ApiKey_pkey\" ON public.\"ApiKey\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "ApiKey_tokenHash_key",
+    "definition": "CREATE UNIQUE INDEX \"ApiKey_tokenHash_key\" ON public.\"ApiKey\" USING btree (\"tokenHash\")"
+  },
+  {
+    "kind": "index",
+    "name": "ApiKey_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"ApiKey_uid_key\" ON public.\"ApiKey\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "ApiKey_userId_idx",
+    "definition": "CREATE INDEX \"ApiKey_userId_idx\" ON public.\"ApiKey\" USING btree (\"userId\")"
+  },
+  {
+    "kind": "index",
+    "name": "AuditLog_at_idx",
+    "definition": "CREATE INDEX \"AuditLog_at_idx\" ON public.\"AuditLog\" USING btree (at)"
+  },
+  {
+    "kind": "index",
+    "name": "AuditLog_pkey",
+    "definition": "CREATE UNIQUE INDEX \"AuditLog_pkey\" ON public.\"AuditLog\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "AuditLog_targetType_targetId_idx",
+    "definition": "CREATE INDEX \"AuditLog_targetType_targetId_idx\" ON public.\"AuditLog\" USING btree (\"targetType\", \"targetId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Backup_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Backup_pkey\" ON public.\"Backup\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Backup_scheduleId_idx",
+    "definition": "CREATE INDEX \"Backup_scheduleId_idx\" ON public.\"Backup\" USING btree (\"scheduleId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Backup_serverId_createdAt_idx",
+    "definition": "CREATE INDEX \"Backup_serverId_createdAt_idx\" ON public.\"Backup\" USING btree (\"serverId\", \"createdAt\")"
+  },
+  {
+    "kind": "index",
+    "name": "Backup_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"Backup_uid_key\" ON public.\"Backup\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "InstallLog_pkey",
+    "definition": "CREATE UNIQUE INDEX \"InstallLog_pkey\" ON public.\"InstallLog\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "InstallLog_serverId_at_idx",
+    "definition": "CREATE INDEX \"InstallLog_serverId_at_idx\" ON public.\"InstallLog\" USING btree (\"serverId\", at)"
+  },
+  {
+    "kind": "index",
+    "name": "InstalledMod_pkey",
+    "definition": "CREATE UNIQUE INDEX \"InstalledMod_pkey\" ON public.\"InstalledMod\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "InstalledMod_serverId_fileName_key",
+    "definition": "CREATE UNIQUE INDEX \"InstalledMod_serverId_fileName_key\" ON public.\"InstalledMod\" USING btree (\"serverId\", \"fileName\")"
+  },
+  {
+    "kind": "index",
+    "name": "InstalledMod_serverId_idx",
+    "definition": "CREATE INDEX \"InstalledMod_serverId_idx\" ON public.\"InstalledMod\" USING btree (\"serverId\")"
+  },
+  {
+    "kind": "index",
+    "name": "MetricSample_pkey",
+    "definition": "CREATE UNIQUE INDEX \"MetricSample_pkey\" ON public.\"MetricSample\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "MetricSample_serverId_at_idx",
+    "definition": "CREATE INDEX \"MetricSample_serverId_at_idx\" ON public.\"MetricSample\" USING btree (\"serverId\", at)"
+  },
+  {
+    "kind": "index",
+    "name": "Node_online_idx",
+    "definition": "CREATE INDEX \"Node_online_idx\" ON public.\"Node\" USING btree (online)"
+  },
+  {
+    "kind": "index",
+    "name": "Node_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Node_pkey\" ON public.\"Node\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Node_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"Node_uid_key\" ON public.\"Node\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "Schedule_enabled_nextRunAt_idx",
+    "definition": "CREATE INDEX \"Schedule_enabled_nextRunAt_idx\" ON public.\"Schedule\" USING btree (enabled, \"nextRunAt\")"
+  },
+  {
+    "kind": "index",
+    "name": "Schedule_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Schedule_pkey\" ON public.\"Schedule\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Schedule_serverId_idx",
+    "definition": "CREATE INDEX \"Schedule_serverId_idx\" ON public.\"Schedule\" USING btree (\"serverId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Schedule_triggerType_enabled_idx",
+    "definition": "CREATE INDEX \"Schedule_triggerType_enabled_idx\" ON public.\"Schedule\" USING btree (\"triggerType\", enabled)"
+  },
+  {
+    "kind": "index",
+    "name": "Schedule_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"Schedule_uid_key\" ON public.\"Schedule\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "ServerUser_pkey",
+    "definition": "CREATE UNIQUE INDEX \"ServerUser_pkey\" ON public.\"ServerUser\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "ServerUser_serverId_userId_key",
+    "definition": "CREATE UNIQUE INDEX \"ServerUser_serverId_userId_key\" ON public.\"ServerUser\" USING btree (\"serverId\", \"userId\")"
+  },
+  {
+    "kind": "index",
+    "name": "ServerUser_userId_idx",
+    "definition": "CREATE INDEX \"ServerUser_userId_idx\" ON public.\"ServerUser\" USING btree (\"userId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Server_nodeId_state_idx",
+    "definition": "CREATE INDEX \"Server_nodeId_state_idx\" ON public.\"Server\" USING btree (\"nodeId\", state)"
+  },
+  {
+    "kind": "index",
+    "name": "Server_ownerId_idx",
+    "definition": "CREATE INDEX \"Server_ownerId_idx\" ON public.\"Server\" USING btree (\"ownerId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Server_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Server_pkey\" ON public.\"Server\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Server_state_idx",
+    "definition": "CREATE INDEX \"Server_state_idx\" ON public.\"Server\" USING btree (state)"
+  },
+  {
+    "kind": "index",
+    "name": "Server_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"Server_uid_key\" ON public.\"Server\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "Session_expiresAt_idx",
+    "definition": "CREATE INDEX \"Session_expiresAt_idx\" ON public.\"Session\" USING btree (\"expiresAt\")"
+  },
+  {
+    "kind": "index",
+    "name": "Session_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Session_pkey\" ON public.\"Session\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "Session_tokenHash_key",
+    "definition": "CREATE UNIQUE INDEX \"Session_tokenHash_key\" ON public.\"Session\" USING btree (\"tokenHash\")"
+  },
+  {
+    "kind": "index",
+    "name": "Session_userId_idx",
+    "definition": "CREATE INDEX \"Session_userId_idx\" ON public.\"Session\" USING btree (\"userId\")"
+  },
+  {
+    "kind": "index",
+    "name": "Setting_pkey",
+    "definition": "CREATE UNIQUE INDEX \"Setting_pkey\" ON public.\"Setting\" USING btree (key)"
+  },
+  {
+    "kind": "index",
+    "name": "User_createdAt_idx",
+    "definition": "CREATE INDEX \"User_createdAt_idx\" ON public.\"User\" USING btree (\"createdAt\")"
+  },
+  {
+    "kind": "index",
+    "name": "User_pkey",
+    "definition": "CREATE UNIQUE INDEX \"User_pkey\" ON public.\"User\" USING btree (id)"
+  },
+  {
+    "kind": "index",
+    "name": "User_uid_key",
+    "definition": "CREATE UNIQUE INDEX \"User_uid_key\" ON public.\"User\" USING btree (uid)"
+  },
+  {
+    "kind": "index",
+    "name": "User_username_key",
+    "definition": "CREATE UNIQUE INDEX \"User_username_key\" ON public.\"User\" USING btree (username)"
+  },
+  {
+    "kind": "index",
+    "name": "_ServerUserRoles_AB_pkey",
+    "definition": "CREATE UNIQUE INDEX \"_ServerUserRoles_AB_pkey\" ON public.\"_ServerUserRoles\" USING btree (\"A\", \"B\")"
+  },
+  {
+    "kind": "index",
+    "name": "_ServerUserRoles_B_index",
+    "definition": "CREATE INDEX \"_ServerUserRoles_B_index\" ON public.\"_ServerUserRoles\" USING btree (\"B\")"
+  },
+  {
+    "kind": "relation",
+    "name": "AccessRole",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Activity",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Allocation",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "ApiKey",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "AuditLog",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Backup",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "InstallLog",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "InstalledMod",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "MetricSample",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Node",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Schedule",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Server",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "ServerUser",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Session",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "Setting",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "User",
+    "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "_ServerUserRoles",
+    "definition": "r:false:false"
+  }
+]

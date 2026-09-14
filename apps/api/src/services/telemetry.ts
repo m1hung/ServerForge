@@ -110,6 +110,9 @@ export function clearObservations(serverUid: string) {
   observed.get(serverUid)?.handle?.close();
   observed.delete(serverUid);
 }
+export function closeObservations() {
+  for (const uid of observed.keys()) clearObservations(uid);
+}
 export async function sampleServer(server: Server) {
   if (!server.containerId) return;
   const usage = await runtime.stats(server.containerId);
