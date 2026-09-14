@@ -8,6 +8,7 @@ import Docker from 'dockerode';
 import { fixtureDatabase } from '../scripts/migration-fixtures.mjs';
 import { migrateDatabase } from '../packages/maintenance/src/migrate.mjs';
 import { brand } from '@serverforge/core';
+import { DockerRuntime } from '../apps/api/src/runtime/docker.js';
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => { const server = net.createServer(); server.once('error', reject); server.listen(0, '127.0.0.1', () => { const port = (server.address() as net.AddressInfo).port; server.close(() => resolve(port)); }); });
@@ -58,12 +59,14 @@ it('reconnects to an orphaned owned container, survives API termination, and fla
     await migrateDatabase(databaseUrl);
     await fixture(async ({ start, stop, url, directory }) => {
       const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET });
+      const image = process.env.SF_TEST_IMAGE || 'node:22.23.2-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284';
+      await new DockerRuntime(process.env.DOCKER_SOCKET).ensureImage(image);
       const uid = `sf-crash-${randomBytes(5).toString('hex')}`;
       const dataPath = path.join(directory, 'servers', uid); await fs.mkdir(dataPath, { mode: 0o777 });
       const owner = await db.user.create({ data: { username: uid, displayName: 'Fixture', uid, role: 'owner', passwordHash: 'fixture-only' } });
       const node = await db.node.create({ data: { uid, name: uid, dataRoot: path.join(directory, 'servers') } });
       const server = await db.server.create({ data: { uid, name: uid, ownerId: owner.id, nodeId: node.id, gameId: 'minecraft-java', variantId: 'vanilla', version: '1.20.1', state: 'starting', installedAt: new Date(), dataPath, memoryMib: 64, cpuCores: 1, diskMib: 1024, autoRestart: false } });
-      const container = await docker.createContainer({ Image: 'redis:7-alpine', name: uid, User: '1000:1000', Entrypoint: ['/bin/sh', '-c'], Cmd: ['sleep 600'], WorkingDir: '/home/container', Labels: { [`${brand.labelNamespace}/managed`]: 'true', [`${brand.labelNamespace}/server`]: uid, 'serverforge.io/test-project': process.env.SF_TEST_PROJECT! }, HostConfig: { Binds: [`${dataPath}:/home/container`], NetworkMode: 'none', Memory: 64 * 1024 ** 2, PidsLimit: 64, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true'] } });
+      const container = await docker.createContainer({ Image: image, name: uid, User: '1000:1000', Entrypoint: ['/bin/sh', '-c'], Cmd: ['sleep 600'], WorkingDir: '/home/container', Labels: { [`${brand.labelNamespace}/managed`]: 'true', [`${brand.labelNamespace}/server`]: uid, 'serverforge.io/test-project': process.env.SF_TEST_PROJECT! }, HostConfig: { Binds: [`${dataPath}:/home/container`], NetworkMode: 'none', Memory: 64 * 1024 ** 2, PidsLimit: 64, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true'] } });
       try {
         await container.start(); const before = await container.inspect();
         start({ DATABASE_URL: databaseUrl });
