@@ -1302,7 +1302,7 @@ pre {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #8d94a0;
+  color: var(--muted);
   font-size: 11px;
 }
 .form-section-heading h2 {

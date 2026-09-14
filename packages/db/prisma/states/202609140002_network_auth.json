@@ -1446,6 +1446,11 @@
   },
   {
     "kind": "relation",
+    "name": "InstallLog_id_seq",
+    "definition": "S:false:false"
+  },
+  {
+    "kind": "relation",
     "name": "InstalledMod",
     "definition": "r:false:false"
   },
@@ -1453,6 +1458,11 @@
     "kind": "relation",
     "name": "MetricSample",
     "definition": "r:false:false"
+  },
+  {
+    "kind": "relation",
+    "name": "MetricSample_id_seq",
+    "definition": "S:false:false"
   },
   {
     "kind": "relation",

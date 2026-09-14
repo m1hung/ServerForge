@@ -7,7 +7,7 @@ export async function schemaState(db) {
       SELECT 'relation' AS kind, c.relname AS name,
         c.relkind::text || ':' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text AS definition
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f') AND c.relname <> '_prisma_migrations'
+      WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f','S','c') AND c.relname <> '_prisma_migrations'
       UNION ALL
       SELECT 'column', c.relname || '.' || a.attname,
         format_type(a.atttypid,a.atttypmod) || ':' || a.attnotnull::text || ':' || COALESCE(pg_get_expr(d.adbin,d.adrelid),'')
@@ -33,6 +33,11 @@ export async function schemaState(db) {
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'
       UNION ALL
       SELECT 'policy', tablename || '.' || policyname, cmd || ':' || COALESCE(qual,'') FROM pg_policies WHERE schemaname='public'
+      UNION ALL
+      SELECT 'domain', t.typname, format_type(t.typbasetype,t.typtypmod) || ':' || t.typnotnull::text || ':' || COALESCE(t.typdefault,'')
+      FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public' AND t.typtype='d'
+      UNION ALL
+      SELECT 'extension', e.extname, e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE n.nspname='public'
     ) objects ORDER BY kind COLLATE "C", name COLLATE "C", definition COLLATE "C"
   `);
 }

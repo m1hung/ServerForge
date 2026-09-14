@@ -48,11 +48,19 @@ it('refuses unknown legacy drift before writing migration history or changing da
   });
 }, 60000);
 
-it('refuses custom objects that Prisma introspection would otherwise ignore', async () => {
+it.each([
+  ['custom_view', 'CREATE VIEW custom_view AS SELECT 1 AS value'],
+  ['custom_sequence', 'CREATE SEQUENCE custom_sequence'],
+  ['custom_domain', 'CREATE DOMAIN custom_domain AS text'],
+  ['custom_type', 'CREATE TYPE custom_type AS (value text)'],
+])('refuses %s that Prisma introspection would otherwise ignore', async (name, sql) => {
   await fixtureDatabase(async (db, url) => {
     await applyFixture(db, 2);
-    await db.$executeRaw`CREATE VIEW custom_view AS SELECT 1 AS value`;
-    await expect(migrateDatabase(url)).rejects.toThrow(/custom_view/);
+    await db.$executeRawUnsafe(sql);
+    const before = await schemaState(db);
+    await expect(migrateDatabase(url)).rejects.toThrow(name);
+    expect(await schemaState(db)).toEqual(before);
+    expect(await db.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='_prisma_migrations'`).toEqual([]);
   });
 }, 60000);
 

@@ -46,13 +46,13 @@ No live world, router mapping or host Tailscale handler was used as a fixture.
 ## Verified local results at artifact preparation
 
 - Unit checks: 626 passed across 47 files in the latest complete unit run.
-- Database/Docker integration: 41 passed across six files, no skips. Latest
-  report: `data/release-tests/serverforge-test-e0381adba96d-Btm3vb/result.json`.
+- Database/Docker integration: 44 passed across six files, no skips. Latest
+  report: `data/release-tests/serverforge-test-681a6722f3a1-fzfw91/result.json`.
 - Packaged browser/host workflow passed setup, owner token, invitation, account,
   networking, dark mode, mobile focus, actual Minecraft creation and commands,
   real telemetry, saved versus applied CPU, consistent backup/world restore,
   panel/full backup, verification, upgrade, declared rollback and diagnostics.
-  Report: `data/release-tests/serverforge-packaged-mDH26Q/result.json`.
+  Report: `data/release-tests/serverforge-packaged-5mlg7h/result.json`.
 - Full fresh-host recovery started real Minecraft 1.20.1 and read the restored
   scoreboard value `14092026`; database, configuration, encryption key and world
   checksum were checked. Restored sessions were rejected and games initially
@@ -70,11 +70,17 @@ No live world, router mapping or host Tailscale handler was used as a fixture.
   `data/release-tests/host-upgrade-x7uLb4/result.json`.
 - The packaged host command was killed after its migration checkpoint. The
   documented stale-lock recovery and rollback returned the API to readiness with
-  the previous images. Report: `serverforge-packaged-mDH26Q/result.json`.
+  the previous images. Report: `serverforge-packaged-5mlg7h/result.json`.
 - Browser accessibility checks now cover seven pages in light/dark mode at
   desktop, mobile and a 200%-equivalent CSS viewport. Shared light-mode text,
   status labels and brand button contrast were corrected. Final packaged results
   are authoritative; automated scans do not replace manual accessibility checks.
+  Manual review also corrected the light-mode step numbers to 5.45:1 contrast.
+  Final image tests must include this correction.
+- Schema drift checks reject extra views, sequences, standalone composite types,
+  domains and public extensions. The catalog fixtures include the application’s
+  existing identity sequences; fresh installation and both legacy states passed
+  after extending the checks.
 - Dependency audit found zero reported vulnerabilities. Runtime findings are
   separately reviewed in [image security review](image-security-review.md).
   Reviewed exceptions are not claims that the underlying packages are patched.
