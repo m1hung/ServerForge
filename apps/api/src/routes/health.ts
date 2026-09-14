@@ -32,12 +32,16 @@ async function probe(action: () => Promise<unknown>): Promise<boolean> {
 }
 
 async function checks() {
-  const [database, schema, docker, storage] = await Promise.all([
+  const [database, schema, collation, docker, storage] = await Promise.all([
     probe(() => prisma.$queryRaw`SELECT 1`),
     probe(async () => {
       await prisma.$queryRaw`SELECT u."totpLastCounter", s."publicAccess", a."state", i."tokenHash" FROM "User" u CROSS JOIN "Server" s CROSS JOIN "InstallationAttempt" a CROSS JOIN "Invitation" i LIMIT 0`;
       const applied = await prisma.$queryRaw<{ migration_name: string }[]>`SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY started_at DESC LIMIT 1`;
       if (applied[0]?.migration_name !== '202609140003_release_candidate') throw new Error('Expected database migrations are not applied.');
+    }),
+    probe(async () => {
+      const rows = await prisma.$queryRaw<{ current: boolean }[]>`SELECT datcollversion IS NOT DISTINCT FROM pg_database_collation_actual_version(oid) AS current FROM pg_database WHERE datname=current_database()`;
+      if (!rows[0]?.current) throw new Error('Database sorting requires a backed-up index rebuild.');
     }),
     runtime.ping(),
     probe(() =>
@@ -48,7 +52,7 @@ async function checks() {
       ),
     ),
   ]);
-  return { database, schema, docker, storage };
+  return { database, schema, collation, docker, storage };
 }
 let cached: { at: number; promise: ReturnType<typeof checks> } | undefined;
 export async function readiness() {

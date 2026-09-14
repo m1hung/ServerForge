@@ -124,6 +124,32 @@ async function imageInfo(image) {
     postgresMajor: details.Config.Env?.find((entry) => entry.startsWith('PG_MAJOR='))?.slice(9) || null,
   };
 }
+async function repairCollation(force = false, beforeReindex = async () => {}) {
+  const current = await readConfig();
+  const sql = (statement) => compose(['exec', '-T', 'postgres', 'psql', '-X', '-U', current.POSTGRES_USER, '-d', current.POSTGRES_DB, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement]);
+  const state = JSON.parse(await sql("SELECT json_build_object('database',datname,'recorded',datcollversion,'actual',pg_database_collation_actual_version(oid)) FROM pg_database WHERE datname=current_database()"));
+  if (!force && state.recorded === state.actual) return { ...state, rebuilt: false };
+  const needed = Number(await sql('SELECT pg_database_size(current_database())')) + 64 * 1024 ** 2;
+  const disk = await compose(['exec', '-T', 'postgres', 'df', '-Pk', '/var/lib/postgresql/data']);
+  const available = Number(disk.trim().split('\n').at(-1).trim().split(/\s+/)[3]) * 1024;
+  if (!Number.isSafeInteger(needed) || !Number.isFinite(available) || available < needed)
+    throw new Error('Database sorting changed, but there is insufficient database-volume space to rebuild indexes. Free space and recover this upgrade checkpoint.');
+  // Persist intent before rebuilding: an interrupted rebuild may leave some
+  // indexes using the selected library even if its version was never recorded.
+  await beforeReindex();
+  console.log('Rebuilding database indexes for the selected image. The panel remains stopped.');
+  await sql('REINDEX DATABASE');
+  const metadataAdopted = (state.recorded === null) !== (state.actual === null);
+  // PostgreSQL 17 REFRESH rejects transitions to/from an unrecorded version
+  // (for example musl/glibc). Adopt this one database's actual metadata only
+  // after the verified backup and successful complete index rebuild.
+  if (metadataAdopted)
+    await sql('UPDATE pg_catalog.pg_database SET datcollversion=pg_database_collation_actual_version(oid) WHERE datname=current_database()');
+  else await sql(`ALTER DATABASE "${state.database.replaceAll('"', '""')}" REFRESH COLLATION VERSION`);
+  if ((await sql('SELECT datcollversion IS NOT DISTINCT FROM pg_database_collation_actual_version(oid) FROM pg_database WHERE datname=current_database()')).trim() !== 't')
+    throw new Error('The database sorting version could not be verified after rebuilding indexes.');
+  return { ...state, rebuilt: true, metadataAdopted };
+}
 async function preflight() {
   const info = JSON.parse(await run('docker', ['info', '--format', '{{json .}}']));
   if (info.OSType !== 'linux') throw new Error('Switch Docker Desktop to Linux containers.');
@@ -438,6 +464,7 @@ async function upgrade(version = args[0]) {
     await compose(['stop', 'backup-worker', 'web', 'api'], { echo: true });
     journal.step = 'panel-stopped';
     await writeJson(journalFile, journal);
+    await compose(['up', '-d', '--wait', 'postgres'], { echo: true });
     journal.backup = JSON.parse(
       await maintenance(['backup', '--offline'], ['-e', 'SF_OFFLINE_MAINTENANCE=1']),
     );
@@ -446,7 +473,13 @@ async function upgrade(version = args[0]) {
     await writeJson(journalFile, journal);
     await saveConfig(after);
     for (const [name, contents] of Object.entries(selectedAssets)) await atomic(path.join(configRoot, name), contents);
+    await compose(['up', '-d', '--wait', 'postgres'], { echo: true });
     await maintenance(['migrate']);
+    journal.collation = await repairCollation(false, async () => {
+      journal.databaseReindexed = true;
+      journal.step = 'reindexing';
+      await writeJson(journalFile, journal);
+    });
     journal.step = 'migrated';
     await writeJson(journalFile, journal);
     await compose(['up', '-d', 'api', 'web'], { echo: true });
@@ -497,6 +530,12 @@ async function rollback() {
     );
   await saveConfig(journal.before);
   for (const [name, contents] of Object.entries(journal.previousAssets || {})) await atomic(path.join(configRoot, name), contents);
+  await compose(['up', '-d', '--wait', 'postgres'], { echo: true });
+  journal.rollbackCollation = await repairCollation(!!journal.databaseReindexed, async () => {
+    journal.databaseReindexed = true;
+    journal.step = 'reindexing-rollback';
+    await writeJson(path.join(configRoot, 'upgrade.json'), journal);
+  });
   await compose(['up', '-d', 'api', 'web'], { echo: true });
   await waitReady();
   if (journal.before.APP_VERSION !== 'legacy') await compose(['--profile', 'backups', 'up', '-d', 'backup-worker'], { echo: true });

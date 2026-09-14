@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { isAppError } from '@serverforge/core';
 
-const state = vi.hoisted(() => ({ database: true, docker: true, storage: true, schema: true }));
+const state = vi.hoisted(() => ({ database: true, docker: true, storage: true, schema: true, collation: true }));
 vi.mock('@serverforge/db', () => ({
   prisma: {
     server: { findMany: async () => [] },
@@ -13,6 +13,7 @@ vi.mock('@serverforge/db', () => ({
       if (!state.database || (sql[0].includes('totpLastCounter') && !state.schema))
         throw new Error('unavailable');
       if (sql[0].includes('_prisma_migrations')) return [{ migration_name: '202609140003_release_candidate' }];
+      if (sql[0].includes('pg_database_collation_actual_version')) return [{ current: state.collation }];
       return [];
     },
   },
@@ -52,7 +53,7 @@ let clock = Date.now();
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime((clock += 10000));
-  Object.assign(state, { database: true, docker: true, storage: true, schema: true });
+  Object.assign(state, { database: true, docker: true, storage: true, schema: true, collation: true });
   Object.assign(lifecycle, {
     mode: 'ready',
     supervisorRequired: true,
@@ -87,7 +88,7 @@ async function app() {
   return result;
 }
 
-it.each(['database', 'schema', 'docker', 'storage'] as const)(
+it.each(['database', 'schema', 'collation', 'docker', 'storage'] as const)(
   'reports a failed %s dependency as not ready while remaining live',
   async (dependency) => {
     state[dependency] = false;

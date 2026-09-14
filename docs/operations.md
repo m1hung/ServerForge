@@ -214,6 +214,26 @@ The database image must remain PostgreSQL major version 17. This command is not
 a PostgreSQL major-version migration. The verified pre-upgrade panel backup and
 previous image identifiers remain available for documented rollback.
 
+Upgrade also supports a stopped installation: it starts the recorded database
+image before creating the verified backup. After selecting a database image, it
+checks PostgreSQL's recorded and actual sorting-library versions. A changed or
+missing version triggers a database-space check and `REINDEX DATABASE` while the
+panel is stopped. Only a successful rebuild is followed by refreshing the version
+and starting the panel. Readiness reports a mismatch as unavailable.
+For a legacy database with an unrecorded version,
+[PostgreSQL 17 rejects that transition through `REFRESH`](https://github.com/postgres/postgres/blob/REL_17_STABLE/src/backend/commands/dbcommands.c).
+After the same backup and successful rebuild,
+the launcher adopts only the selected database's actual version in `pg_database`
+and verifies it. This requires the packaged database's administrative role; it
+does not alter other databases or change the locale/provider.
+
+Rebuild intent is recorded before SQL runs. Rollback rebuilds indexes again when
+the interrupted or completed upgrade may have changed them, including when the
+old version marker still matches. Insufficient space or a failed rebuild leaves
+the upgrade checkpoint for recovery; it does not clear the version warning or
+discard the verified backup. This follows
+[PostgreSQL's collation maintenance guidance](https://www.postgresql.org/docs/17/sql-altercollation.html).
+
 An already-running Tailscale sidecar is recreated when its image or entrypoint
 changes. Its state volume is retained, and rollback restores the previous image.
 An upgrade does not enable a sidecar that was stopped or never configured. Host

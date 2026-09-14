@@ -94,8 +94,22 @@ try {
   result.checks.push('host-bundle-verification');
   console.log('Testing backed-up upgrade and declared image rollback.');
   const version = JSON.parse(await fs.readFile(path.join(root, 'release.json'), 'utf8')).version;
+  const sql = (statement) => run('docker', [...composeArgs, 'exec', '-T', 'postgres', 'psql', '-X', '-U', 'serverforge', '-d', 'serverforge', '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement]);
+  const userIndex = () => sql(`SELECT pg_relation_filenode('"User_username_key"'::regclass)`);
+  const accountFingerprint = () => sql(`SELECT md5(string_agg(id||username||"passwordHash", '|' ORDER BY id)) FROM "User"`);
+  const originalAccounts = await accountFingerprint(), indexBefore = await userIndex();
+  await sql("UPDATE pg_database SET datcollversion='serverforge-test-old' WHERE datname=current_database()");
+  const unhealthy = JSON.parse(await run('docker', [...composeArgs, 'exec', '-T', 'api', 'node', '-e', 'setTimeout(()=>fetch("http://localhost:8080/health/ready").then(async r=>console.log(JSON.stringify({status:r.status,body:await r.json()}))),1200)']));
+  if (unhealthy.status !== 503 || unhealthy.body.checks.collation !== false) throw new Error('Readiness accepted a mismatched database sorting version.');
+  await launch(['stop']);
+  await run('docker', [...composeArgs, 'rm', '-f', 'postgres']);
   await launch(['upgrade', version, '--api-image', apiImage, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
+  const rebuiltIndex = await userIndex(), collationJournal = JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8'));
+  if (rebuiltIndex === indexBefore || !collationJournal.databaseReindexed || !collationJournal.collation?.rebuilt) throw new Error('Upgrade did not rebuild indexes before refreshing their sorting version.');
+  if ((await sql('SELECT datcollversion IS NOT DISTINCT FROM pg_database_collation_actual_version(oid) FROM pg_database WHERE datname=current_database()')).trim() !== 't') throw new Error('Upgrade did not refresh the database sorting version.');
   await launch(['rollback']);
+  if (await userIndex() === rebuiltIndex || await accountFingerprint() !== originalAccounts) throw new Error('Rollback did not rebuild potentially changed indexes while preserving accounts.');
+  result.checks.push('stopped-installation-upgrade', 'collation-mismatch-not-ready', 'collation-index-rebuild-and-refresh', 'collation-rollback-rebuild-preserves-accounts');
   result.checks.push('backed-up-upgrade', 'declared-image-rollback');
   if ((await run('docker', [...composeArgs, 'ps', '-q', 'tailscale'])).trim()) throw new Error('An upgrade must not enable a disabled Tailscale sidecar.');
   console.log('Checking active Tailscale and database image upgrades and rollback.');
@@ -119,7 +133,11 @@ try {
     await run('docker', ['image', 'rm', base]);
     changedServices[name] = { reference, ...(JSON.parse(await run('docker', ['image', 'inspect', reference]))[0]) };
   }
+  await sql('UPDATE pg_database SET datcollversion=NULL WHERE datname=current_database()');
+  const unknownVersionIndex = await userIndex();
   await launch(['upgrade', version, '--api-image', apiImage, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE, '--postgres-image', changedServices.postgres.reference, '--tailscale-image', changedServices.tailscale.reference]);
+  const adoptedCollation = JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8')).collation;
+  if (adoptedCollation?.recorded !== null || !adoptedCollation.metadataAdopted || await userIndex() === unknownVersionIndex || await accountFingerprint() !== originalAccounts) throw new Error('Unknown legacy sorting metadata was not adopted after a real index rebuild.');
   if (JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8')).before.TAILSCALE_IMAGE !== originalServices.tailscale.Image) throw new Error('The applied legacy Tailscale image was not captured for rollback.');
   for (const name of ['tailscale', 'postgres']) {
     const current = await inspectService(name);
@@ -140,6 +158,7 @@ try {
   await fs.writeFile(path.join(faultContext, 'Dockerfile'), `FROM ${apiImage}\nCMD ["node", "-e", "setInterval(() => {}, 1000)"]\n`);
   await run('docker', ['build', '--network', 'none', '-t', faultTag, faultContext]);
   const [faultImage] = JSON.parse(await run('docker', ['image', 'inspect', faultTag]));
+  await sql("UPDATE pg_database SET datcollversion='serverforge-test-interrupted' WHERE datname=current_database()");
   const interrupted = launch(['upgrade', version, '--api-image', faultTag, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]).then(() => null, (error) => error);
   const until = Date.now() + 180000;
   let migrated = false;
@@ -149,6 +168,8 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   if (!migrated) throw new Error('Fault-injection upgrade did not reach its durable migration checkpoint.');
+  const interruptedIndex = await userIndex();
+  if (!JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8')).databaseReindexed) throw new Error('Reindex intent was not durable before the host interruption.');
 
   const hosts = await ownHostCommands();
   if (hosts.length !== 1) throw new Error('Refusing interruption without exactly one fixture-owned host command.');
@@ -159,6 +180,7 @@ try {
   // fresh test directory after verifying that its lock has no running owner.
   await fs.rm(path.join(scratch, '.serverforge-maintenance-lock'), { recursive: true });
   await launch(['rollback']);
+  if (await userIndex() === interruptedIndex || await accountFingerprint() !== originalAccounts) throw new Error('Interrupted rollback did not rebuild indexes and preserve account data.');
   const recovered = parseEnv(await fs.readFile(path.join(scratch, 'config/.env'), 'utf8'));
   if (recovered.API_IMAGE !== beforeFault.API_IMAGE || JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8')).step !== 'rolled-back') throw new Error('Interrupted upgrade did not restore its recorded image checkpoint.');
   await run('docker', ['image', 'rm', faultTag]);

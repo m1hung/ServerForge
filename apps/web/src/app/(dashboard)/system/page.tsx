@@ -39,6 +39,7 @@ type Status = {
 const checkNames: Record<string, string> = {
   database: 'Database',
   schema: 'Database version',
+  collation: 'Database sorting',
   docker: 'Docker access',
   storage: 'Storage access',
   supervisor: 'Background operations',
@@ -142,6 +143,12 @@ export default function SystemPage() {
               </div>
             ))}
           </div>
+          {status?.checks.collation === false && (
+            <p className="summary-notice">
+              Database sorting needs maintenance. Run a backed-up upgrade with the supplied host
+              launcher to rebuild its indexes before normal operation resumes.
+            </p>
+          )}
           {status?.capabilities &&
             (!status.capabilities.ioWeight || !status.capabilities.swapLimit) && (
               <p className="summary-notice">
