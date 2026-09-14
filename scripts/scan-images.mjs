@@ -7,6 +7,7 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const output = path.resolve(process.env.SF_SCAN_OUTPUT || path.join(root, 'data/release-tests/image-scans-current'));
 await fs.mkdir(output, { recursive: true, mode: 0o700 });
+const outputOwner = await fs.stat(output);
 const socket = process.env.DOCKER_HOST || (process.env.DOCKER_SOCKET ? `unix://${process.env.DOCKER_SOCKET}` : execFileSync('docker', ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], { encoding: 'utf8' }).trim());
 const env = { ...process.env, DOCKER_HOST: socket };
 const scanners = {
@@ -21,7 +22,15 @@ async function docker(args, name) {
     const child = spawn('docker', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.pipe(log, { end: false }); child.stderr.pipe(log, { end: false });
     child.once('error', reject);
-    child.once('close', (code) => { log.end(); code === 0 ? resolve() : reject(new Error(`${name} failed (${code}); see its scanner log.`)); });
+    child.once('close', (code) => {
+      log.end(async () => {
+        if (code === 0) resolve();
+        else {
+          const detail = await fs.readFile(path.join(output, `${name}.log`), 'utf8').catch(() => '');
+          reject(new Error(`${name} failed (${code}): ${detail.slice(-4000) || 'See its scanner log.'}`));
+        }
+      });
+    });
   });
 }
 const reports = [];
@@ -42,7 +51,9 @@ try {
     console.log(`Exporting and scanning ${name} (${info.Architecture}).`);
     const archive = path.join(output, `${name}.tar`);
     await docker(['image', 'save', '-o', archive, reference], `${name}-export`);
-    const limits = ['run', '--rm', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--pids-limit', '512', '--memory', '1g', '--cpus', '2', '-v', `${output}:/output`, '-v', `${archive}:/image.tar:ro`];
+    // With all capabilities dropped, root cannot traverse another user's 0700
+    // report directory on Linux. Write reports as its owner, preserving privacy.
+    const limits = ['run', '--rm', '--user', `${outputOwner.uid}:${outputOwner.gid}`, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--pids-limit', '512', '--memory', '1g', '--cpus', '2', '-e', 'TMPDIR=/output', '-e', 'XDG_CACHE_HOME=/output/grype-cache', '-e', 'SYFT_CHECK_FOR_APP_UPDATE=false', '-v', `${output}:/output`, '-v', `${archive}:/image.tar:ro`];
     await docker([...limits, '--network', 'none', scanners.syft, 'scan', 'docker-archive:/image.tar', '-o', `cyclonedx-json=/output/${name}.sbom.json`], `${name}-syft`);
     await docker([...limits, '-v', `${cache}:/cache`, '-e', 'GRYPE_DB_CACHE_DIR=/cache', scanners.grype, 'docker-archive:/image.tar', '-o', 'json', '--file', `/output/${name}.scan.json`], `${name}-grype`);
     const scan = JSON.parse(await fs.readFile(path.join(output, `${name}.scan.json`), 'utf8'));
