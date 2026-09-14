@@ -362,6 +362,11 @@ async function upgrade(version = args[0]) {
   const previousRelease = JSON.parse(
     await fs.readFile(path.join(configRoot, 'release.json'), 'utf8'),
   );
+  const tailscaleId = await compose(['ps', '-q', 'tailscale']);
+  if (tailscaleId) {
+    before.TAILSCALE_IMAGE = await run('docker', ['inspect', '--format', '{{.Image}}', tailscaleId]);
+    await imageInfo(before.TAILSCALE_IMAGE);
+  }
   if (!before.POSTGRES_IMAGE) {
     const postgres = await compose(['ps', '-aq', 'postgres']);
     if (!postgres) throw new Error('The installation database container is missing. Recover it before upgrading.');
@@ -425,6 +430,7 @@ async function upgrade(version = args[0]) {
     selectedRelease,
     images,
     previousAssets,
+    tailscaleWasRunning: !!tailscaleId,
     backup: null,
   };
   await writeJson(journalFile, journal);
@@ -446,6 +452,8 @@ async function upgrade(version = args[0]) {
     await compose(['up', '-d', 'api', 'web'], { echo: true });
     await waitReady();
     await compose(['--profile', 'backups', 'up', '-d', 'backup-worker'], { echo: true });
+    if (journal.tailscaleWasRunning && (before.TAILSCALE_IMAGE !== after.TAILSCALE_IMAGE || previousAssets['tailscale-entrypoint.sh'] !== selectedAssets['tailscale-entrypoint.sh']))
+      await compose(['up', '-d', '--no-deps', '--force-recreate', 'tailscale'], { echo: true });
     journal.step = 'complete';
     journal.finishedAt = new Date().toISOString();
     await writeJson(journalFile, journal);
@@ -466,12 +474,14 @@ async function upgrade(version = args[0]) {
 }
 async function rollback() {
   const journal = JSON.parse(await fs.readFile(path.join(configRoot, 'upgrade.json'), 'utf8'));
+  const tailscaleWasRunning = journal.tailscaleWasRunning ?? !!(await compose(['ps', '-q', 'tailscale']));
   if (!journal.backup) {
     await saveConfig(journal.before);
     for (const [name, contents] of Object.entries(journal.previousAssets || {})) await atomic(path.join(configRoot, name), contents);
     await compose(['up', '-d', 'api', 'web']);
     await waitReady();
     if (journal.before.APP_VERSION !== 'legacy') await compose(['--profile', 'backups', 'up', '-d', 'backup-worker']);
+    if (tailscaleWasRunning) await compose(['up', '-d', '--no-deps', '--force-recreate', 'tailscale']);
     journal.step = 'rolled-back';
     await writeJson(path.join(configRoot, 'upgrade.json'), journal);
     return;
@@ -490,6 +500,7 @@ async function rollback() {
   await compose(['up', '-d', 'api', 'web'], { echo: true });
   await waitReady();
   if (journal.before.APP_VERSION !== 'legacy') await compose(['--profile', 'backups', 'up', '-d', 'backup-worker'], { echo: true });
+  if (tailscaleWasRunning) await compose(['up', '-d', '--no-deps', '--force-recreate', 'tailscale'], { echo: true });
   journal.step = 'rolled-back';
   journal.finishedAt = new Date().toISOString();
   await writeJson(path.join(configRoot, 'upgrade.json'), journal);

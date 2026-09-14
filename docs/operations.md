@@ -214,6 +214,11 @@ The database image must remain PostgreSQL major version 17. This command is not
 a PostgreSQL major-version migration. The verified pre-upgrade panel backup and
 previous image identifiers remain available for documented rollback.
 
+An already-running Tailscale sidecar is recreated when its image or entrypoint
+changes. Its state volume is retained, and rollback restores the previous image.
+An upgrade does not enable a sidecar that was stopped or never configured. Host
+Tailscale and unrelated Serve handlers are not changed by this image update.
+
 Legacy source adoption records the original API port bindings and API/web runtime
 environment in private `config/legacy-runtime.json`. Rollback to the legacy images
 restores those settings, including the direct API port used by older dashboards.

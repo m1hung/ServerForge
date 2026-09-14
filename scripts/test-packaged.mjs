@@ -97,6 +97,41 @@ try {
   await launch(['upgrade', version, '--api-image', apiImage, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
   await launch(['rollback']);
   result.checks.push('backed-up-upgrade', 'declared-image-rollback');
+  if ((await run('docker', [...composeArgs, 'ps', '-q', 'tailscale'])).trim()) throw new Error('An upgrade must not enable a disabled Tailscale sidecar.');
+  console.log('Checking active Tailscale and database image upgrades and rollback.');
+  await run('docker', [...composeArgs, 'up', '-d', '--no-deps', 'tailscale']);
+  const inspectService = async (name) => JSON.parse(await run('docker', ['inspect', (await run('docker', [...composeArgs, 'ps', '-q', name])).trim()]))[0];
+  const originalServices = { tailscale: await inspectService('tailscale'), postgres: await inspectService('postgres') };
+  // Earlier source installations may have a running sidecar without an image
+  // selector. Its applied image must still be captured for rollback.
+  const configurationFile = path.join(scratch, 'config/.env');
+  await fs.writeFile(configurationFile, (await fs.readFile(configurationFile, 'utf8')).replace(/^TAILSCALE_IMAGE=.*\n/m, ''));
+  await run('docker', [...composeArgs, 'exec', '-T', 'tailscale', 'sh', '-c', 'printf retained-state > /var/lib/tailscale/qualification-marker']);
+  const serviceContext = path.join(scratch, 'service-images'); await fs.mkdir(serviceContext);
+  const changedServices = {};
+  for (const name of ['tailscale', 'postgres']) {
+    const reference = `serverforge-service-check-${name}:${randomBytes(6).toString('hex')}`;
+    const base = `${reference}-base`;
+    await run('docker', ['tag', originalServices[name].Image, base]);
+    const dockerfile = path.join(serviceContext, `${name}.Dockerfile`);
+    await fs.writeFile(dockerfile, `FROM ${base}\nLABEL serverforge.test.change=${reference}\n`);
+    await run('docker', ['build', '--network', 'none', '-f', dockerfile, '-t', reference, serviceContext]);
+    await run('docker', ['image', 'rm', base]);
+    changedServices[name] = { reference, ...(JSON.parse(await run('docker', ['image', 'inspect', reference]))[0]) };
+  }
+  await launch(['upgrade', version, '--api-image', apiImage, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE, '--postgres-image', changedServices.postgres.reference, '--tailscale-image', changedServices.tailscale.reference]);
+  if (JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8')).before.TAILSCALE_IMAGE !== originalServices.tailscale.Image) throw new Error('The applied legacy Tailscale image was not captured for rollback.');
+  for (const name of ['tailscale', 'postgres']) {
+    const current = await inspectService(name);
+    if (!current.State.Running || current.Image !== changedServices[name].Id || current.Id === originalServices[name].Id) throw new Error(`${name} did not apply its selected image to the running service.`);
+  }
+  if ((await run('docker', [...composeArgs, 'exec', '-T', 'tailscale', 'cat', '/var/lib/tailscale/qualification-marker'])).trim() !== 'retained-state') throw new Error('Tailscale state was not preserved during upgrade.');
+  await launch(['rollback']);
+  for (const name of ['tailscale', 'postgres']) if ((await inspectService(name)).Image !== originalServices[name].Image) throw new Error(`${name} did not restore its original image.`);
+  if ((await run('docker', [...composeArgs, 'exec', '-T', 'tailscale', 'cat', '/var/lib/tailscale/qualification-marker'])).trim() !== 'retained-state') throw new Error('Tailscale state was not preserved during rollback.');
+  await run('docker', [...composeArgs, 'stop', 'tailscale']);
+  for (const service of Object.values(changedServices)) await run('docker', ['image', 'rm', service.reference]);
+  result.checks.push('disabled-tailnet-stays-disabled', 'running-service-image-upgrade-and-rollback', 'tailnet-state-volume-preserved');
   console.log('Terminating the host upgrade command after migrations, then recovering its checkpoint.');
   const beforeFault = parseEnv(await fs.readFile(path.join(scratch, 'config/.env'), 'utf8'));
   const faultTag = `serverforge-upgrade-fault:${randomBytes(6).toString('hex')}`;
@@ -138,7 +173,7 @@ finally {
       for (const id of await ownHostCommands()) await run('docker', ['kill', id]);
       const config = parseEnv(await fs.readFile(path.join(scratch, 'config/.env'), 'utf8'));
       await removeFixtureGames(config);
-      await run('docker', ['compose', '--project-directory', path.join(scratch, 'config'), '--env-file', path.join(scratch, 'config/.env'), '-f', path.join(scratch, 'config/compose.yml'), '--profile', 'backups', '--profile', 'tools', 'down', '--volumes']);
+      await run('docker', ['compose', '--project-directory', path.join(scratch, 'config'), '--env-file', path.join(scratch, 'config/.env'), '-f', path.join(scratch, 'config/compose.yml'), '--profile', 'backups', '--profile', 'tools', '--profile', 'tailscale', 'down', '--volumes']);
       result.project = config.COMPOSE_PROJECT_NAME;
     } catch (error) { result.cleanupError = error.message; result.ok = false; process.exitCode = 1; }
   }

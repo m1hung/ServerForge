@@ -137,6 +137,11 @@ be shared. A retained fixture can be used by the separate fresh-host world recov
 drill after obtaining its test session. Stop it when finished; never substitute
 credentials or paths from a real installation.
 
+Prefer the default cleanup for repeated checks. Stopping a retained fixture does
+not release its Docker networks; keeping many fixtures can exhaust Docker's
+address pools. Remove only completed fixtures whose project labels and game-data
+mounts match their recorded test directory. Preserve the reports before cleanup.
+
 To test the exact images in a candidate bundle, set `SF_API_TEST_IMAGE`,
 `SF_WEB_TEST_IMAGE`, `SF_MAINTENANCE_TEST_IMAGE`, `SF_POSTGRES_TEST_IMAGE`, and
 `SF_TAILSCALE_TEST_IMAGE` to its native architecture references before running
