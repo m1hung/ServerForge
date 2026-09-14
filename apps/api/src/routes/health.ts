@@ -134,8 +134,9 @@ export async function healthRoutes(app: FastifyInstance) {
         .catch(() => [])),
       installations: await prisma.installationAttempt
         .findMany({
-          where: { state: { in: ['failed', 'cancelled'] } },
-          orderBy: { updatedAt: 'desc' },
+          where: { state: { in: ['failed', 'cancelled'] }, server: { state: 'install_failed' } },
+          distinct: ['serverId'],
+          orderBy: { createdAt: 'desc' },
           take: 20,
           select: {
             uid: true,

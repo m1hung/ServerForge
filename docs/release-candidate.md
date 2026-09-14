@@ -1,11 +1,13 @@
-# ServerForge 0.1.0-rc.1 implementation checkpoint
+# ServerForge release candidate progress
 
 **Status: awaiting platform qualification. Not approved for production or public
-publication.** The current live installation has not been upgraded by this work.
+publication.** Local usability updates and release-check repairs do not establish
+qualification on every supported platform.
 
-Implementation began on 2026-09-14 at 09:02 UTC. This first run is capped at six
-hours and must checkpoint by 15:02 UTC. Implementation, artifact creation and
-qualification are separate results. The final checkpoint evidence is retained
+Implementation began on 2026-09-14 at 09:02 UTC and continues in runs capped at six
+hours. The current usability and release-check run began at 17:01 UTC and must
+checkpoint by 23:01 UTC. Implementation, artifact creation and qualification are
+separate results. Checkpoint evidence is retained
 under `data/release-tests/` and candidate artifact manifests under `data/candidates/`.
 
 ## Installation protection
@@ -26,7 +28,7 @@ No live world, router mapping or host Tailscale handler was used as a fixture.
 
 | Work package | Delivered implementation and evidence | Remaining acceptance work |
 | --- | --- | --- |
-| Baseline and release checks | Private recovery checkpoint; isolated fixtures; CI build/lint/type/unit/database/Docker/browser/image checks; unexpected skips fail | Remote CI execution |
+| Baseline and release checks | Private checkpoints; isolated fixtures; mandatory build/lint/type/unit/database/Docker/browser/image checks; no unexpected skips; clean-runner cache and ownership fixes | Green remote CI on the final commit |
 | Dependencies and images | Development dependency updates; minimal API/web/maintenance images; patched versioned PostgreSQL/Tailscale targets; native architecture builds, image IDs, checksums, SBOMs and scans in artifact tool | Selected artifacts include scans and reviewed exceptions; platform execution must match their image digests |
 | Container protection | Non-root games/installers, dropped capabilities, no-new-privileges, PID 2048, log rotation 20 MiB × 3, bounded ownership helper | Repeat enforcement on other Docker hosts |
 | Resource reporting | CPU/memory/swap enforcement, capability detection, I/O limitations, saved/applied allocations, aggregate RAM headroom, storage budgets/free-space checks | Other cgroup/host combinations and disk-failure stress |
@@ -39,20 +41,25 @@ No live world, router mapping or host Tailscale handler was used as a fixture.
 | Account security | Password changes, TOTP confirmation/replay protection/recovery codes, session revocation, scoped expiring API keys, secret-free audits | Final application security review and broader adversarial coverage |
 | Installer | Thin Docker-only launcher; native image/version checks, private setup, preflight, runtime branding, diagnostics and recovery commands | Independent tester follows installation/recovery docs |
 | Networking | Portful host Tailscale URL preserved; verified HTTPS reporting; dashboard/game distinction; opt-in owned UPnP mappings; focused diagnostics | Real external/LAN/tailnet clients, ACL denial/expiry and router variation |
-| Operational UI | Account/workspace/system pages, failed jobs/backups/capabilities, progress/retry/cancel, applied limits, explicit stale telemetry, compact desktop and responsive dark mode | Automated 42-case WCAG AA scan passed; manual screen-reader, keyboard and browser-zoom audit remains |
+| Operational UI | Shared titles/spacing, persistent navigation/theme, visible server tools, guided schedules, action-specific security prompts, permission-aware navigation, stale/error/retry states, and a user guide | Automated 96-case WCAG AA scan passed; independent screen-reader and complete manual accessibility review remain |
 | Game qualification | Real Minecraft families, original CurseForge ZIP, Valheim/BepInEx and Palworld lifecycle checks; tester and soak commands | Real Linux PAK mod, external joins, complete exact-version matrix |
 | Platform/candidate acceptance | Local Linux Docker Desktop evidence and machine-readable tester tools | Linux Engine, Windows/WSL2, Intel Mac, Apple Silicon and four-hour final-code soaks |
 
 ## Verified local results at artifact preparation
 
-- Unit checks: 626 passed across 47 files in the latest complete unit run.
-- Database/Docker integration: 44 passed across six files, no skips. Latest
-  report: `data/release-tests/serverforge-test-681a6722f3a1-fzfw91/result.json`.
+- Unit checks: 609 passed across 45 files in the latest complete unit run.
+- Database/Docker integration: 46 passed across six files, no skips. Latest
+  report: `data/release-tests/serverforge-test-2c65df428785-pyJ64E/result.json`.
+  This includes a real Linux volume owned by UID 60001, verifying that private
+  installer configuration remains accessible to its host owner with modes 0700/0600.
 - Packaged browser/host workflow passed setup, owner token, invitation, account,
   networking, dark mode, mobile focus, actual Minecraft creation and commands,
   real telemetry, saved versus applied CPU, consistent backup/world restore,
   panel/full backup, verification, upgrade, declared rollback and diagnostics.
-  Report: `data/release-tests/serverforge-packaged-5mlg7h/result.json`.
+  The expanded seven-workflow run also passed readable schedule editing, member
+  access, authenticator enrollment, recovery-code use, scoped API-key revocation,
+  and password changes. Report:
+  `data/release-tests/serverforge-packaged-gE6R8h/result.json`.
 - Full fresh-host recovery started real Minecraft 1.20.1 and read the restored
   scoreboard value `14092026`; database, configuration, encryption key and world
   checksum were checked. Restored sessions were rejected and games initially
@@ -71,12 +78,20 @@ No live world, router mapping or host Tailscale handler was used as a fixture.
 - The packaged host command was killed after its migration checkpoint. The
   documented stale-lock recovery and rollback returned the API to readiness with
   the previous images. Report: `serverforge-packaged-5mlg7h/result.json`.
-- Browser accessibility checks now cover seven pages in light/dark mode at
-  desktop, mobile and a 200%-equivalent CSS viewport. Shared light-mode text,
-  status labels and brand button contrast were corrected. Final packaged results
-  are authoritative; automated scans do not replace manual accessibility checks.
-  Manual review also corrected the light-mode step numbers to 5.45:1 contrast.
-  Final image tests must include this correction.
+- Browser accessibility checks cover all seven workspace/server overview pages
+  and nine additional server sections in light/dark mode at desktop, mobile and
+  a 200%-equivalent CSS viewport: 96 combinations, no detected WCAG AA violations
+  or horizontal page overflow. The system recovery commands' copy buttons were
+  shortened to preserve reflow. Evidence:
+  `serverforge-packaged-gE6R8h/browser-output/accessibility.json`.
+  Automated checks do not replace an independent screen-reader review.
+- Clean-runner CI exposed cached-image assumptions, private-fixture artifact
+  traversal, host configuration ownership, and scanner output permissions.
+  Fixture setup now pulls its own pinned image; report collection is allowlisted;
+  configuration remains owned by the invoking host user; scanners use that user's
+  identity and writable private temporary storage. In run `34875127388`, all
+  checks through packaged install/upgrade/rollback and the dependency audit passed.
+  The scanner repair and final application commit still require a complete green run.
 - Schema drift checks reject extra views, sequences, standalone composite types,
   domains and public extensions. The catalog fixtures include the application’s
   existing identity sequences; fresh installation and both legacy states passed

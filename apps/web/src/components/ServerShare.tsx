@@ -33,19 +33,24 @@ function ShareDialog({
   const [kind, setKind] = useState<'local' | 'public' | 'tailscale'>('local');
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [qr, setQr] = useState(false);
   const [port, setPort] = useState(
     String(server.allocations?.find((row) => row.primary)?.port ?? ''),
   );
   const [portNotice, setPortNotice] = useState('');
-  const refresh = useCallback(
-    async () => setData(await api<ServerConnections>(`/api/servers/${server.uid}/connections`)),
-    [server.uid],
-  );
+  const refresh = useCallback(async () => {
+    try {
+      setData(await api<ServerConnections>(`/api/servers/${server.uid}/connections`));
+      setLoadError('');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Connection details are unavailable.');
+    }
+  }, [server.uid]);
   useEffect(() => {
     dialog.current?.showModal();
-    void refresh().catch((error) => setError(error.message));
-    const timer = setInterval(() => void refresh().catch(() => undefined), 10000);
+    void refresh();
+    const timer = setInterval(() => void refresh(), 10000);
     return () => clearInterval(timer);
   }, [refresh]);
   const selected = data?.addresses.find((row) => row.kind === kind);
@@ -134,9 +139,20 @@ function ShareDialog({
           {error}
         </div>
       )}
+      {loadError && (
+        <div className="error-banner" role="alert">
+          <span>
+            {data ? 'Connection details may be out of date. ' : ''}
+            {loadError}
+          </span>
+          <button className="text-button" onClick={() => void refresh()}>
+            Try again
+          </button>
+        </div>
+      )}
       {!data ? (
         <p className="network-muted" role="status">
-          Finding connection addresses…
+          {loadError ? 'Connection details are unavailable.' : 'Finding connection addresses…'}
         </p>
       ) : (
         <>
@@ -297,6 +313,10 @@ function ShareDialog({
               </Link>
             )}
           </div>
+          <p className="network-fine-print">
+            Details checked {new Date(data.checkedAt).toLocaleTimeString()}. Verify that your
+            players can connect from their network.
+          </p>
         </>
       )}
     </dialog>

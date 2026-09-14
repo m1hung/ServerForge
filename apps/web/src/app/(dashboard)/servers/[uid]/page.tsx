@@ -26,7 +26,35 @@ export default function ServerPage() {
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState('');
   const [copied, setCopied] = useState(false);
-  const [view, setView] = useState<'overview' | 'mods' | 'configuration' | ServerTool>('overview');
+  type View = 'overview' | 'mods' | 'configuration' | ServerTool;
+  const [view, setView] = useState<View>('overview');
+  useEffect(() => {
+    const readView = () => {
+      const selected = window.location.hash.slice(1);
+      setView(
+        ['overview', 'mods', 'configuration', ...serverTools.map((tool) => tool.id)].includes(
+          selected,
+        )
+          ? (selected as View)
+          : 'overview',
+      );
+    };
+    readView();
+    window.addEventListener('hashchange', readView);
+    return () => window.removeEventListener('hashchange', readView);
+  }, [uid]);
+  function selectView(next: View) {
+    setView(next);
+    window.location.hash = next;
+  }
+  const canPower = server?.permissions?.includes('server.power') ?? true;
+  const selectedTool = serverTools.find((tool) => tool.id === view);
+  const viewAllowed =
+    view === 'configuration'
+      ? server?.canConfigure !== false
+      : !selectedTool ||
+        !server?.permissions ||
+        server.permissions.includes(selectedTool.permission);
 
   const refresh = useCallback(async () => {
     try {
@@ -166,7 +194,10 @@ export default function ServerPage() {
                 <button
                   className="btn"
                   disabled={
-                    !!pending || server.busy || !['offline', 'crashed'].includes(server.state)
+                    !canPower ||
+                    !!pending ||
+                    server.busy ||
+                    !['offline', 'crashed'].includes(server.state)
                   }
                   onClick={() => void power('start')}
                 >
@@ -175,7 +206,7 @@ export default function ServerPage() {
                 </button>
                 <button
                   className="btn secondary"
-                  disabled={!!pending || server.busy || server.state !== 'running'}
+                  disabled={!canPower || !!pending || server.busy || server.state !== 'running'}
                   onClick={() => void power('restart')}
                 >
                   <Icon name="refresh" size={16} />
@@ -184,7 +215,10 @@ export default function ServerPage() {
                 <button
                   className="btn secondary danger"
                   disabled={
-                    !!pending || server.busy || !['running', 'starting'].includes(server.state)
+                    !canPower ||
+                    !!pending ||
+                    server.busy ||
+                    !['running', 'starting'].includes(server.state)
                   }
                   onClick={() => void power('stop')}
                 >
@@ -194,40 +228,6 @@ export default function ServerPage() {
               </div>
             </div>
             <div className="server-view-bar">
-              <div className="management-tabs" role="group" aria-label="Server management view">
-                <button aria-pressed={view === 'overview'} onClick={() => setView('overview')}>
-                  <Icon name="terminal" size={16} />
-                  Overview
-                </button>
-                <button aria-pressed={view === 'mods'} onClick={() => setView('mods')}>
-                  <Icon name="cube" size={16} />
-                  Mods & plugins
-                </button>
-                <button
-                  aria-pressed={view === 'configuration'}
-                  onClick={() => setView('configuration')}
-                >
-                  <Icon name="settings" size={16} />
-                  Configuration
-                </button>
-                <select
-                  className="server-tools-select"
-                  aria-label="More server tools"
-                  value={serverTools.some((t) => t.id === view) ? view : ''}
-                  onChange={(e) => setView(e.target.value as ServerTool)}
-                >
-                  <option value="" disabled>
-                    More tools
-                  </option>
-                  {serverTools
-                    .filter((t) => !server.permissions || server.permissions.includes(t.permission))
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.label}
-                      </option>
-                    ))}
-                </select>
-              </div>
               <div className="server-connect-actions">
                 <div className="server-join join-address">
                   <span>Join</span>
@@ -248,18 +248,70 @@ export default function ServerPage() {
                 <ServerShare server={server} onSaved={() => void refresh()} />
               </div>
             </div>
+            {!canPower && (
+              <p className="field-hint server-permission-note">
+                You can use the sections shared with you below. Ask the server owner for access to
+                power controls or additional tools.
+              </p>
+            )}
             <div
-              className="server-view server-configuration-view"
-              hidden={view !== 'configuration'}
+              className="management-tabs server-sections"
+              role="group"
+              aria-label="Server sections"
             >
-              <ServerConfiguration key={server.uid} server={server} onSaved={refresh} />
+              <button aria-pressed={view === 'overview'} onClick={() => selectView('overview')}>
+                Overview
+              </button>
+              <button aria-pressed={view === 'mods'} onClick={() => selectView('mods')}>
+                Mods & plugins
+              </button>
+              {server.canConfigure !== false && (
+                <button
+                  aria-pressed={view === 'configuration'}
+                  onClick={() => selectView('configuration')}
+                >
+                  Configuration
+                </button>
+              )}
+              {serverTools
+                .filter(
+                  (tool) => !server.permissions || server.permissions.includes(tool.permission),
+                )
+                .map((tool) => (
+                  <button
+                    key={tool.id}
+                    aria-pressed={view === tool.id}
+                    onClick={() => selectView(tool.id)}
+                  >
+                    {tool.label}
+                  </button>
+                ))}
             </div>
+            {server.canConfigure !== false && (
+              <div
+                className="server-view server-configuration-view"
+                hidden={view !== 'configuration'}
+              >
+                <ServerConfiguration key={server.uid} server={server} onSaved={refresh} />
+              </div>
+            )}
             {(!server.permissions || server.permissions.includes('server.files')) && (
               <div className="server-view server-tools-view" hidden={view !== 'files'}>
                 <ServerTools server={server} tool="files" />
               </div>
             )}
-            {view === 'configuration' || view === 'files' ? null : serverTools.some(
+            {!viewAllowed ? (
+              <section className="card tool-panel">
+                <h2>Access to this tool is required</h2>
+                <p className="muted">
+                  Ask a workspace administrator for access, or choose one of the available server
+                  sections above.
+                </p>
+                <button className="btn secondary" onClick={() => selectView('overview')}>
+                  Back to server overview
+                </button>
+              </section>
+            ) : view === 'configuration' || view === 'files' ? null : serverTools.some(
                 (t) => t.id === view,
               ) ? (
               <div className="server-view server-tools-view">

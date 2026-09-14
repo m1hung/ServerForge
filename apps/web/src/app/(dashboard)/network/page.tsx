@@ -9,6 +9,7 @@ import { CopyButton } from '@/components/CopyButton';
 
 export default function NetworkPage() {
   const [report, setReport] = useState<NetworkReport | null>(null);
+  const [refreshError, setRefreshError] = useState('');
   const [draft, setDraft] = useState<NetworkConfiguration | null>(null);
   const [pending, setPending] = useState(''),
     [error, setError] = useState(''),
@@ -19,12 +20,13 @@ export default function NetworkPage() {
       force ? { method: 'POST' } : {},
     );
     setReport(data);
+    setRefreshError('');
     setDraft((previous) => previous ?? data.configuration);
   }, []);
   useEffect(() => {
-    void refresh().catch((error) => setError(error.message));
+    void refresh().catch((error) => setRefreshError(error.message));
     const timer = setInterval(() => {
-      if (!document.hidden) void refresh().catch(() => undefined);
+      if (!document.hidden) void refresh().catch((error) => setRefreshError(error.message));
     }, 15000);
     return () => clearInterval(timer);
   }, [refresh]);
@@ -54,7 +56,7 @@ export default function NetworkPage() {
       <div className="page-heading">
         <div>
           <div className="eyebrow">NETWORK & ACCESS</div>
-          <PageTitle>Your servers, within reach</PageTitle>
+          <PageTitle>Network & access</PageTitle>
           <p className="muted">Bring friends into your games. Take your dashboard with you.</p>
         </div>
         <button
@@ -69,10 +71,16 @@ export default function NetworkPage() {
         </button>
       </div>
       <div className="network-page">
-        {error && (
+        <nav className="section-links" aria-label="Network sections">
+          <a href="#public-games">Public game access</a>
+          <a href="#private-dashboard">Remote dashboard</a>
+          <a href="#server-sharing">Server sharing</a>
+        </nav>
+        {(error || refreshError) && (
           <div className="error-banner" role="alert">
             <Icon name="alert" size={18} />
-            {error}
+            {error || refreshError}
+            {refreshError && report && ' Showing the last available status.'}
           </div>
         )}
         {notice && (
@@ -83,8 +91,8 @@ export default function NetworkPage() {
         )}
         {!report || !draft ? (
           <div className="card network-loading" role="status">
-            {error
-              ? 'Network settings are available to workspace administrators.'
+            {error || refreshError
+              ? 'Could not load network status. Check your connection and try again.'
               : 'Checking host addresses and private access…'}
           </div>
         ) : (
@@ -163,6 +171,8 @@ export default function NetworkPage() {
             <div className="network-workspace">
               <form
                 className="card network-settings"
+                id="public-games"
+                aria-busy={!!pending}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void action(
@@ -188,6 +198,10 @@ export default function NetworkPage() {
                     <p>Let your router handle the port forwarding.</p>
                   </div>
                 </div>
+                <p className="field-hint">
+                  Turn this on, then open a server’s Share panel and enable public access for that
+                  game. Your dashboard stays private.
+                </p>
                 <label className="network-switch-row">
                   <div>
                     <strong>Automatic port forwarding</strong>
@@ -320,7 +334,7 @@ export default function NetworkPage() {
                   </span>
                   <div>
                     <h2>Your dashboard, anywhere</h2>
-                    <p>Encrypted access on your private tailnet.</p>
+                    <p>Private access from devices signed in to your Tailscale network.</p>
                   </div>
                 </div>
                 <div
@@ -372,18 +386,17 @@ export default function NetworkPage() {
                         <summary>Add an HTTPS hostname</summary>
                         <p>
                           Your dashboard is available through the encrypted tailnet. For an HTTPS
-                          browser address, run this from the ServerForge folder:
+                          browser address, run this in a terminal on the host with the ServerForge
+                          launcher installed:
                         </p>
                         <div className="network-command">
-                          <code>npm run network:setup -- --tailscale</code>
-                          <CopyButton
-                            value="npm run network:setup -- --tailscale"
-                            label="Copy command"
-                          />
+                          <code>serverforge network</code>
+                          <CopyButton value="serverforge network" label="Copy command" />
                         </div>
                         <p>
-                          Use the sudo command printed by Tailscale if host permissions require it,
-                          then check connections here.
+                          The launcher prints the correct HTTPS setup command for your saved port.
+                          Review existing Serve handlers first, follow any host permission
+                          instructions, then check connections here.
                         </p>
                       </details>
                     )}
@@ -395,14 +408,11 @@ export default function NetworkPage() {
                         <h3>Use your existing host connection</h3>
                         <p>
                           Your host’s Tailscale connection can carry dashboard and game traffic.
-                          Enable its private HTTPS dashboard from the ServerForge folder:
+                          Inspect it with the ServerForge launcher on the host:
                         </p>
                         <div className="network-command">
-                          <code>npm run network:setup -- --tailscale</code>
-                          <CopyButton
-                            value="npm run network:setup -- --tailscale"
-                            label="Copy command"
-                          />
+                          <code>serverforge network</code>
+                          <CopyButton value="serverforge network" label="Copy command" />
                         </div>
                         <p className="network-muted">
                           If Tailscale requests authorization, follow its link, then check
@@ -529,7 +539,7 @@ export default function NetworkPage() {
                 )}
               </section>
             </div>
-            <section className="card network-rules">
+            <section className="card network-rules" id="server-sharing">
               <div className="section-heading">
                 <div>
                   <h2>Server sharing</h2>
@@ -609,7 +619,7 @@ export default function NetworkPage() {
             </section>
             <div className="network-checked">
               <Icon name="activity" size={14} />
-              Checked{' '}
+              {refreshError ? 'Status is stale · Last checked' : 'Checked'}{' '}
               {new Date(report.checkedAt).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',

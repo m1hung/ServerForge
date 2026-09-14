@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Icon } from '@/components/Icon';
 import { PageTitle } from '@/components/PageTitle';
 import { api } from '@/lib/api';
+import { useCurrentUser } from '@/components/Shell';
 import {
   displayName,
   filterServers,
@@ -15,6 +16,8 @@ import {
 } from '@/lib/servers';
 
 export default function HomePage() {
+  const currentUser = useCurrentUser();
+  const canCreate = !!currentUser && ['owner', 'admin'].includes(currentUser.role);
   const [servers, setServers] = useState<Server[] | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -114,10 +117,12 @@ export default function HomePage() {
           <PageTitle>Overview</PageTitle>
           <p className="muted">Good games start with great servers. Let’s keep yours running.</p>
         </div>
-        <Link className="btn" href="/deploy">
-          <Icon name="plus" size={18} />
-          Deploy a server
-        </Link>
+        {canCreate && (
+          <Link className="btn" href="/deploy">
+            <Icon name="plus" size={18} />
+            Deploy a server
+          </Link>
+        )}
       </div>
       <div className="stats-grid">
         {stats.map((stat) => (
@@ -267,11 +272,19 @@ export default function HomePage() {
               <span className="empty-icon">
                 <Icon name={items.length ? 'search' : 'server'} size={28} />
               </span>
-              <h3>{items.length ? 'No matching servers' : 'Your next adventure starts here.'}</h3>
+              <h3>
+                {items.length
+                  ? 'No matching servers'
+                  : canCreate
+                    ? 'Your next adventure starts here.'
+                    : 'No servers shared yet'}
+              </h3>
               <p>
                 {items.length
                   ? 'Try another name, game, or server status.'
-                  : 'Deploy your first game server and bring your people together.'}
+                  : canCreate
+                    ? 'Deploy your first game server and bring your people together.'
+                    : 'Ask your workspace owner to add shared server access to your account. You don’t need a dashboard account just to join a game.'}
               </p>
               {items.length ? (
                 <button
@@ -284,12 +297,12 @@ export default function HomePage() {
                 >
                   Clear filters
                 </button>
-              ) : (
+              ) : canCreate ? (
                 <Link className="btn" href="/deploy">
                   <Icon name="plus" size={17} />
                   Deploy your first server
                 </Link>
-              )}
+              ) : null}
             </div>
           ) : view === 'list' ? (
             <div className="table-scroll">
@@ -458,40 +471,42 @@ export default function HomePage() {
             Resource totals reflect configured limits, not live usage.
           </div>
         </section>
-        <section className="deploy-promo">
-          <div className="promo-copy">
-            <span className="eyebrow">BUILD SOMETHING WORTH JOINING</span>
-            <h2>
-              New game. New world.
-              <br />
-              Same crew.
-            </h2>
-            <p>Your next server is a few clicks away.</p>
-            <Link href="/deploy" className="promo-link">
-              Deploy a server
-              <Icon name="arrow" size={17} />
-            </Link>
-          </div>
-          <div className="server-art" aria-hidden="true">
-            <div className="art-orbit" />
-            <div className="art-server">
-              <span />
-              <i />
-              <i />
+        {canCreate && (
+          <section className="deploy-promo">
+            <div className="promo-copy">
+              <span className="eyebrow">BUILD SOMETHING WORTH JOINING</span>
+              <h2>
+                New game. New world.
+                <br />
+                Same crew.
+              </h2>
+              <p>Your next server is a few clicks away.</p>
+              <Link href="/deploy" className="promo-link">
+                Deploy a server
+                <Icon name="arrow" size={17} />
+              </Link>
             </div>
-            <div className="art-server">
-              <span />
-              <i />
-              <i />
+            <div className="server-art" aria-hidden="true">
+              <div className="art-orbit" />
+              <div className="art-server">
+                <span />
+                <i />
+                <i />
+              </div>
+              <div className="art-server">
+                <span />
+                <i />
+                <i />
+              </div>
+              <div className="art-server">
+                <span />
+                <i />
+                <i />
+              </div>
+              <span className="art-spark">+</span>
             </div>
-            <div className="art-server">
-              <span />
-              <i />
-              <i />
-            </div>
-            <span className="art-spark">+</span>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
     </>
   );

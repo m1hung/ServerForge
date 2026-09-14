@@ -26,6 +26,18 @@ const invite = async (role = 'user', grants: object[] = []) => {
   return { ...result.json(), token: result.json().path.split('#')[1] };
 };
 
+it('shows only the latest actionable installation failure in system status', async () => {
+  const owner = await prisma.user.findUniqueOrThrow({ where: { uid: ownerUid } });
+  const node = await prisma.node.create({ data: { uid: 'status-node', name: 'Status fixture' } });
+  const server = await prisma.server.create({ data: { uid: 'status-server', ownerId: owner.id, nodeId: node.id, name: 'Status fixture', gameId: 'minecraft-java', variantId: 'vanilla', version: '1.20.1', memoryMib: 1024, cpuCores: 1, diskMib: 1024, dataPath: `${process.env.DATA_ROOT}/status-server`, state: 'install_failed' } });
+  for (let index = 0; index < 2; index++) await prisma.installationAttempt.create({ data: { serverId: server.id, uid: `status-attempt-${index}`, state: 'failed', stagingPath: `${server.dataPath}/attempt-${index}`, createdAt: new Date(1000 + index), error: `Failure ${index}` } });
+  const status = () => app.inject({ url: '/api/system/status', headers: { cookie } });
+  expect((await status()).json().installations.map((row: { uid: string }) => row.uid)).toEqual(['status-attempt-1']);
+  await prisma.server.update({ where: { id: server.id }, data: { state: 'offline', installedAt: new Date() } });
+  expect((await status()).json().installations).toEqual([]);
+  expect(await prisma.installationAttempt.count({ where: { serverId: server.id } })).toBe(2);
+});
+
 it('requires the owner setup token and makes invitation acceptance single-use even concurrently', async () => {
   const link = await invite();
   const row = await prisma.invitation.findUniqueOrThrow({ where: { uid: link.uid } });

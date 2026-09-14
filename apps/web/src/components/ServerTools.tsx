@@ -6,6 +6,8 @@ import { SERVER_PERMISSIONS } from '@serverforge/core/types';
 import { formatBytes } from '@serverforge/core/format';
 import { api, apiBase } from '@/lib/api';
 import { displayName, type Server } from '@/lib/servers';
+import { permissionLabels } from '@/lib/permission-labels';
+import { scheduleTiming, scheduleCron, scheduleDescription } from '@/lib/schedule';
 import { Icon } from './Icon';
 
 export type ServerTool =
@@ -903,6 +905,7 @@ type StoredSchedule = ScheduleInput & {
   lastRunError: string | null;
 };
 function Schedules({ server }: { server: Server }) {
+  const [customTiming, setCustomTiming] = useState(false);
   const url = `/api/servers/${server.uid}/schedules`,
     { data, error, refresh } = useResource<{ schedules: StoredSchedule[] }>(url),
     action = useAction(refresh);
@@ -918,6 +921,8 @@ function Schedules({ server }: { server: Server }) {
   });
   const [draft, setDraft] = useState<ScheduleInput | null>(null),
     [editing, setEditing] = useState<string | null>(null);
+  const timing = scheduleTiming(draft?.cron || null);
+  const frequency = customTiming ? 'custom' : timing.frequency;
   const changeAction = (index: number, next: ScheduleInput['actions'][number]) => {
     if (draft)
       setDraft({ ...draft, actions: draft.actions.map((a, i) => (i === index ? next : a)) });
@@ -945,6 +950,7 @@ function Schedules({ server }: { server: Server }) {
           className="btn"
           onClick={() => {
             setEditing(null);
+            setCustomTiming(false);
             setDraft(empty());
           }}
         >
@@ -1029,14 +1035,88 @@ function Schedules({ server }: { server: Server }) {
             ) : (
               <>
                 <label>
-                  Five-field cron
-                  <input
-                    required
-                    value={draft.cron ?? ''}
-                    onChange={(e) => setDraft({ ...draft, cron: e.target.value })}
-                  />
-                  <span className="field-hint">0 4 * * * = daily at 4 am · 0 * * * * = hourly</span>
+                  Repeat
+                  <select
+                    value={frequency}
+                    onChange={(event) => {
+                      setCustomTiming(event.target.value === 'custom');
+                      if (event.target.value !== 'custom')
+                        setDraft({
+                          ...draft,
+                          cron: scheduleCron(event.target.value, timing.time, timing.weekday),
+                        });
+                    }}
+                  >
+                    <option value="daily">Every day</option>
+                    <option value="weekly">Every week</option>
+                    <option value="hourly">Every hour</option>
+                    <option value="custom">Custom cron expression</option>
+                  </select>
                 </label>
+                {frequency === 'custom' ? (
+                  <label>
+                    Five-field cron
+                    <input
+                      required
+                      value={draft.cron ?? ''}
+                      onChange={(event) => {
+                        setCustomTiming(true);
+                        setDraft({ ...draft, cron: event.target.value });
+                      }}
+                    />
+                    <span className="field-hint">
+                      Minute, hour, day, month, weekday. Example: 0 4 * * * runs daily at 04:00.
+                    </span>
+                  </label>
+                ) : (
+                  <>
+                    {frequency !== 'hourly' && (
+                      <label>
+                        Run at
+                        <input
+                          type="time"
+                          required
+                          value={timing.time}
+                          onChange={(event) => {
+                            if (event.target.value)
+                              setDraft({
+                                ...draft,
+                                cron: scheduleCron(frequency, event.target.value, timing.weekday),
+                              });
+                          }}
+                        />
+                      </label>
+                    )}
+                    {frequency === 'weekly' && (
+                      <label>
+                        Day
+                        <select
+                          value={timing.weekday}
+                          onChange={(event) =>
+                            setDraft({
+                              ...draft,
+                              cron: scheduleCron(frequency, timing.time, event.target.value),
+                            })
+                          }
+                        >
+                          {[
+                            'Sunday',
+                            'Monday',
+                            'Tuesday',
+                            'Wednesday',
+                            'Thursday',
+                            'Friday',
+                            'Saturday',
+                          ].map((day, index) => (
+                            <option key={day} value={index}>
+                              {day}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </>
+                )}
                 <label>
                   Timezone
                   <input
@@ -1044,6 +1124,9 @@ function Schedules({ server }: { server: Server }) {
                     value={draft.timezone}
                     onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
                   />
+                  <span className="field-hint">
+                    Starts with your browser’s timezone. Use UTC for a fixed time all year.
+                  </span>
                 </label>
               </>
             )}
@@ -1229,7 +1312,7 @@ function Schedules({ server }: { server: Server }) {
               <p>
                 {item.enabled ? 'Enabled' : 'Paused'} ·{' '}
                 {item.cron
-                  ? `${item.cron} · ${item.timezone}`
+                  ? `${scheduleDescription(item.cron)} · ${item.timezone}`
                   : displayName(item.triggerType ?? '')}
               </p>
               <p>
@@ -1247,6 +1330,7 @@ function Schedules({ server }: { server: Server }) {
                 className="btn secondary"
                 onClick={() => {
                   setEditing(item.uid);
+                  setCustomTiming(false);
                   setDraft(item);
                 }}
               >
@@ -1465,7 +1549,7 @@ function Access({ server }: { server: Server }) {
                   )
                 }
               />
-              {displayName(permission.replace('server.', ''))}
+              {permissionLabels[permission] || permission}
             </label>
           ))}
         </fieldset>
@@ -1486,7 +1570,9 @@ function Access({ server }: { server: Server }) {
                 {member.displayName} <span className="muted">@{member.username}</span>
               </strong>
               <p>
-                {member.permissions.map((p) => displayName(p.replace('server.', ''))).join(' · ')}
+                {member.permissions
+                  .map((p) => permissionLabels[p] || displayName(p.replace('server.', '')))
+                  .join(' · ')}
               </p>
             </div>
             <div className="row">

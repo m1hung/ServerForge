@@ -2996,13 +2996,6 @@ pre {
   }
 }
 
-.server-tools-select {
-  align-self: center;
-  max-width: 190px;
-  padding: 7px 9px;
-  font-size: 12px;
-  margin-left: 2px;
-}
 .tool-panel {
   min-height: 100%;
 }
@@ -3415,11 +3408,6 @@ pre {
     flex-wrap: wrap;
     overflow: visible;
     width: 100%;
-  }
-  .server-tools-select {
-    margin: 0 0 4px;
-    width: 100%;
-    max-width: none;
   }
   .history-grid,
   .update-diff {
@@ -4240,5 +4228,213 @@ input.network-switch:disabled {
   input.network-switch,
   input.network-switch::before {
     transition: none;
+  }
+}
+
+/* Shared settings and feedback patterns across account, host, and game pages. */
+.settings-page {
+  display: grid;
+  gap: 20px;
+  max-width: 1100px;
+}
+.settings-page :is(section[id], details[id]) {
+  scroll-margin-top: 24px;
+}
+.settings-page .stack {
+  gap: 16px;
+}
+.settings-page :is(p, h3) {
+  margin-bottom: 0;
+}
+.settings-page h3 {
+  font-size: 14px;
+  font-weight: 650;
+}
+.section-links,
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.form-actions:has(label) {
+  align-items: flex-end;
+}
+.section-links {
+  gap: 8px;
+}
+.section-links a {
+  border: 1px solid var(--stroke);
+  border-radius: 7px;
+  background: var(--bg-raised);
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.section-links a:hover {
+  background: var(--bg-overlay);
+}
+.settings-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--stroke);
+}
+.settings-item > div:first-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.settings-item p {
+  font-size: 13px;
+  margin-top: 6px;
+}
+.settings-item fieldset {
+  margin: 0;
+}
+.settings-item .form-actions {
+  flex: 0 1 auto;
+}
+.settings-details > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+  padding: 12px 0;
+}
+.settings-details > form {
+  padding-top: 12px;
+}
+.settings-page .permission-grid {
+  margin: 0;
+  gap: 14px;
+}
+.empty-note {
+  color: var(--muted);
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--ok) 22%, var(--stroke));
+  border-radius: 8px;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 5%, var(--bg-raised));
+  font-size: 13px;
+}
+.break-text,
+.secret-value {
+  overflow-wrap: anywhere;
+}
+.secret-value {
+  display: block;
+  white-space: pre-wrap;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--stroke);
+  border-radius: 7px;
+}
+.secret-panel,
+.enrollment-panel,
+.invite-result {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--bg);
+}
+.enrollment-panel img {
+  max-width: 100%;
+  height: auto;
+}
+.security-dialog {
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.security-dialog .configuration-inputs {
+  margin: 0;
+}
+.security-dialog .error-banner {
+  margin: 0;
+}
+.health-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0 24px;
+}
+.health-checks .settings-item {
+  flex-wrap: nowrap;
+}
+.health-checks .settings-item > strong {
+  font-size: 13px;
+}
+.recovery-product {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 0;
+}
+.recovery-product > code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.recovery-product > .btn {
+  justify-self: start;
+}
+.management-tabs.server-sections {
+  margin: 0;
+  gap: 4px 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--bg-raised);
+}
+.management-tabs.server-sections button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.management-tabs.server-sections button:hover {
+  background: var(--bg-overlay);
+}
+.management-tabs.server-sections button[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  box-shadow: inset 0 -2px var(--accent);
+}
+.server-permission-note {
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .settings-page .card {
+    padding: 18px;
+  }
+  .settings-item > .form-actions,
+  .settings-item > fieldset {
+    width: 100%;
+  }
+  .settings-item .form-actions > label {
+    flex: 1 1 120px;
+  }
+  .settings-page .permission-grid {
+    grid-template-columns: 1fr;
+  }
+  .management-tabs.server-sections {
+    gap: 4px;
+  }
+  .management-tabs.server-sections button {
+    flex: 1 0 40%;
+    justify-content: center;
+    min-height: 40px;
   }
 }

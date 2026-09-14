@@ -1,5 +1,20 @@
 import { expect, it } from 'vitest';
 import { formatBytes } from '../packages/core/src/format';
+import { scheduleTiming, scheduleCron } from '../apps/web/src/lib/schedule';
+
+it('round-trips simple schedules without interpreting advanced cron expressions', () => {
+  for (const [frequency, time, weekday, cron] of [
+    ['daily', '04:30', '0', '30 4 * * *'],
+    ['weekly', '23:59', '6', '59 23 * * 6'],
+    ['hourly', '04:00', '0', '0 * * * *'],
+  ]) {
+    expect(scheduleCron(frequency!, time!, weekday)).toBe(cron);
+    expect(scheduleTiming(cron!)).toMatchObject({ frequency, time, weekday });
+  }
+  for (const cron of ['*/5 * * * *', '0 4 * * 1-5', '61 25 * * *', null])
+    expect(scheduleTiming(cron).frequency).toBe('custom');
+  expect(() => scheduleCron('daily', '25:00')).toThrow(/valid schedule/);
+});
 
 it('keeps sub-byte network rates in bytes instead of scaling them up', () => {
   expect(formatBytes(0.1)).toBe('0 B');

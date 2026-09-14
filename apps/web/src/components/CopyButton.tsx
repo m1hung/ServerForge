@@ -5,10 +5,12 @@ import { Icon } from './Icon';
 export function CopyButton({
   value,
   label = 'Copy',
+  text = label,
   className = 'btn secondary small',
 }: {
   value: string;
   label?: string;
+  text?: string;
   className?: string;
 }) {
   const [message, setMessage] = useState('');
@@ -26,9 +28,9 @@ export function CopyButton({
   }
   return (
     <>
-      <button className={className} onClick={() => void copy()} aria-label={label}>
+      <button type="button" className={className} onClick={() => void copy()} aria-label={label}>
         <Icon name={message === 'Copied' ? 'check' : 'copy'} size={15} />
-        {message === 'Copied' ? 'Copied' : label}
+        {message === 'Copied' ? 'Copied' : text}
       </button>
       <span className="sr-only" role="status">
         {message}

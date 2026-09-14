@@ -65,7 +65,11 @@ try {
   await run('docker', [...composeArgs, 'exec', '-T', 'postgres', 'psql', '-U', 'serverforge', '-d', 'serverforge', '-v', 'ON_ERROR_STOP=1', '-c', 'BEGIN; DELETE FROM "Allocation" WHERE "serverId" IS NULL; UPDATE "Node" SET "portRangeStart"=32500,"portRangeEnd"=32999; INSERT INTO "Allocation" (id,"nodeId",ip,port,purpose,"primary") SELECT md5(n.id||p::text),n.id,\'0.0.0.0\',p,\'game\',false FROM "Node" n CROSS JOIN generate_series(32500,32999) p; COMMIT;']);
   result.checks.push('image-based-setup-and-readiness');
   console.log('Packaged installation ready; exercising browser workflows.');
-  const browser = await run(process.execPath, ['node_modules/@playwright/test/cli.js', 'test'], { SF_TEST_BROWSER_URL: `http://127.0.0.1:${port}`, SF_TEST_SETUP_TOKEN: token, SF_TEST_OWNER_PASSWORD: randomBytes(24).toString('hex'), SF_TEST_BROWSER_OUTPUT: path.join(scratch, 'browser-output'), SF_TEST_BROWSER_RESULT: path.join(scratch, 'browser-result.json') });
+  const password = randomBytes(24).toString('hex');
+  // Private credentials let a retained fixture be inspected or used for the
+  // separate fresh-host world-recovery drill. Never include them in artifacts.
+  await fs.writeFile(path.join(scratch, 'browser-credentials.json'), JSON.stringify({ username: 'release-owner', password }), { mode: 0o600 });
+  const browser = await run(process.execPath, ['node_modules/@playwright/test/cli.js', 'test'], { SF_TEST_BROWSER_URL: `http://127.0.0.1:${port}`, SF_TEST_SETUP_TOKEN: token, SF_TEST_OWNER_PASSWORD: password, SF_TEST_BROWSER_OUTPUT: path.join(scratch, 'browser-output'), SF_TEST_BROWSER_RESULT: path.join(scratch, 'browser-result.json') });
   await fs.writeFile(path.join(scratch, 'browser.log'), browser, { mode: 0o600 });
   const browserResult = JSON.parse(await fs.readFile(path.join(scratch, 'browser-result.json'), 'utf8'));
   if (!browserResult.stats.expected || browserResult.stats.unexpected || browserResult.stats.skipped || browserResult.stats.flaky)

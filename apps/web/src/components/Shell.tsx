@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { PageTitle } from './PageTitle';
 import { api } from '@/lib/api';
 import { useBrand } from './BrandProvider';
 
 type User = { username: string; displayName: string; role: string };
+const UserContext = createContext<User | null>(null);
+export const useCurrentUser = () => useContext(UserContext);
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +23,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const menuToggle = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const brand = useBrand().name;
+  const administrator = !!user && ['owner', 'admin'].includes(user.role);
+  const restricted = ['/deploy', '/network', '/accounts', '/system'].includes(pathname);
   const page =
     pathname === '/network'
       ? 'Network & access'
@@ -193,8 +198,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </span>
             <strong>Your world. Your rules.</strong>
             <p>A place for your next adventure, powered by you.</p>
-            <Link href="/deploy" onClick={() => setMenuOpen(false)}>
-              Create a server <Icon name="arrow" size={16} />
+            <Link href={administrator ? '/deploy' : '/'} onClick={() => setMenuOpen(false)}>
+              {administrator ? 'Create a server' : 'Open your servers'}{' '}
+              <Icon name="arrow" size={16} />
             </Link>
           </div>
           <button
@@ -264,7 +270,26 @@ export function Shell({ children }: { children: React.ReactNode }) {
               {error}
             </div>
           )}
-          {children}
+          {!user ? (
+            <p className="muted" role="status">
+              {error
+                ? 'Your workspace could not be loaded. Reload to try again.'
+                : 'Loading your workspace…'}
+            </p>
+          ) : restricted && !administrator ? (
+            <section className="card empty-state">
+              <PageTitle>Administrator access required</PageTitle>
+              <p className="muted">
+                Ask your workspace owner to manage this setting. You can use the features shared
+                with you on your server page.
+              </p>
+              <Link className="btn" href="/">
+                Back to your servers
+              </Link>
+            </section>
+          ) : (
+            <UserContext.Provider value={user}>{children}</UserContext.Provider>
+          )}
         </main>
         <footer className="workspace-footer">
           <span>
@@ -310,8 +335,45 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </p>
           </li>
         </ol>
-        <Link className="btn" href="/deploy" onClick={() => guide.current?.close()}>
-          Deploy a server
+        <details className="settings-details">
+          <summary>Explore the server tools</summary>
+          <ul className="guide-features">
+            <li>
+              <strong>Configuration:</strong> change game rules and hardware. Save, then restart to
+              apply.
+            </li>
+            <li>
+              <strong>Mods & plugins:</strong> upload compatible files while the game is stopped.
+              For a CurseForge server pack ZIP, choose that edition when deploying.
+            </li>
+            <li>
+              <strong>Backups & restore:</strong> save a recovery point before changing a world or
+              its mods.
+            </li>
+            <li>
+              <strong>Schedules & alerts:</strong> automate backups and restarts, or set up
+              server-event notifications.
+            </li>
+            <li>
+              <strong>Files and updates:</strong> edit server files, prepare game updates, and
+              review changes before applying.
+            </li>
+            <li>
+              <strong>Shared access:</strong> give another dashboard account permission to help
+              manage a server. Use Share for player join addresses.
+            </li>
+          </ul>
+          <p className="muted">
+            You’ll see the tools your account can use. Ask the server owner for additional
+            permissions.
+          </p>
+        </details>
+        <Link
+          className="btn"
+          href={administrator ? '/deploy' : '/'}
+          onClick={() => guide.current?.close()}
+        >
+          {administrator ? 'Deploy a server' : 'Open your servers'}
           <Icon name="arrow" size={16} />
         </Link>
       </dialog>

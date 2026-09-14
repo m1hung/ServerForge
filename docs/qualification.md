@@ -89,20 +89,20 @@ identifiers used. A changed implementation needs a new qualification run.
 Record pass/fail, exact OS/Docker/architecture/game versions and relevant redacted
 errors for each check. A missing result is **not tested**, never passed.
 
-| Check | Evidence to record |
-| --- | --- |
-| Fresh installation | Owner token, first sign-in and ready health; no undocumented intervention |
-| Accounts | Invite acceptance/replay refusal, TOTP/recovery, session/key revocation, permission denial |
-| Browser | Creation, modpack upload, config edit, console, live telemetry, backups/restores, dark mode |
-| Accessibility | Keyboard focus, dialogs/Escape, contrast, mobile, 200% zoom and scrolling |
-| Local game access | Real game client joins the expected world from another LAN device |
-| Tailnet access | Dashboard URL including its port, Serve HTTPS where configured, ACL/auth failure handling |
-| Public access | Explicit UPnP opt-in, conflict refusal and real external-client join where available |
-| Upgrade/rollback | Existing identifiers/settings/worlds preserved; failure/drift refusal and documented rollback |
-| Host restart | Panel reconnects to existing game containers, no duplicate game processes |
-| Full recovery | Fresh target, revoked sessions/keys, offline inspection, real-world startup/content confirmation |
-| Failure handling | Docker/database outage, full disk, occupied port, browser disconnect and interrupted operation |
-| Four-hour soak | Result and host resource samples, with no stuck jobs, lost worlds or unbounded growth |
+| Check              | Evidence to record                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| Fresh installation | Owner token, first sign-in and ready health; no undocumented intervention                        |
+| Accounts           | Invite acceptance/replay refusal, TOTP/recovery, session/key revocation, permission denial       |
+| Browser            | Creation, modpack upload, config edit, console, live telemetry, backups/restores, dark mode      |
+| Accessibility      | Keyboard focus, dialogs/Escape, contrast, mobile, 200% zoom and scrolling                        |
+| Local game access  | Real game client joins the expected world from another LAN device                                |
+| Tailnet access     | Dashboard URL including its port, Serve HTTPS where configured, ACL/auth failure handling        |
+| Public access      | Explicit UPnP opt-in, conflict refusal and real external-client join where available             |
+| Upgrade/rollback   | Existing identifiers/settings/worlds preserved; failure/drift refusal and documented rollback    |
+| Host restart       | Panel reconnects to existing game containers, no duplicate game processes                        |
+| Full recovery      | Fresh target, revoked sessions/keys, offline inspection, real-world startup/content confirmation |
+| Failure handling   | Docker/database outage, full disk, occupied port, browser disconnect and interrupted operation   |
+| Four-hour soak     | Result and host resource samples, with no stuck jobs, lost worlds or unbounded growth            |
 
 Use [setup](setup.md), [operations](operations.md) and [networking](networking.md).
 Do not disable protections or alter host firewall rules just to make a test pass.
@@ -123,11 +123,19 @@ Mac require actual results. Missing platform results leave the candidate
 
 ## Maintainer regression tools
 
-`npm run test:packaged` creates a fresh disposable installation and runs four
-required browser workflows, including axe-core WCAG AA checks across light/dark
-mode and three viewport sizes. It also kills its own host upgrade command after
+`npm run test:packaged` creates a fresh disposable installation and runs required
+browser workflows, including game creation, retained failed ZIPs, command references,
+member permissions, schedules, authenticator enrollment, recovery codes, and scoped
+API keys. Axe-core WCAG AA checks cover workspace pages and every server tool in
+light/dark mode and three viewport sizes. It also kills its own host upgrade command after
 migrations and verifies documented lock recovery and rollback. Docker/database
 checks remain mandatory; unavailable infrastructure does not produce a pass.
+
+Use `-- --keep` to retain a local fixture for inspection. Its private
+`browser-credentials.json` is excluded from collected CI artifacts and must not
+be shared. A retained fixture can be used by the separate fresh-host world recovery
+drill after obtaining its test session. Stop it when finished; never substitute
+credentials or paths from a real installation.
 
 For source adoption and schema-incompatible rollback, a maintainer with a source
 checkout can select retained legacy API/web **image IDs** and run

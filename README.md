@@ -10,16 +10,19 @@ Linux tests. Candidate images are local/private; public publication is separate.
 
 ## Games and operations
 
-| Game | Implemented editions |
-| --- | --- |
+| Game           | Implemented editions                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------- |
 | Minecraft Java | Vanilla, Paper, Purpur, Fabric, Forge, NeoForge, Modrinth packs, uploaded CurseForge server-pack ZIPs |
-| Valheim | Dedicated server and BepInEx |
-| Palworld | Dedicated server and compatible Linux PAK mods |
+| Valheim        | Dedicated server and BepInEx                                                                          |
+| Palworld       | Dedicated server and compatible Linux PAK mods                                                        |
 
 Edition availability is distinct from platform qualification. The deployment
 wizard reports supported, experimental or unsupported runtime combinations.
 See [mod compatibility](docs/modded-servers.md) and the exact test evidence in
 the release report before relying on a game/loader/platform combination.
+
+See [using the dashboard](docs/dashboard.md) for everyday game management,
+sharing, account security, schedules, and recovery.
 
 - Compact server pages, dark mode, live console and resource monitoring.
 - Saved and applied hardware limits, storage budgets and capability reporting.
