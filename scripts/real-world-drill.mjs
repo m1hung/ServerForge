@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
+import * as tar from 'tar';
 import { parseEnv } from '../packages/maintenance/src/environment.mjs';
 
 const repo = path.resolve(import.meta.dirname, '..');
@@ -53,7 +54,19 @@ try {
   report.checks.push('full-bundle-checksums', 'graceful-stop-and-resume');
   await api(sourceUrl, cookie, `/servers/${uid}/power`, { action: 'stop' });
   const sourceWorld = path.join(sourceConfig.HOST_DATA_ROOT, uid, 'world/data/scoreboard.dat');
-  report.worldSentinelSha256 = createHash('sha256').update(await fs.readFile(sourceWorld)).digest('hex');
+  report.sourceAfterResumeSha256 = createHash('sha256').update(await fs.readFile(sourceWorld)).digest('hex');
+  // Minecraft may reorder scoreboard entries when it saves after resuming.
+  // Compare the restore with the verified snapshot, not a later live save.
+  const snapshot = createHash('sha256');
+  let found = 0;
+  await tar.t({ file: path.join(bundleHost, 'servers.tar.gz'), onReadEntry(entry) {
+    if (entry.path.replace(/^\.\//, '') === `${uid}/world/data/scoreboard.dat`) {
+      found++;
+      entry.on('data', (bytes) => snapshot.update(bytes));
+    }
+  } });
+  assert.equal(found, 1, 'The verified bundle must contain exactly one world sentinel.');
+  report.worldSentinelSha256 = snapshot.digest('hex');
   console.log('Restoring into a new database and installation directory.');
   const setup = await launch(target, ['setup', '--configure-only', '--port', process.env.SF_RESTORE_WEB_PORT || '3031', '--api-image', sourceConfig.API_IMAGE, '--web-image', sourceConfig.WEB_IMAGE, '--postgres-image', sourceConfig.POSTGRES_IMAGE, '--tailscale-image', sourceConfig.TAILSCALE_IMAGE]);
   await fs.writeFile(path.join(target, 'setup.log'), setup, { mode: 0o600 });
