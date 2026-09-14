@@ -151,7 +151,9 @@ avoids changing tags while another architecture is being packaged.
 For source adoption and schema-incompatible rollback, a maintainer with a source
 checkout can select retained legacy API/web **image IDs** and run
 `scripts/host-upgrade-drill.mjs` using `SF_LEGACY_API_IMAGE`,
-`SF_LEGACY_WEB_IMAGE`, `SF_MAINTENANCE_TEST_IMAGE` and `DOCKER_SOCKET`. It creates
+`SF_LEGACY_WEB_IMAGE`, `SF_API_TEST_IMAGE`, `SF_WEB_TEST_IMAGE`,
+`SF_MAINTENANCE_TEST_IMAGE` and `DOCKER_SOCKET`. It records and verifies the selected
+candidate image IDs for each upgraded fixture. It creates
 both supported legacy database schemas in new fixture projects. Old background
 workers are disabled so old network-management code cannot alter host networking.
 It verifies schema, account identifiers, filesystem sentinels, runtime settings,
@@ -168,3 +170,16 @@ changes the fixture's scoreboard and kills only its labeled API process; it must
 never be pointed at an ordinary installation. Its report records the image ID,
 observed journal state and recovered world checksums. Preserve each report before
 repeating a drill.
+
+`scripts/fault-drill.mjs` uses the same explicit `SF_GAME_TEST_HOME`,
+`SF_GAME_TEST_UID`, private cookie and local Docker socket. Its target must be a
+restored fixture under `data/release-tests/world-restore-*`, with an offline vanilla
+Minecraft world containing the `sf_restore` scoreboard objective. Give it a game
+port that does not overlap another running fixture before starting the drill.
+It sets a test scoreboard value, stops its own database, removes Docker access
+only from its own API, and exhausts a separate 128 MiB tmpfs backup volume.
+It verifies truthful health, game continuity, browser-visible errors, preserved
+backup files and a successful retry. The shared Docker daemon, host disk and
+database volume are never exhausted. Cleanup removes the temporary override and
+volume and restores the original backup-worker state; the game remains offline.
+Inspect `fault-result.json` and `full-disk-backup-error.png`, then stop the fixture.

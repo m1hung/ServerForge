@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
+import * as tar from 'tar';
 import { parseEnv } from '../packages/maintenance/src/environment.mjs';
 const repo = process.cwd(),
   home = path.resolve(process.env.SF_GAME_TEST_HOME || 'invalid'),
@@ -117,7 +118,19 @@ try {
   });
   await ready();
   await api(`/servers/${uid}/power`, { action: 'stop' });
-  const a = await hash();
+  report.baselineAfterResumeSha256 = await hash();
+  // A resumed Minecraft process can rewrite the same scoreboard in a different
+  // order. The committed restore must match the backup's exact snapshot bytes.
+  const snapshot = createHash('sha256');
+  let found = 0;
+  await tar.t({ file: path.join(cfg.HOST_BACKUP_ROOT, uid, `${backup.uid}.tar.gz`), onReadEntry(entry) {
+    if (entry.path.replace(/^\.\//, '') === 'world/data/scoreboard.dat') {
+      found++;
+      entry.on('data', (bytes) => snapshot.update(bytes));
+    }
+  } });
+  assert.equal(found, 1, 'The recovery backup must contain exactly one world sentinel.');
+  const a = snapshot.digest('hex');
   report.baselineWorldSha256 = a;
   report.baselineBackup = backup.uid;
   await ready();

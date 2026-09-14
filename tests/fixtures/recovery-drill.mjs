@@ -46,6 +46,7 @@ try {
   await source.db.server.create({ data: { uid: 'world-fixture', name: 'World fixture', ownerId: owner.id, nodeId: node.id, gameId: 'minecraft-java', variantId: 'vanilla', version: '1.20.1', memoryMib: 1024, cpuCores: 1, diskMib: 2048, dataPath: path.join(sourcePaths.servers, 'world-fixture'), state: 'running', containerId: 'stale-container', publicAccess: true } });
   await source.db.session.create({ data: { tokenHash: 'old-session', userId: owner.id, expiresAt: new Date(Date.now() + 86400000) } });
   await source.db.apiKey.create({ data: { uid: 'old-key', name: 'Old key', tokenHash: 'old-key-hash', prefix: 'sf_old', userId: owner.id } });
+  await source.db.invitation.create({ data: { uid: 'old-invite', tokenHash: 'old-invitation-hash', inviterId: owner.id, expiresAt: new Date(Date.now() + 86400000) } });
   await source.db.setting.create({ data: { key: 'network.configuration', value: { upnpEnabled: true, verifiedDashboardUrl: 'https://old.ts.net' } } });
   const bundle = await createBundle({ kind: 'full', recoveryRoot: path.join(root, 'bundles'), configRoot: config, databaseUrl: source.url, paths: sourcePaths });
   assert.equal((await verifyBundle(bundle.directory)).kind, 'full');
@@ -61,6 +62,7 @@ try {
   assert.equal(await fs.readFile(path.join(targetPaths.servers, 'world-fixture/.steam/root/proof'), 'utf8'), 'STEAM-LINK-FIXTURE');
   assert.equal(await target.db.session.count(), 0);
   assert.ok((await target.db.apiKey.findFirst()).revokedAt);
+  assert.ok((await target.db.invitation.findUnique({ where: { uid: 'old-invite' } })).revokedAt);
   const recoveredOwner = await target.db.user.findUnique({ where: { id: owner.id } });
   assert.equal(recoveredOwner.passwordHash, 'preserved-argon2-hash');
   assert.equal(recoveredOwner.totpSecret, 'preserved-encrypted-secret');
@@ -88,7 +90,7 @@ try {
   const untouched = await database('untouched');
   await assert.rejects(restoreBundle(bundle.directory, { databaseUrl: untouched.url, configRoot: path.join(root, 'untouched-config'), paths: targetPaths, hostDataRoot: targetPaths.servers }), /checksum failed/);
   assert.equal((await untouched.db.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public'`).length, 0);
-  console.log(JSON.stringify({ ok: true, checks: ['full-bundle-verification', 'fresh-database-restore', 'world-fixture-content', 'account-and-TOTP-preservation', 'session-and-key-revocation', 'path-remapping', 'games-offline', 'external-exposure-disabled', 'existing-target-refusal', 'corruption-refusal', 'transactional-panel-rollback-removes-newer-schema-objects'], gameQualification: 'Fixture files only; real-game startup qualification is separate.' }));
+  console.log(JSON.stringify({ ok: true, checks: ['full-bundle-verification', 'fresh-database-restore', 'world-fixture-content', 'account-and-TOTP-preservation', 'session-and-key-revocation', 'invitation-revocation', 'path-remapping', 'games-offline', 'external-exposure-disabled', 'existing-target-refusal', 'corruption-refusal', 'transactional-panel-rollback-removes-newer-schema-objects'], gameQualification: 'Fixture files only; real-game startup qualification is separate.' }));
 } finally {
   for (const db of clients) await db.$disconnect();
   for (const name of databases) await admin.$executeRawUnsafe(`DROP DATABASE "${name}" WITH (FORCE)`);

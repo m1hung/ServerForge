@@ -10,6 +10,10 @@ import { parseEnv } from '../packages/maintenance/src/environment.mjs';
 
 const repo = path.resolve(import.meta.dirname, '..');
 const legacyImages = { api: process.env.SF_LEGACY_API_IMAGE, web: process.env.SF_LEGACY_WEB_IMAGE };
+const candidateImages = {
+  api: process.env.SF_API_TEST_IMAGE || 'serverforge-rc-api:check',
+  web: process.env.SF_WEB_TEST_IMAGE || 'serverforge-rc-web:check',
+};
 if (Object.values(legacyImages).some((image) => !/^sha256:[a-f0-9]{64}$/.test(image || ''))) throw new Error('Select explicit retained legacy API/web image IDs. This drill never discovers a live installation.');
 const endpoint = process.env.DOCKER_HOST || `unix://${process.env.DOCKER_SOCKET}`;
 if (!endpoint.startsWith('unix://') || endpoint.endsWith('undefined')) throw new Error('Select the isolated local Docker socket.');
@@ -49,7 +53,7 @@ try {
     const dockerCompose = (args, options) => run('docker', [...base, ...args], options);
     try {
       const webPort = await port(), apiPort = await port();
-      await launch(home, ['setup', '--configure-only', '--port', webPort, '--api-image', 'serverforge-rc-api:check', '--web-image', 'serverforge-rc-web:check']);
+      await launch(home, ['setup', '--configure-only', '--port', webPort, '--api-image', candidateImages.api, '--web-image', candidateImages.web]);
       config = parseEnv(await fs.readFile(path.join(home, 'config/.env'), 'utf8'));
       assert.match(config.COMPOSE_PROJECT_NAME, /^serverforge-[a-f0-9]{10}$/); assert.equal(config.BRAND_RESOURCE_PREFIX, config.COMPOSE_PROJECT_NAME);
       entry.project = config.COMPOSE_PROJECT_NAME;
@@ -76,12 +80,21 @@ INSERT INTO "Setting" (key,value,"updatedAt") VALUES ('network.preferences','{"u
       for (const key of ['SESSION_SECRET','ENCRYPTION_KEY','HOST_DATA_ROOT','HOST_BACKUP_ROOT','WEB_PORT','BRAND_RESOURCE_PREFIX']) assert.equal(adopted[key], config[key]);
       assert.equal(JSON.parse(await run('docker', ['inspect', apiId]))[0].State.StartedAt, before.State.StartedAt);
       entry.checks.push('adoption-preserves-running-container-paths-secrets-port');
-      await launch(home, ['upgrade', version, '--api-image', 'serverforge-rc-api:check', '--web-image', 'serverforge-rc-web:check', '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
+      await launch(home, ['upgrade', version, '--api-image', candidateImages.api, '--web-image', candidateImages.web, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
       assert.equal(await sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL;'), '3');
       assert.equal(await sql('SELECT "passwordHash" FROM "User" WHERE id=\'legacy-owner\';'), 'preserved-password-hash');
       assert.equal(await sql('SELECT uid FROM "Server" WHERE id=\'legacy-server\';'), 'legacyworld');
       assert.deepEqual(await fs.readFile(path.join(world, 'checkpoint.dat')), sentinel);
       const upgradedId = await dockerCompose(['ps', '-q', 'api']);
+      entry.images = {};
+      for (const [component, reference] of Object.entries({ ...candidateImages, maintenance: env.SERVERFORGE_MAINTENANCE_IMAGE, postgres: adopted.POSTGRES_IMAGE })) {
+        const [image] = JSON.parse(await run('docker', ['image', 'inspect', reference]));
+        entry.images[component] = { reference, digest: image.Id, architecture: image.Architecture };
+        if (component !== 'maintenance') {
+          const container = JSON.parse(await run('docker', ['inspect', await dockerCompose(['ps', '-q', component])]))[0];
+          assert.equal(container.Image, image.Id);
+        }
+      }
       assert.equal(Object.keys(JSON.parse(await run('docker', ['inspect', upgradedId]))[0].HostConfig.PortBindings || {}).length, 0);
       entry.checks.push('backed-up-legacy-schema-upgrade','account-server-world-preserved','new-api-private');
       await launch(home, ['rollback']);
@@ -104,6 +117,13 @@ INSERT INTO "Setting" (key,value,"updatedAt") VALUES ('network.preferences','{"u
         if (ids.length) await run('docker',['rm','-f',...ids]);
         const volumes = (await run('docker',['volume','ls','-q','--filter',`label=com.docker.compose.project=${config.COMPOSE_PROJECT_NAME}`])).split(/\s+/).filter(Boolean);
         if (volumes.length) await run('docker',['volume','rm',...volumes]);
+        const networks = (await run('docker',['network','ls','-q','--filter',`label=com.docker.compose.project=${config.COMPOSE_PROJECT_NAME}`])).split(/\s+/).filter(Boolean);
+        for (const id of networks) {
+          const [network] = JSON.parse(await run('docker',['network','inspect',id]));
+          assert.equal(network.Labels['com.docker.compose.project'], config.COMPOSE_PROJECT_NAME);
+          assert.equal(Object.keys(network.Containers || {}).length, 0);
+        }
+        if (networks.length) await run('docker',['network','rm',...networks]);
       }
       await save();
     }
