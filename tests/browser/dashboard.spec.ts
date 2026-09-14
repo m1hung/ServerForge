@@ -248,6 +248,22 @@ test('real Minecraft installation, console, hardware, consistent backup and worl
   await commands.getByRole('button', { name: 'Close command cheat sheet' }).click();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(start).toBeEnabled({ timeout: 90000 });
+  const backupsPath = new URL(page.url()).pathname.replace('/servers/', '/api/servers/') + '/backups';
+  let failedOperation = true;
+  await page.route(`**${backupsPath}`, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), busy: false, lastOperation: {
+      action: failedOperation ? 'backup.failed' : 'backup.completed',
+      message: failedOperation ? 'Not enough free storage. Free space before retrying.' : 'Backup ready: Recovered checkpoint',
+      at: new Date().toISOString(),
+    } } });
+  });
+  await page.getByRole('button', { name: 'Backups & restore', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Not enough free storage' })).toBeVisible();
+  failedOperation = false;
+  await expect(page.getByRole('status').filter({ hasText: 'Backup ready: Recovered checkpoint' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Not enough free storage' })).toHaveCount(0);
+  await page.unroute(`**${backupsPath}`);
   expect(errors).toEqual([]);
 });
 

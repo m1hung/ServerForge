@@ -174,6 +174,7 @@ function Backups({ server }: { server: Server }) {
   const url = `/api/servers/${server.uid}/backups`;
   const { data, error, refresh } = useResource<{
     busy: boolean;
+    lastOperation?: { action: string; message: string; at: string } | null;
     backups: {
       uid: string;
       name: string;
@@ -186,6 +187,7 @@ function Backups({ server }: { server: Server }) {
   const action = useAction(refresh),
     [name, setName] = useState('');
   const busy = action.pending || data?.busy || server.busy;
+  const lastFailure = !busy && data?.lastOperation?.action.endsWith('.failed') ? data.lastOperation.message : '';
   const canRestore = ['server.power', 'server.files', 'server.settings'].every((p) =>
     permitted(server, p),
   );
@@ -193,7 +195,7 @@ function Backups({ server }: { server: Server }) {
     <ToolPanel
       title="Backups & restore"
       description="A complete copy of your server files and saved panel configuration. Running servers briefly stop for a consistent backup, then resume."
-      error={action.error || error}
+      error={action.error || error || lastFailure}
     >
       <form
         className="tool-form-inline"
@@ -218,7 +220,7 @@ function Backups({ server }: { server: Server }) {
           Back up now
         </button>
       </form>
-      <Notice message={action.message || (busy ? 'A server operation is in progress…' : '')} />
+      <Notice message={busy ? action.message || 'A server operation is in progress…' : lastFailure ? '' : data?.lastOperation?.message || action.message} />
       <div className="tool-list">
         {data?.backups.map((backup) => (
           <article className="tool-list-item" key={backup.uid}>
@@ -243,7 +245,7 @@ function Backups({ server }: { server: Server }) {
                     onConfirm={() =>
                       void action.run(
                         () => api(`${url}/${backup.uid}/restore`, { method: 'POST', body: '{}' }),
-                        'Restore started. Follow progress in Performance & recovery.',
+                        'Restore started. Progress appears here.',
                       )
                     }
                   >

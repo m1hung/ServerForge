@@ -11,6 +11,9 @@ server stops gracefully while all its files are archived and starts again after
 the backup. Offline servers remain offline. Archives are plain gzip-compressed
 tar files with SHA-256 checksums. Safe internal Steam links are preserved; escaping links, link cycles and special files are rejected. A failed graceful stop aborts the snapshot.
 
+The latest backup or restore outcome appears on this page. If it fails, follow
+the displayed error and retry; a successful operation replaces the old error.
+
 **Restore** checks the archive, stages its contents, and creates a new recovery
 backup before replacing the live files. It restores the saved game configuration,
 version, Java settings, and hardware allocation as well. The server stays offline

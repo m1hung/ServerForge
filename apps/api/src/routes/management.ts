@@ -215,6 +215,11 @@ export async function managementRoutes(app: FastifyInstance) {
     });
     return {
       busy: isServerBusy(server.uid),
+      lastOperation: await prisma.activity.findFirst({
+        where: { serverId: server.id, action: { in: ['backup.completed', 'backup.restored', 'backup.failed', 'restore.failed'] } },
+        orderBy: { at: 'desc' },
+        select: { action: true, message: true, at: true },
+      }),
       backups: serializeBigInts(
         backups.map(({ configuration: _configuration, filePath: _path, ...backup }) => backup),
       ),

@@ -58,6 +58,7 @@ vi.mock('@serverforge/db', () => ({
         return data;
       },
       findMany: async () => state.activities,
+      findFirst: async ({ where }: any) => [...state.activities].reverse().find((event) => event.serverId === where.serverId && where.action.in.includes(event.action)) ?? null,
     },
     schedule: { create: vi.fn(), update: vi.fn(), findMany: async () => [] },
     metricSample: { create: vi.fn(), findMany: async () => [] },
@@ -371,6 +372,17 @@ describe('management authorization and conflicts', () => {
     expect(result.statusCode).toBe(200);
     expect(result.body).not.toContain('configuration');
     expect(result.body).not.toContain('rcon.password');
+  });
+  it('reports a background restore failure on the backups page and replaces it after a successful backup', async () => {
+    const backup = await createBackup(state.server, 'Before corruption');
+    await fs.appendFile(path.join(state.config.backupRoot, backup.filePath!), 'damaged');
+    expect((await call(`/backups/${backup.uid}/restore`, 'POST', {})).statusCode).toBe(202);
+    await vi.waitFor(async () => {
+      expect((await call('/backups')).json().lastOperation).toMatchObject({ action: 'restore.failed', message: expect.stringContaining('checksum') });
+    });
+    await createBackup(state.server, 'Fresh recovery point');
+    state.activities.push({ serverId: 'another-server', action: 'backup.failed', message: 'Unrelated failure' });
+    expect((await call('/backups')).json().lastOperation).toMatchObject({ action: 'backup.completed', message: 'Backup ready: Fresh recovery point' });
   });
   it('rejects file writes while running and during other operations', async () => {
     await fs.writeFile(path.join(state.server.dataPath, 'file.txt'), 'old');
