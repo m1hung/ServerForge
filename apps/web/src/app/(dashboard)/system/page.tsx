@@ -42,6 +42,7 @@ const checkNames: Record<string, string> = {
   docker: 'Docker access',
   storage: 'Storage access',
   supervisor: 'Background operations',
+  acceptingMutations: 'Accepting changes',
 };
 export default function SystemPage() {
   const currentUser = useCurrentUser();
