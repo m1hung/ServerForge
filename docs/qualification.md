@@ -137,6 +137,12 @@ be shared. A retained fixture can be used by the separate fresh-host world recov
 drill after obtaining its test session. Stop it when finished; never substitute
 credentials or paths from a real installation.
 
+To test the exact images in a candidate bundle, set `SF_API_TEST_IMAGE`,
+`SF_WEB_TEST_IMAGE`, `SF_MAINTENANCE_TEST_IMAGE`, `SF_POSTGRES_TEST_IMAGE`, and
+`SF_TAILSCALE_TEST_IMAGE` to its native architecture references before running
+`npm run test:packaged`. The result records the installed image digests. This
+avoids changing tags while another architecture is being packaged.
+
 For source adoption and schema-incompatible rollback, a maintainer with a source
 checkout can select retained legacy API/web **image IDs** and run
 `scripts/host-upgrade-drill.mjs` using `SF_LEGACY_API_IMAGE`,

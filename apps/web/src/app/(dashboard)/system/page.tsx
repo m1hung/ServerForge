@@ -232,9 +232,9 @@ export default function SystemPage() {
                 Accounts, panel settings, and database. Runs daily and keeps seven successful
                 copies. Games keep running.
               </p>
-              <code>serverforge backup</code>
+              <code>./serverforge backup</code>
               <CopyButton
-                value="serverforge backup"
+                value="./serverforge backup"
                 label="Copy panel backup command"
                 text="Copy command"
               />
@@ -245,18 +245,19 @@ export default function SystemPage() {
                 Includes the panel and all game worlds, mods, and files. Stops games during capture,
                 then resumes them. Keeps three successful bundles.
               </p>
-              <code>serverforge backup --full</code>
+              <code>./serverforge backup --full</code>
               <CopyButton
-                value="serverforge backup --full"
+                value="./serverforge backup --full"
                 label="Copy full backup command"
                 text="Copy command"
               />
             </div>
           </div>
           <p className="field-hint">
-            Run these commands in a terminal on the host with the ServerForge launcher installed.
-            Keep a copy on another device: local backups alone cannot protect against losing this
-            host. For one game, use its Backups & restore section.
+            Run these on the host from the folder containing your serverforge launcher, with
+            SERVERFORGE_HOME set to your installation directory. Keep a copy on another device:
+            local backups alone cannot protect against losing this host. For one game, use its
+            Backups & restore section.
           </p>
           {status && !status.recovery.some((row) => row.key === 'recovery.lastSuccess') && (
             <p className="summary-notice">

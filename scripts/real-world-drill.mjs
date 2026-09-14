@@ -55,11 +55,12 @@ try {
   const sourceWorld = path.join(sourceConfig.HOST_DATA_ROOT, uid, 'world/data/scoreboard.dat');
   report.worldSentinelSha256 = createHash('sha256').update(await fs.readFile(sourceWorld)).digest('hex');
   console.log('Restoring into a new database and installation directory.');
-  const setup = await launch(target, ['setup', '--configure-only', '--port', process.env.SF_RESTORE_WEB_PORT || '3031', '--api-image', 'serverforge-rc-api:check', '--web-image', 'serverforge-rc-web:check']);
+  const setup = await launch(target, ['setup', '--configure-only', '--port', process.env.SF_RESTORE_WEB_PORT || '3031', '--api-image', sourceConfig.API_IMAGE, '--web-image', sourceConfig.WEB_IMAGE, '--postgres-image', sourceConfig.POSTGRES_IMAGE, '--tailscale-image', sourceConfig.TAILSCALE_IMAGE]);
   await fs.writeFile(path.join(target, 'setup.log'), setup, { mode: 0o600 });
   await launch(target, ['restore', bundleHost]);
   await launch(target, ['start']);
   const targetConfig = parseEnv(await fs.readFile(path.join(target, 'config/.env'), 'utf8'));
+  report.panelImages = Object.fromEntries(['API_IMAGE', 'WEB_IMAGE', 'MAINTENANCE_IMAGE', 'POSTGRES_IMAGE', 'TAILSCALE_IMAGE'].map((key) => [key, { source: sourceConfig[key], restored: targetConfig[key] }]));
   report.targetProject = targetConfig.COMPOSE_PROJECT_NAME;
   assert.notEqual(targetConfig.COMPOSE_PROJECT_NAME, sourceConfig.COMPOSE_PROJECT_NAME);
   assert.equal(targetConfig.ENCRYPTION_KEY, sourceConfig.ENCRYPTION_KEY);

@@ -12,6 +12,12 @@ await fs.mkdir(testsRoot, { recursive: true });
 const scratch = await fs.mkdtemp(path.join(testsRoot, 'serverforge-packaged-'));
 const endpoint = process.env.DOCKER_HOST || (process.env.DOCKER_SOCKET ? `unix://${process.env.DOCKER_SOCKET}` : execFileSync('docker', ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], { encoding: 'utf8' }).trim());
 const env = { ...process.env, DOCKER_HOST: endpoint, SERVERFORGE_HOME: scratch, SERVERFORGE_MAINTENANCE_IMAGE: process.env.SF_MAINTENANCE_TEST_IMAGE || 'serverforge-rc-maintenance:check' };
+const apiImage = process.env.SF_API_TEST_IMAGE || 'serverforge-rc-api:check';
+const webImage = process.env.SF_WEB_TEST_IMAGE || 'serverforge-rc-web:check';
+const serviceImages = ['postgres', 'tailscale'].flatMap((name) => {
+  const image = process.env[`SF_${name.toUpperCase()}_TEST_IMAGE`];
+  return image ? [`--${name}-image`, image] : [];
+});
 if (!endpoint.startsWith('unix://')) throw new Error('Use a local Linux-container Docker host for qualification.');
 function run(command, args, extra = {}) {
   return new Promise((resolve, reject) => {
@@ -49,7 +55,7 @@ const port = await new Promise((resolve, reject) => { const server = net.createS
 const result = { format: 'serverforge-packaged-check', version: 1, startedAt: new Date().toISOString(), ok: false, checks: [], limitations: ['Linux Docker Desktop browser and Minecraft checks; other game families, external clients and other host platforms require separate evidence.'] };
 try {
   console.log(`Testing isolated packaged installation in ${scratch}`);
-  const setup = await launch(['setup', '--port', String(port), '--api-image', 'serverforge-rc-api:check', '--web-image', 'serverforge-rc-web:check']);
+  const setup = await launch(['setup', '--port', String(port), '--api-image', apiImage, '--web-image', webImage, ...serviceImages]);
   await fs.writeFile(path.join(scratch, 'setup.log'), setup, { mode: 0o600 });
   const token = /One-time owner setup token: (\S+)/.exec(setup)?.[1];
   if (!token) throw new Error('Setup did not supply a one-time token.');
@@ -59,6 +65,7 @@ try {
   if (configStat.uid !== hostStat.uid || envStat.uid !== hostStat.uid || (configStat.mode & 0o777) !== 0o700 || (envStat.mode & 0o777) !== 0o600)
     throw new Error('The host user must own private configuration without widening its permissions.');
   result.checks.push('host-owned-private-configuration');
+  result.images = JSON.parse(await fs.readFile(path.join(scratch, 'config/release.json'), 'utf8')).images;
   const composeArgs = ['compose', '--project-directory', path.join(scratch, 'config'), '--env-file', path.join(scratch, 'config/.env'), '-f', path.join(scratch, 'config/compose.yml')];
   // Only this freshly created database is touched. Keep game ports separate
   // from both the live installation and the other qualification fixture.
@@ -87,17 +94,18 @@ try {
   result.checks.push('host-bundle-verification');
   console.log('Testing backed-up upgrade and declared image rollback.');
   const version = JSON.parse(await fs.readFile(path.join(root, 'release.json'), 'utf8')).version;
-  await launch(['upgrade', version, '--api-image', 'serverforge-rc-api:check', '--web-image', 'serverforge-rc-web:check', '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
+  await launch(['upgrade', version, '--api-image', apiImage, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
   await launch(['rollback']);
   result.checks.push('backed-up-upgrade', 'declared-image-rollback');
   console.log('Terminating the host upgrade command after migrations, then recovering its checkpoint.');
   const beforeFault = parseEnv(await fs.readFile(path.join(scratch, 'config/.env'), 'utf8'));
   const faultTag = `serverforge-upgrade-fault:${randomBytes(6).toString('hex')}`;
   const faultContext = path.join(scratch, 'fault-image'); await fs.mkdir(faultContext);
-  await fs.writeFile(path.join(faultContext, 'Dockerfile'), 'FROM serverforge-rc-api:check\nCMD ["node", "-e", "setInterval(() => {}, 1000)"]\n');
+  if (/[\s\r\n]/.test(apiImage)) throw new Error('Use a Docker image reference without whitespace.');
+  await fs.writeFile(path.join(faultContext, 'Dockerfile'), `FROM ${apiImage}\nCMD ["node", "-e", "setInterval(() => {}, 1000)"]\n`);
   await run('docker', ['build', '--network', 'none', '-t', faultTag, faultContext]);
   const [faultImage] = JSON.parse(await run('docker', ['image', 'inspect', faultTag]));
-  const interrupted = launch(['upgrade', version, '--api-image', faultTag, '--web-image', 'serverforge-rc-web:check', '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]).then(() => null, (error) => error);
+  const interrupted = launch(['upgrade', version, '--api-image', faultTag, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]).then(() => null, (error) => error);
   const until = Date.now() + 180000;
   let migrated = false;
   while (Date.now() < until) {

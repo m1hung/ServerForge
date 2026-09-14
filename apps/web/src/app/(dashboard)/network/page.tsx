@@ -386,12 +386,12 @@ export default function NetworkPage() {
                         <summary>Add an HTTPS hostname</summary>
                         <p>
                           Your dashboard is available through the encrypted tailnet. For an HTTPS
-                          browser address, run this in a terminal on the host with the ServerForge
-                          launcher installed:
+                          browser address, open a terminal in the host’s launcher folder. Set
+                          SERVERFORGE_HOME to your installation directory, then run:
                         </p>
                         <div className="network-command">
-                          <code>serverforge network</code>
-                          <CopyButton value="serverforge network" label="Copy command" />
+                          <code>./serverforge network</code>
+                          <CopyButton value="./serverforge network" label="Copy command" />
                         </div>
                         <p>
                           The launcher prints the correct HTTPS setup command for your saved port.
@@ -407,12 +407,13 @@ export default function NetworkPage() {
                       <>
                         <h3>Use your existing host connection</h3>
                         <p>
-                          Your host’s Tailscale connection can carry dashboard and game traffic.
-                          Inspect it with the ServerForge launcher on the host:
+                          Your host’s Tailscale connection can carry dashboard and game traffic. In
+                          the host’s launcher folder, set SERVERFORGE_HOME to your installation
+                          directory and run:
                         </p>
                         <div className="network-command">
-                          <code>serverforge network</code>
-                          <CopyButton value="serverforge network" label="Copy command" />
+                          <code>./serverforge network</code>
+                          <CopyButton value="./serverforge network" label="Copy command" />
                         </div>
                         <p className="network-muted">
                           If Tailscale requests authorization, follow its link, then check
