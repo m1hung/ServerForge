@@ -23,11 +23,9 @@ import type { ContainerSpec, RuntimeDriver } from '../apps/api/src/runtime/types
 
 const SOCKET = process.env.DOCKER_SOCKET ?? '/var/run/docker.sock';
 
-/**
- * A tiny image that is already present because the panel's own stack uses it.
- * Only its shell is used — the entrypoint is always overridden.
- */
-const IMAGE = process.env.SF_TEST_IMAGE ?? 'redis:7-alpine';
+// Independent of the live stack and the runner's image cache.
+const IMAGE = process.env.SF_TEST_IMAGE ?? 'node:22.23.2-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284';
+const HOST_OWNER = `${process.getuid?.() || 1000}:${process.getgid?.() || 1000}`;
 
 const reachable = await new Docker({ socketPath: SOCKET })
   .ping()
@@ -81,7 +79,8 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
 
     const { DockerRuntime } = await import('../apps/api/src/runtime/docker.js');
     runtime = new DockerRuntime(SOCKET);
-  }, 60_000);
+    await runtime.ensureImage(IMAGE);
+  }, 120_000);
 
   afterAll(async () => {
     const docker = new Docker({ socketPath: SOCKET });
@@ -382,10 +381,7 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
     expect(result.exitCode).toBe(0);
     expect(result.output).toMatch(/CapEff:\s+0000000000000000/);
     expect(result.output).toMatch(/NoNewPrivs:\s+1/);
-    await runtime.repairOwnership(
-      dataRoot,
-      `${process.getuid?.() || 1000}:${process.getgid?.() || 1000}`,
-    );
+    await runtime.repairOwnership(dataRoot, HOST_OWNER);
     await chmod(path.join(dataRoot, 'locked'), 0o700);
   }, 120000);
 
@@ -395,12 +391,15 @@ describe.skipIf(!reachable)('docker runtime driver', () => {
       command: [
         '/bin/sh',
         '-c',
-        'echo hello > /home/container/proof.txt && cat /home/container/proof.txt',
+        'umask 077; echo hello > /home/container/proof.txt && cat /home/container/proof.txt',
       ],
       dataPath: dataRoot,
     });
 
     expect(result.exitCode).toBe(0);
+    // Match installation finalization: a Linux host user need not be uid 1000.
+    // Docker Desktop's file sharing can hide this ownership boundary.
+    await runtime.repairOwnership(dataRoot, HOST_OWNER);
     const { readFile } = await import('node:fs/promises');
     // The bind mount is the contract every install step depends on: if this
     // fails, downloads land inside a container that is then thrown away.

@@ -34,13 +34,12 @@ jobs:
       - run: npm run test:packaged
       - run: npm audit --audit-level=high
       - run: node scripts/scan-images.mjs
+      - name: Collect shareable check results
+        if: always()
+        run: node scripts/collect-check-results.mjs
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: integration-results
-          path: |
-            data/release-tests/**/result.json
-            data/release-tests/**/recovery-result.json
-            data/release-tests/image-scans-current/*.sbom.json
-            data/release-tests/image-scans-current/*.scan.json
+          path: data/check-results/
           if-no-files-found: warn
