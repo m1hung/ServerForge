@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import type { NetworkConfiguration, NetworkReport } from '@serverforge/core/connectivity';
 import { api } from '@/lib/api';
-import { Shell } from '@/components/Shell';
 import { Icon } from '@/components/Icon';
+import { PageTitle } from '@/components/PageTitle';
 import { CopyButton } from '@/components/CopyButton';
 
 export default function NetworkPage() {
@@ -50,25 +50,25 @@ export default function NetworkPage() {
   const dashboardLink = tail?.serving ? tail.dashboardUrl : tail?.directUrl;
   const activeRules = report?.forwards.filter((row) => row.state === 'active').length ?? 0;
   return (
-    <Shell>
-      <div className="network-page">
-        <div className="network-heading">
-          <div>
-            <span className="eyebrow">NETWORK & ACCESS</span>
-            <h1>Your servers, within reach.</h1>
-            <p>Bring friends into your games. Take your dashboard with you.</p>
-          </div>
-          <button
-            className="btn secondary"
-            disabled={!!pending}
-            onClick={() =>
-              void action('refresh', () => refresh(true), 'Connection status refreshed.')
-            }
-          >
-            <Icon name="refresh" size={16} />
-            {pending === 'refresh' ? 'Checking…' : 'Check connections'}
-          </button>
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">NETWORK & ACCESS</div>
+          <PageTitle>Your servers, within reach</PageTitle>
+          <p className="muted">Bring friends into your games. Take your dashboard with you.</p>
         </div>
+        <button
+          className="btn secondary"
+          disabled={!!pending}
+          onClick={() =>
+            void action('refresh', () => refresh(true), 'Connection status refreshed.')
+          }
+        >
+          <Icon name="refresh" size={16} />
+          {pending === 'refresh' ? 'Checking…' : 'Check connections'}
+        </button>
+      </div>
+      <div className="network-page">
         {error && (
           <div className="error-banner" role="alert">
             <Icon name="alert" size={18} />
@@ -621,6 +621,6 @@ export default function NetworkPage() {
           </>
         )}
       </div>
-    </Shell>
+    </>
   );
 }

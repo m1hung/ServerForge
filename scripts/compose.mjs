@@ -13,6 +13,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 import { assertDockerAccess, ensureDockerGroupAccess } from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -122,16 +123,8 @@ function assertTlsConfigured(argv) {
   process.exit(1);
 }
 
-/** Minimal .env reader — only a few known keys are ever consulted. */
 function readEnvFile() {
-  if (!existsSync(envFile)) return {};
-
-  const values = {};
-  for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
-    const match = line.trim().match(/^([A-Z0-9_]+)=(.*)$/);
-    if (match) values[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
-  }
-  return values;
+  return existsSync(envFile) ? parseEnv(readFileSync(envFile, "utf8")) : {};
 }
 
 assertDockerAccess();
@@ -150,8 +143,7 @@ if (!tool) {
       "",
       "  On Linux you can also:  sudo apt install docker-compose-plugin",
       "",
-      "You can also run Postgres and Redis yourself and point DATABASE_URL",
-      "and REDIS_URL at them — nothing else in the panel requires Compose.",
+      "You can also run Postgres yourself and point DATABASE_URL at it.",
       "",
     ].join("\n"),
   );

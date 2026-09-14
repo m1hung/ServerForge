@@ -10,8 +10,9 @@ import {
   type HardwareDraft,
 } from '@/components/HardwareFields';
 import Link from 'next/link';
-import { Shell } from '@/components/Shell';
+import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
+import { PageTitle } from '@/components/PageTitle';
 import { api } from '@/lib/api';
 import { memoryLabel } from '@/lib/servers';
 
@@ -31,6 +32,7 @@ type Variant = {
 };
 
 export default function DeployPage() {
+  const router = useRouter();
   const [games, setGames] = useState<Game[] | null>(null);
   const [gameId, setGameId] = useState('');
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -152,7 +154,7 @@ export default function DeployPage() {
         method: 'POST',
         body,
       });
-      window.location.href = `/servers/${created.server.uid}`;
+      router.push(`/servers/${created.server.uid}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not deploy.');
       setPending(false);
@@ -160,7 +162,7 @@ export default function DeployPage() {
   }
 
   return (
-    <Shell>
+    <>
       <Link className="back-link" href="/">
         <Icon name="arrow" size={15} />
         Back to overview
@@ -168,9 +170,7 @@ export default function DeployPage() {
       <div className="page-heading">
         <div>
           <div className="eyebrow">A NEW ADVENTURE AWAITS</div>
-          <h1 className="h1">
-            Deploy a server<span className="heading-dot">.</span>
-          </h1>
+          <PageTitle>Deploy a server</PageTitle>
           <p className="muted">Pick your game. Make it yours. Bring everyone together.</p>
         </div>
       </div>
@@ -509,6 +509,6 @@ export default function DeployPage() {
           </div>
         </aside>
       </div>
-    </Shell>
+    </>
   );
 }

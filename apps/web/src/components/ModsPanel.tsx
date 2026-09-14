@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Server } from '@/lib/servers';
 import { Icon } from './Icon';
@@ -134,10 +135,10 @@ export function ModsPanel({ server }: { server: Server }) {
           <Icon name="shield" size={28} />
           <h3>This is a vanilla server</h3>
           <p>Deploy a mod-enabled edition of this game to use mods and plugins.</p>
-          <a className="btn secondary" href="/deploy">
+          <Link className="btn secondary" href="/deploy">
             Deploy a server
             <Icon name="arrow" size={14} />
-          </a>
+          </Link>
         </div>
       ) : (
         <>

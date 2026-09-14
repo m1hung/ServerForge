@@ -16,8 +16,6 @@ export type {
   ManifestVariant,
 } from './manifest/types.js';
 export { minecraftAdapter } from './minecraft/index.js';
-export { palworldAdapter } from './palworld/index.js';
-export { valheimAdapter } from './valheim/index.js';
 export { buildJavaFlags, heapForMemoryLimit, javaImageFor, javaMajorFor, tokenizeFlags } from './minecraft/java.js';
 export { compareMinecraftVersions, clearVersionCache } from './minecraft/versions.js';
 export {
@@ -35,6 +33,4 @@ export {
 export { mergeProperties, parseProperties, stringifyProperties } from './util/properties.js';
 export { parseIni, parseTuple, stringifyIni, stringifyTuple } from './util/ini.js';
 export { minecraftConsoleGlossary } from './minecraft/console-commands.js';
-export { palworldConsoleGlossary } from './palworld/console-commands.js';
-export { valheimConsoleGlossary } from './valheim/console-commands.js';
 export { preparePalworldLauncher } from './palworld/launcher.js';

@@ -292,9 +292,9 @@ Create `packages/adapters/src/<game>/index.ts` exporting a `GameAdapter`:
 ```ts
 import type { GameAdapter } from '../types.js';
 
-export const valheimAdapter: GameAdapter = {
-  id: 'valheim',
-  name: 'Valheim',
+export const exampleAdapter: GameAdapter = {
+  id: 'example-game',
+  name: 'Example Game',
   summary: 'Co-op viking survival. Up to 10 players.',
   icon: 'Axe',                       // any lucide-react icon name
   variants: [ /* … */ ],
@@ -304,7 +304,7 @@ export const valheimAdapter: GameAdapter = {
     { purpose: 'game', protocol: 'udp' },
     { purpose: 'query', protocol: 'udp' },
   ],
-  settingsSchema: (variantId) => valheimSettings(variantId),
+  settingsSchema: () => [ /* setting definitions */ ],
 
   listVersions: async () => [{ id: 'latest', label: 'Latest', stable: true }],
   resolveVersion: async () => ({ id: 'latest', label: 'Latest', stable: true }),
@@ -317,11 +317,16 @@ export const valheimAdapter: GameAdapter = {
 };
 ```
 
-Then register it:
+Import it in `registry.ts` and append it to `BUILT_IN`:
 
 ```ts
 // packages/adapters/src/registry.ts
-const ADAPTERS: GameAdapter[] = [minecraftAdapter, palworldAdapter, valheimAdapter];
+const BUILT_IN: GameAdapter[] = [
+  minecraftAdapter,
+  compileManifest(palworldManifest),
+  compileManifest(valheimManifest),
+  exampleAdapter,
+];
 ```
 
 That is the whole integration. The deploy wizard, settings page, install
@@ -514,9 +519,13 @@ Adapters are pure enough to test without a container. Follow
 `tests/adapters.test.ts`:
 
 ```ts
+import { getAdapter } from '../packages/adapters/src/registry.js';
+const valheimAdapter = getAdapter('valheim');
+
 it('passes the allocated port to the launcher', () => {
   const plan = valheimAdapter.startup(context);
-  expect(plan.command).toContain('-port=2456');
+  expect(plan.command).toContain('-port');
+  expect(plan.command).toContain('2456');
 });
 
 it('explains a port conflict in plain language', () => {

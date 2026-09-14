@@ -91,9 +91,9 @@ Installation branding is read at runtime from `BRAND_NAME`, `BRAND_TAGLINE` and
 `BRAND_ACCENT`; custom image builds are unnecessary. Preserve the installation's
 resource prefix and host paths when upgrading.
 
-Custom CSS themes and game manifests use the existing directories under `data/`.
+Game manifests use `data/games/`. Switch between light and dark mode in the sidebar.
 See [adding a game](docs/adding-a-game.md), [management](docs/management.md),
-[networking](docs/networking.md), and [themes](themes/README.md).
+and [networking](docs/networking.md).
 
 ## Licence
 

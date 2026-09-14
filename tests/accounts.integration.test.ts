@@ -65,7 +65,17 @@ it('assigns invitation server permissions and enforces API-key scope ceilings', 
   const key = created.json().secret;
   expect(key).toMatch(/^sf_/);
   const headers = { authorization: `Bearer ${key}` };
-  expect((await app.inject({ url: '/api/servers/access-test', headers })).statusCode).toBe(200);
+  const detail = await app.inject({ url: '/api/servers/access-test', headers });
+  expect(detail.statusCode).toBe(200);
+  expect(detail.json().server.console).toMatchObject({ canRead: false, commands: [] });
+  const ownerDetail = await app.inject({ url: '/api/servers/access-test', headers: { cookie } });
+  expect(ownerDetail.json().server.console.commands).toContainEqual({ command: 'list', summary: 'Show who is online right now.', category: 'Server' });
+  for (const gameId of ['palworld', 'valheim']) {
+    await prisma.server.update({ where: { id: server.id }, data: { gameId, variantId: 'vanilla' } });
+    const gameDetail = await app.inject({ url: '/api/servers/access-test', headers: { cookie } });
+    expect(gameDetail.json().server.console.acceptsCommands).toBe(false);
+    expect(gameDetail.json().server.console.commands.length).toBeGreaterThan(0);
+  }
   expect((await app.inject({ url: '/api/nodes', headers })).statusCode).toBe(403);
   expect((await app.inject({ method: 'POST', url: '/api/servers', headers, payload: {} })).statusCode).toBe(403);
   expect((await app.inject({ method: 'PATCH', url: '/api/servers/access-test/settings', headers, payload: { values: { motd: 'unauthorized change' } } })).statusCode).toBe(404);

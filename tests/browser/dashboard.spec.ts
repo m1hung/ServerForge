@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import axe from 'axe-core';
+import { getAdapter } from '@serverforge/adapters';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -33,6 +34,12 @@ test('protected owner setup, invitations, account controls, networking and acces
   await expect(dark).toHaveAttribute('aria-checked', 'true');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(dark).toHaveAttribute('aria-checked', 'true');
+  const sidebar = await page.locator('#sidebar').elementHandle();
+  const navigationRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.isNavigationRequest()) navigationRequests.push(request.url());
+  });
   await page.getByRole('link', { name: 'Workspace accounts', exact: true }).click();
   await page.getByRole('button', { name: 'Create invitation link', exact: true }).click();
   const link = await page.getByLabel('Invitation link').inputValue();
@@ -59,6 +66,9 @@ test('protected owner setup, invitations, account controls, networking and acces
   await expect(page).toHaveURL('/network');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Your servers, within reach.');
   await expect(page.getByRole('heading', { name: 'Your dashboard, anywhere', exact: true })).toBeVisible({ timeout: 30000 });
+  expect(await sidebar!.evaluate((element) => element === document.querySelector('#sidebar'))).toBe(true);
+  await expect(dark).toHaveAttribute('aria-checked', 'true');
+  expect(navigationRequests).toEqual([]);
   const screenshots = process.env.SF_TEST_BROWSER_OUTPUT;
   if (screenshots) { await fs.mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, 'network-dark.png'), fullPage: true, animations: 'disabled' }); }
   await page.setViewportSize({ width: 390, height: 844 });
@@ -98,6 +108,30 @@ test('real Minecraft installation, console, hardware, consistent backup and worl
   await start.click();
   const logs = page.getByRole('log', { name: 'Server console logs' });
   await expect(logs).toContainText('Done (', { timeout: 180000 });
+  const cheatSheet = page.getByRole('button', { name: 'Command cheat sheet', exact: true });
+  const commands = page.getByRole('dialog', { name: 'Command cheat sheet', exact: true });
+  const consoleInput = page.getByLabel('Console command', { exact: true });
+  const sent: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/console')) sent.push(request.postData() || '');
+  });
+  await cheatSheet.click();
+  await expect(commands.getByRole('searchbox', { name: 'Search commands' })).toBeFocused();
+  await commands.getByRole('searchbox').fill('no-such-command');
+  await expect(commands.getByRole('status')).toHaveText('No matching commands. Try a command name or category.');
+  await commands.getByRole('searchbox').fill('broadcast');
+  await commands.getByRole('button', { name: 'Insert say <message>', exact: true }).click();
+  await expect(commands).not.toBeVisible();
+  await expect(consoleInput).toBeFocused();
+  await expect(consoleInput).toHaveValue('say <message>');
+  expect(await consoleInput.evaluate((input: HTMLInputElement) => input.value.slice(input.selectionStart!, input.selectionEnd!))).toBe('<message>');
+  expect(sent).toEqual([]);
+  await page.keyboard.insertText('Hello from the command cheat sheet');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(logs).toContainText('Hello from the command cheat sheet');
+  await cheatSheet.click();
+  await page.keyboard.press('Escape');
+  await expect(cheatSheet).toBeFocused();
   async function command(text: string) {
     await page.getByLabel('Console command', { exact: true }).fill(text);
     await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -146,6 +180,11 @@ test('real Minecraft installation, console, hardware, consistent backup and worl
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   if (screenshots) await page.screenshot({ path: path.join(screenshots, 'server-mobile.png'), fullPage: true, animations: 'disabled' });
+  await cheatSheet.click();
+  await expect(commands).toBeVisible();
+  expect(await commands.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  if (screenshots) await page.screenshot({ path: path.join(screenshots, 'console-commands-mobile-dark.png'), animations: 'disabled' });
+  await commands.getByRole('button', { name: 'Close command cheat sheet' }).click();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(start).toBeEnabled({ timeout: 90000 });
   expect(errors).toEqual([]);
@@ -189,6 +228,41 @@ test('uploaded client export explains the failure and retains its ZIP for retry 
 });
 
 
+test('log-only game command references and missing console permission', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Username', { exact: true }).fill('release-owner');
+  await page.getByLabel('Password', { exact: true }).fill(process.env.SF_TEST_OWNER_PASSWORD!);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  const url = await page.getByRole('link', { name: /Browser qualification/ }).first().getAttribute('href');
+  if (!url) throw new Error('The browser game fixture is missing.');
+  const actual = await (await page.request.get(`/api${url}`)).json();
+  for (const gameId of ['palworld', 'valheim']) {
+    // UI fixtures only: these games are not installed or qualified by this check.
+    const adapter = getAdapter(gameId);
+    const glossary = adapter.consoleGlossary!(adapter.variants[0]!.id);
+    await page.route(`**/api${url}`, (route) => route.fulfill({ json: { server: {
+      ...actual.server, gameId, state: 'running', console: { ...glossary, canRead: true },
+    } } }));
+    await page.goto(url);
+    await expect(page.getByLabel('Console command', { exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Command cheat sheet', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Command cheat sheet', exact: true });
+    await expect(sheet).toContainText('This console is log-only.');
+    await expect(sheet.getByRole('button', { name: /^Insert / })).toHaveCount(0);
+    await expect(sheet.locator('li')).toHaveCount(glossary.commands.length);
+    await sheet.getByRole('button', { name: 'Copy', exact: true }).first().click();
+    await expect(sheet.getByRole('status').filter({ hasText: 'Copied' })).toBeAttached();
+    await page.unroute(`**/api${url}`);
+  }
+  await page.route(`**/api${url}`, (route) => route.fulfill({ json: { server: {
+    ...actual.server, console: { canRead: false, acceptsCommands: true, commands: [] },
+  } } }));
+  await page.goto(url);
+  await expect(page.getByRole('log')).toContainText('You need console permission');
+  await expect(page.getByRole('button', { name: 'Command cheat sheet' })).toHaveCount(0);
+});
+
 test('accessible contrast, labels and responsive reflow across workspace pages', async ({ page }) => {
   test.setTimeout(240000);
   const password = process.env.SF_TEST_OWNER_PASSWORD;
@@ -212,6 +286,11 @@ test('accessible contrast, labels and responsive reflow across workspace pages',
         await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important}' });
         await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; localStorage.setItem('serverforge-theme', theme); }, theme);
         await page.addScriptTag({ content: axe.source });
+        if (process.env.SF_TEST_BROWSER_OUTPUT && viewport.width === 1440) {
+          const name = route === server ? 'server' : route === '/' ? 'overview' : route.slice(1);
+          await page.screenshot({ path: path.join(process.env.SF_TEST_BROWSER_OUTPUT, `page-${name}-${theme}.png`), animations: 'disabled' });
+        }
+        if (route === server) await page.getByRole('button', { name: 'Command cheat sheet', exact: true }).click();
         const result = await page.evaluate(async () => {
           const api = (window as unknown as { axe: typeof axe }).axe;
           const result = await api.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } });

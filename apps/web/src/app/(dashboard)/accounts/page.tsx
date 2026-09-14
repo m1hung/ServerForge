@@ -1,7 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { PageTitle } from '@/components/PageTitle';
+import { displayName } from '@/lib/servers';
 import { copyText } from '@/lib/clipboard';
 import { SERVER_PERMISSIONS } from '@serverforge/core/types';
 type User = {
@@ -70,10 +71,11 @@ export default function AccountsPage() {
     void action('/api/admin/invites', { role: form.get('role'), grants: selected });
   }
   return (
-    <Shell>
+    <>
       <div className="page-heading">
         <div>
-          <h1 className="h1">Workspace accounts</h1>
+          <div className="eyebrow">PEOPLE & PERMISSIONS</div>
+          <PageTitle>Workspace accounts</PageTitle>
           <p className="muted">Invite your community and control who can manage this host.</p>
         </div>
       </div>
@@ -96,11 +98,11 @@ export default function AccountsPage() {
                 )}
               </select>
             </label>
-            <fieldset>
+            <fieldset className="settings-group">
               <legend>Initial server access</legend>
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 {servers.map((server) => (
-                  <label className="row" key={server.uid}>
+                  <label className="setting-checkbox" key={server.uid}>
                     <input type="checkbox" name="server" value={server.uid} />
                     {server.name}
                   </label>
@@ -108,14 +110,14 @@ export default function AccountsPage() {
               </div>
               {!servers.length && <p className="muted">You can add server access later.</p>}
             </fieldset>
-            <fieldset>
+            <fieldset className="settings-group">
               <legend>Permissions on selected servers</legend>
               <div className="row" style={{ flexWrap: 'wrap', gap: 14 }}>
                 {SERVER_PERMISSIONS.filter((permission) => permission !== 'server.view').map(
                   (permission) => (
-                    <label className="row" key={permission}>
+                    <label className="setting-checkbox" key={permission}>
                       <input type="checkbox" name="permission" value={permission} />
-                      {permission.replace('server.', '')}
+                      {displayName(permission.replace('server.', ''))}
                     </label>
                   ),
                 )}
@@ -259,6 +261,6 @@ export default function AccountsPage() {
           ))}
         </section>
       </div>
-    </Shell>
+    </>
   );
 }

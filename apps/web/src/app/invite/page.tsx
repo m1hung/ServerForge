@@ -2,6 +2,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { PageTitle } from '@/components/PageTitle';
 export default function InvitePage() {
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
@@ -37,10 +38,15 @@ export default function InvitePage() {
       <Link href="/login" className="back-link">
         Back to sign in
       </Link>
-      <h1 className="h1">Join the workspace</h1>
-      <p className="muted">
-        Create your account with this invitation. Links expire after 72 hours and can be used once.
-      </p>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">YOUR INVITATION</div>
+          <PageTitle>Join the workspace</PageTitle>
+          <p className="muted">
+            Create your account with this invitation. Links expire after 72 hours and can be used once.
+          </p>
+        </div>
+      </div>
       <form className="card stack" onSubmit={(event) => void accept(event)}>
         <label>
           Username

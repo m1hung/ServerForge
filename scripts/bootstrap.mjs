@@ -12,6 +12,7 @@ import { randomBytes, createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 import {
   dockerFixHint,
   ensureDockerGroupAccess,
@@ -49,12 +50,7 @@ function fillIfEmpty(contents, key, value) {
   const pattern = new RegExp(`^${key}=.*$`, "m");
   if (!pattern.test(contents)) return `${contents}\n${key}="${value}"\n`;
 
-  const line = contents.match(pattern)?.[0] ?? "";
-  const current = line
-    .slice(key.length + 1)
-    .replace(/^["']|["']$/g, "")
-    .trim();
-  if (current !== "") return contents;
+  if (readValue(contents, key)) return contents;
 
   // Function form: a `$` in a home directory would otherwise be read as a
   // replacement pattern and mangle the path being written.
@@ -62,26 +58,14 @@ function fillIfEmpty(contents, key, value) {
 }
 
 function readValue(contents, key) {
-  const line = contents.match(new RegExp(`^${key}=.*$`, "m"))?.[0];
-  return (
-    line
-      ?.slice(key.length + 1)
-      .replace(/^["']|["']$/g, "")
-      .trim() || null
-  );
+  return parseEnv(contents)[key]?.trim() || null;
 }
 
 /** Rewrites a relative path value to an absolute one, anchored at the repo. */
 function absolutise(contents, key) {
   const pattern = new RegExp(`^${key}=.*$`, "m");
-  const line = contents.match(pattern)?.[0];
-  if (!line) return contents;
-
-  const current = line
-    .slice(key.length + 1)
-    .replace(/^["']|["']$/g, "")
-    .trim();
-  if (current === "" || path.isAbsolute(current)) return contents;
+  const current = readValue(contents, key);
+  if (!current || path.isAbsolute(current)) return contents;
 
   return contents.replace(pattern, () => `${key}="${path.resolve(root, current)}"`);
 }
@@ -170,15 +154,14 @@ async function main() {
     console.log(`${c.green("✓")} made data paths absolute`);
   }
 
-  // Compose publishes Postgres and Redis on 127.0.0.1 only. `localhost` is
+  // Compose publishes Postgres on 127.0.0.1 only. `localhost` is
   // dual-stack on most Linux hosts, so Prisma can try ::1 first and fail with
   // P1001 even while 127.0.0.1 is accepting connections.
   const loopbackBefore = contents;
   contents = preferIpv4Loopback(contents, "DATABASE_URL");
-  contents = preferIpv4Loopback(contents, "REDIS_URL");
   if (contents !== loopbackBefore) {
     console.log(
-      `${c.green("✓")} pointed DATABASE_URL / REDIS_URL at 127.0.0.1`,
+      `${c.green("✓")} pointed DATABASE_URL at 127.0.0.1`,
     );
   }
 
@@ -242,15 +225,6 @@ async function main() {
         "",
       ].join("\n"),
     );
-  }
-
-  // Point operators at where custom CSS themes go (gitignored under data/).
-  const themesReadme = path.join(root, "data/themes/README.md");
-  if (!(await exists(themesReadme))) {
-    await fs.copyFile(
-      path.join(root, "themes/README.md"),
-      themesReadme,
-    ).catch(() => undefined);
   }
 
   // Warn about the one value people forget to change before exposing a panel.

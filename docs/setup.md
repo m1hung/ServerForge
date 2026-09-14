@@ -138,8 +138,9 @@ and existing host paths; do not regenerate them during upgrades.
 | `SESSION_SECRET`, `ENCRYPTION_KEY` | Required secret material; never share in diagnostics |
 | `API_IMAGE`, `WEB_IMAGE`, `MAINTENANCE_IMAGE`, `POSTGRES_IMAGE`, `TAILSCALE_IMAGE` | Installed image IDs, managed by upgrades |
 
-Custom CSS themes and game manifests remain supported. Invalid manifests are
-reported; executable game code and mods must come from sources you trust.
+Game manifests remain supported. Invalid manifests are reported; executable
+game code and mods must come from sources you trust. The sidebar controls light
+and dark mode. Legacy custom theme directories are preserved in recovery bundles.
 
 ## Development
 

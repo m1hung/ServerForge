@@ -7,7 +7,12 @@ export type Server = {
   busy?: boolean;
   state: string;
   containerId?: string | null;
-  console?: { canRead: boolean; acceptsCommands: boolean; note?: string };
+  console?: {
+    canRead: boolean;
+    acceptsCommands: boolean;
+    note?: string;
+    commands?: { command: string; summary: string; category: string }[];
+  };
   gameId: string;
   variantId: string;
   version: string;

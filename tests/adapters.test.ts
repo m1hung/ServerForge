@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { minecraftAdapter } from '../packages/adapters/src/minecraft/index.js';
-import { palworldAdapter } from '../packages/adapters/src/palworld/index.js';
-import { valheimAdapter } from '../packages/adapters/src/valheim/index.js';
 import {
   buildCatalogue,
   getAdapter,
@@ -33,6 +31,9 @@ import {
 } from '../packages/adapters/src/minecraft/modpacks.js';
 import { defaultsFor } from '../packages/core/src/settings-schema.js';
 import type { ServerContext } from '../packages/adapters/src/types.js';
+
+const palworldAdapter = getAdapter('palworld');
+const valheimAdapter = getAdapter('valheim');
 
 function contextFor(adapter: typeof minecraftAdapter, variantId: string): ServerContext {
   return {

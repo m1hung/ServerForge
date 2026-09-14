@@ -4,10 +4,19 @@ import { useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/api';
 import type { Server } from '@/lib/servers';
 import { Icon } from './Icon';
+import { ConsoleCommands } from './ConsoleCommands';
 
 type Line = { line: string; stream: string };
 
-export function ServerConsole({ server }: { server: Server }) {
+export function ServerConsole({
+  server,
+  canInsert,
+  onInsert,
+}: {
+  server: Server;
+  canInsert: boolean;
+  onInsert: (command: string) => void;
+}) {
   const [lines, setLines] = useState<Line[]>([]);
   const [status, setStatus] = useState('Connecting…');
   const [following, setFollowing] = useState(true);
@@ -74,6 +83,7 @@ export function ServerConsole({ server }: { server: Server }) {
           >
             {following ? 'Pause scrolling' : 'Follow latest'}
           </button>
+          <ConsoleCommands server={server} canInsert={canInsert} onInsert={onInsert} />
         </div>
       </div>
       <pre

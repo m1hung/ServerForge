@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { forwardablePorts, mapPorts } from '../apps/api/src/services/ports.js';
 import { minecraftAdapter } from '../packages/adapters/src/minecraft/index.js';
-import { palworldAdapter } from '../packages/adapters/src/palworld/index.js';
+import { getAdapter } from '../packages/adapters/src/registry.js';
 import { defaultsFor } from '../packages/core/src/settings-schema.js';
 import type { ServerContext } from '../packages/adapters/src/types.js';
+
+const palworldAdapter = getAdapter('palworld');
 
 /**
  * Guards the one rule in automatic port forwarding that has teeth.

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Shell } from '@/components/Shell';
 import { Icon } from '@/components/Icon';
+import { PageTitle } from '@/components/PageTitle';
 import { api } from '@/lib/api';
 import {
   displayName,
@@ -107,13 +107,11 @@ export default function HomePage() {
   ];
 
   return (
-    <Shell>
+    <>
       <div className="page-heading">
         <div>
           <div className="eyebrow">YOUR WORKSPACE, AT A GLANCE</div>
-          <h1 className="h1">
-            Overview<span className="heading-dot">.</span>
-          </h1>
+          <PageTitle>Overview</PageTitle>
           <p className="muted">Good games start with great servers. Let’s keep yours running.</p>
         </div>
         <Link className="btn" href="/deploy">
@@ -495,6 +493,6 @@ export default function HomePage() {
           </div>
         </section>
       </div>
-    </Shell>
+    </>
   );
 }

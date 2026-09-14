@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Icon } from '@/components/Icon';
+import { PageTitle } from '@/components/PageTitle';
 import { useBrand } from '@/components/BrandProvider';
 
 export default function LoginPage() {
@@ -87,9 +88,9 @@ export default function LoginPage() {
       <section className="login-form-panel">
         <div className="login-form">
           <div className="eyebrow">WELCOME TO YOUR WORKSPACE</div>
-          <h1 className="h1">
-            {ticket ? 'One last step.' : needsSetup ? 'Make yourself at home.' : 'Welcome back.'}
-          </h1>
+          <PageTitle>
+            {ticket ? 'One last step' : needsSetup ? 'Make yourself at home' : 'Welcome back'}
+          </PageTitle>
           <p className="muted">
             {ticket
               ? 'Enter your authenticator code or a recovery code.'

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SERVER_PERMISSIONS, ROLES, SCHEDULE_TRIGGERS } from './types.js';
+import { SERVER_PERMISSIONS, SCHEDULE_TRIGGERS } from './types.js';
 
 /**
  * Wire contracts. The API validates every request body against these and the
@@ -56,19 +56,6 @@ export const loginSchema = z.object({
 export const twoFactorLoginSchema = z.object({
   ticket: z.string().min(1).max(256),
   code: z.string().trim().min(1, 'Enter the code from your authenticator app.').max(32),
-});
-
-export const twoFactorSetupSchema = z.object({
-  password: z.string().min(1, 'Enter your password to continue.'),
-});
-
-export const twoFactorEnableSchema = z.object({
-  code: z.string().trim().min(1, 'Enter the six-digit code from your app.').max(32),
-});
-
-export const twoFactorDisableSchema = z.object({
-  password: z.string().min(1, 'Enter your password to continue.'),
-  code: z.string().trim().min(1, 'Enter a code from your app, or a recovery code.').max(32),
 });
 
 export const serverNameSchema = z
@@ -147,32 +134,13 @@ export const settingsPatchSchema = z.object({
   values: z.record(z.union([z.string(), z.number(), z.boolean()])),
 });
 
-export const startupPatchSchema = z.object({
-  /** Advanced escape hatch: overrides the adapter's generated command. */
-  startupOverride: z.string().max(4096).nullable().optional(),
-  javaFlagsPreset: z.enum(['balanced', 'aikar', 'minimal', 'custom']).optional(),
-  customJavaFlags: z.string().max(2048).optional(),
-  environment: z.record(z.string().max(2048)).optional(),
-});
-
 export const filePathQuerySchema = z.object({
   path: z.string().max(4096).default('/'),
-});
-
-export const writeFileSchema = z.object({
-  path: z.string().max(4096),
-  content: z.string().max(10 * 1024 * 1024),
 });
 
 export const renameFileSchema = z.object({
   from: z.string().max(4096),
   to: z.string().max(4096),
-});
-
-export const createBackupSchema = z.object({
-  name: z.string().trim().max(64).optional(),
-  /** Glob patterns excluded from the archive, on top of adapter defaults. */
-  ignore: z.array(z.string().max(256)).max(64).default([]),
 });
 
 export const scheduleActionSchema = z.discriminatedUnion('type', [
@@ -243,55 +211,9 @@ export function scheduleTimingIsValid(value: {
   return Boolean(value.cron) !== Boolean(value.triggerType);
 }
 
-export const accessRoleSchema = z.object({
-  name: z.string().trim().min(1, 'Give the role a name.').max(48),
-  description: z.string().trim().max(200).nullish(),
-  /**
-   * A permission left out of this map is neutral. Only `allow` and `deny` are
-   * representable, so there is exactly one way to say "no opinion".
-   */
-  permissions: z.record(z.enum(SERVER_PERMISSIONS), z.enum(['allow', 'deny'])).default({}),
-});
-
 export const subuserSchema = z.object({
   username: usernameSchema,
   permissions: z.array(z.enum(SERVER_PERMISSIONS)).min(1),
 });
-
-export const apiKeySchema = z.object({
-  name: z.string().trim().min(1).max(64),
-  /** Null = never expires. */
-  expiresAt: z.string().datetime().nullable().optional(),
-  scopes: z
-    .array(z.union([z.literal('*'), z.literal('admin'), z.enum(SERVER_PERMISSIONS)]))
-    .min(1)
-    .max(32)
-    .default(['*']),
-});
-
-export const cloneServerSchema = z.object({
-  name: serverNameSchema,
-});
-
-export const inviteUserSchema = z.object({
-  username: usernameSchema,
-  role: z.enum(ROLES).default('user'),
-});
-
-export const modInstallSchema = z.object({
-  source: z.enum(['modrinth', 'curseforge', 'upload', 'url']),
-  /** Project slug/id for registry sources. */
-  projectId: z.string().max(128).optional(),
-  versionId: z.string().max(128).optional(),
-  url: z.string().url().max(2048).optional(),
-  kind: z.enum(['mod', 'plugin', 'modpack', 'datapack', 'resourcepack']).default('mod'),
-});
-
-export type RegisterInput = z.infer<typeof registerSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;
-export type CreateServerInput = z.infer<typeof createServerSchema>;
 export type UpdateServerInput = z.infer<typeof updateServerSchema>;
 export type ScheduleInput = z.infer<typeof scheduleSchema>;
-export type ModInstallInput = z.infer<typeof modInstallSchema>;
-export type ResourceLimitsInput = z.infer<typeof resourceLimitsSchema>;
-export type CloneServerInput = z.infer<typeof cloneServerSchema>;

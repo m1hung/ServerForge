@@ -1,7 +1,6 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import websocket from '@fastify/websocket';
 import multipart from '@fastify/multipart';
 import { isAppError, PathEscapeError } from '@serverforge/core';
 import { ZodError } from 'zod';
@@ -85,7 +84,6 @@ export async function buildApp() {
     credentials: true,
   });
   await app.register(cookie);
-  await app.register(websocket);
   await app.register(multipart, { limits: { fileSize: 512 * 1024 * 1024 } });
   await registerAuth(app);
   app.addHook('onResponse', async (request, reply) => {

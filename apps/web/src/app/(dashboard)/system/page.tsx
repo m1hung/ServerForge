@@ -1,8 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { PageTitle } from '@/components/PageTitle';
 import { formatBytes } from '@serverforge/core/format';
 type Status = {
   measuredAt: string;
@@ -54,10 +54,11 @@ export default function SystemPage() {
   }, [refresh]);
   const policy = status?.recovery.find((row) => row.key === 'recovery.schedule')?.value;
   return (
-    <Shell>
+    <>
       <div className="page-heading">
         <div>
-          <h1 className="h1">System status</h1>
+          <div className="eyebrow">HOST HEALTH & RECOVERY</div>
+          <PageTitle>System status</PageTitle>
           <p className="muted">Host health, recovery, and operations that need attention.</p>
         </div>
         <div className="row" style={{ gap: 8 }}>
@@ -230,6 +231,6 @@ export default function SystemPage() {
           configuration, credentials, or raw game logs.
         </p>
       </div>
-    </Shell>
+    </>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { PageTitle } from '@/components/PageTitle';
 import { copyText } from '@/lib/clipboard';
 
 type Account = {
@@ -93,12 +93,15 @@ export default function AccountPage() {
     });
   }
   return (
-    <Shell>
+    <>
       <div className="page-heading">
         <div>
-          <h1 className="h1">Account</h1>
+          <div className="eyebrow">YOUR PROFILE & SECURITY</div>
+          <PageTitle>Account</PageTitle>
           <p className="muted">
-            {user?.displayName} · {user?.username} · {user?.role}
+            {user
+              ? `${user.displayName} · ${user.username} · ${user.role}`
+              : 'Manage your password, sessions, and sign-in security.'}
           </p>
         </div>
       </div>
@@ -309,11 +312,11 @@ export default function AccountPage() {
                 <input name="expiry" type="number" defaultValue={90} min={1} max={365} required />
               </label>
             </div>
-            <fieldset>
+            <fieldset className="settings-group">
               <legend>Allowed actions</legend>
               <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
                 {scopes.map((scope) => (
-                  <label key={scope} className="row">
+                  <label key={scope} className="setting-checkbox">
                     <input
                       name="scope"
                       type="checkbox"
@@ -331,6 +334,6 @@ export default function AccountPage() {
           </form>
         </section>
       </div>
-    </Shell>
+    </>
   );
 }

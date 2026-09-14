@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ServerConsole } from '@/components/ServerConsole';
@@ -8,8 +8,8 @@ import { ServerResources } from '@/components/ServerResources';
 import { ServerTools, serverTools, type ServerTool } from '@/components/ServerTools';
 import { ServerConfiguration } from '@/components/ServerConfiguration';
 import { ModsPanel } from '@/components/ModsPanel';
-import { Shell } from '@/components/Shell';
 import { Icon } from '@/components/Icon';
+import { PageTitle } from '@/components/PageTitle';
 import { api } from '@/lib/api';
 import { ServerShare } from '@/components/ServerShare';
 import { InstallationStatus } from '@/components/InstallationStatus';
@@ -20,6 +20,7 @@ export default function ServerPage() {
   const { uid } = useParams<{ uid: string }>();
   const [server, setServer] = useState<Server | null>(null);
   const [command, setCommand] = useState('');
+  const commandInput = useRef<HTMLInputElement>(null);
   const [output, setOutput] = useState('');
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -84,6 +85,16 @@ export default function ServerPage() {
     }
   }
 
+  function insertCommand(template: string) {
+    setCommand(template);
+    requestAnimationFrame(() => {
+      commandInput.current?.focus();
+      const placeholder = /<[^>]+>/.exec(template);
+      const start = placeholder?.index ?? template.length;
+      commandInput.current?.setSelectionRange(start, start + (placeholder?.[0].length ?? 0));
+    });
+  }
+
   const join = server ? joinAddress(server) : null;
   async function copyAddress() {
     if (!join) return;
@@ -96,7 +107,7 @@ export default function ServerPage() {
   }
 
   return (
-    <Shell>
+    <>
       <div className="server-page">
         <div className="server-breadcrumb">
           <Link className="back-link" href="/#servers">
@@ -139,7 +150,7 @@ export default function ServerPage() {
                 </span>
                 <div>
                   <div className="server-title-row">
-                    <h1 className="h1">{server.name}</h1>
+                    <PageTitle>{server.name}</PageTitle>
                     <span className={`status-pill ${statusTone(server.state)}`}>
                       <span className="status-dot" />
                       {displayName(server.state)}
@@ -263,7 +274,11 @@ export default function ServerPage() {
                 <ServerResources server={server} />
                 <div className="server-management">
                   <section className="console-card" aria-labelledby="console-title">
-                    <ServerConsole server={server} />
+                    <ServerConsole
+                      server={server}
+                      canInsert={server.state === 'running' && !pending}
+                      onInsert={insertCommand}
+                    />
                     {output && (
                       <details className="command-response">
                         <summary>Last command response</summary>
@@ -278,6 +293,7 @@ export default function ServerPage() {
                     <form className="console-prompt" onSubmit={(event) => void send(event)}>
                       <span aria-hidden="true">❯</span>
                       <input
+                        ref={commandInput}
                         aria-label="Console command"
                         value={command}
                         onChange={(event) => setCommand(event.target.value)}
@@ -312,6 +328,6 @@ export default function ServerPage() {
           </>
         )}
       </div>
-    </Shell>
+    </>
   );
 }

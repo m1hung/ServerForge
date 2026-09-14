@@ -379,19 +379,21 @@ export async function serverRoutes(app: FastifyInstance) {
     const { uid: serverUid } = request.params as { uid: string };
     const server = await loadServer(serverUid, user);
     const glossary = getAdapter(server.gameId).consoleGlossary?.(server.variantId);
+    const permissions = effectiveServerPermissions(accessInput(user, server)).filter(
+      (permission) => !user.scopes || user.scopes.includes('*') || user.scopes.includes(permission),
+    );
+    const canReadConsole = permissions.includes('server.console');
     return {
       server: publicServer({
         ...server,
         busy: isServerBusy(server.uid),
-        permissions: effectiveServerPermissions(accessInput(user, server)).filter(
-          (permission) =>
-            !user.scopes || user.scopes.includes('*') || user.scopes.includes(permission),
-        ),
-        canConfigure: canAccessServer(accessInput(user, server), 'server.settings'),
+        permissions,
+        canConfigure: permissions.includes('server.settings'),
         console: {
-          canRead: canAccessServer(accessInput(user, server), 'server.console'),
+          canRead: canReadConsole,
           acceptsCommands: glossary?.acceptsCommands ?? true,
           note: glossary?.note,
+          commands: canReadConsole ? glossary?.commands ?? [] : [],
         },
       }),
     };

@@ -96,7 +96,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         />
       )}
       <aside id="sidebar" className={`sidebar ${menuOpen ? 'is-open' : ''}`}>
-        <Link href="/" className="brand">
+        <Link href="/" className="brand" onClick={() => setMenuOpen(false)}>
           <span className="brand-mark">
             <Icon name="server" size={21} />
           </span>
@@ -193,7 +193,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </span>
             <strong>Your world. Your rules.</strong>
             <p>A place for your next adventure, powered by you.</p>
-            <Link href="/deploy">
+            <Link href="/deploy" onClick={() => setMenuOpen(false)}>
               Create a server <Icon name="arrow" size={16} />
             </Link>
           </div>
