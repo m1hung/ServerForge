@@ -220,6 +220,10 @@ async function start() {
   await compose(['up', '-d', 'api', 'web'], { echo: true });
   await waitReady();
   if (configuration.APP_VERSION !== 'legacy') await compose(['--profile', 'backups', 'up', '-d', 'backup-worker'], { echo: true });
+  // Resume a sidecar that was explicitly created before stop. Its saved login
+  // and Serve configuration remain unchanged; fresh installations stay local.
+  if ((await compose(['--profile', 'tailscale', 'ps', '--all', '-q', 'tailscale'])).trim())
+    await compose(['start', 'tailscale'], { echo: true });
   const config = await readConfig();
   console.log(`Dashboard ready: http://localhost:${config.WEB_PORT}`);
 }
@@ -657,8 +661,8 @@ try {
   else if (action === 'start') {
     await preflight();
     await start();
-  } else if (action === 'stop') await compose(['stop'], { echo: true });
-  else if (action === 'status') console.log(await compose(['ps', '--all']));
+  } else if (action === 'stop') await compose(['--profile', '*', 'stop'], { echo: true });
+  else if (action === 'status') console.log(await compose(['--profile', '*', 'ps', '--all']));
   else if (action === 'diagnostics') await diagnostics();
   else if (action === 'setup-token') {
     const state = JSON.parse(await maintenance(['setup-state']));

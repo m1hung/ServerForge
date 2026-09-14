@@ -102,6 +102,8 @@ try {
   const unhealthy = JSON.parse(await run('docker', [...composeArgs, 'exec', '-T', 'api', 'node', '-e', 'setTimeout(()=>fetch("http://localhost:8080/health/ready").then(async r=>console.log(JSON.stringify({status:r.status,body:await r.json()}))),1200)']));
   if (unhealthy.status !== 503 || unhealthy.body.checks.collation !== false) throw new Error('Readiness accepted a mismatched database sorting version.');
   await launch(['stop']);
+  if ((await run('docker', [...composeArgs, '--profile', '*', 'ps', '-q'])).trim()) throw new Error('Stop left an installation service running.');
+  result.checks.push('stop-includes-background-services');
   await run('docker', [...composeArgs, 'rm', '-f', 'postgres']);
   await launch(['upgrade', version, '--api-image', apiImage, '--web-image', webImage, '--maintenance-image', env.SERVERFORGE_MAINTENANCE_IMAGE]);
   const rebuiltIndex = await userIndex(), collationJournal = JSON.parse(await fs.readFile(path.join(scratch, 'config/upgrade.json'), 'utf8'));
@@ -147,7 +149,15 @@ try {
   await launch(['rollback']);
   for (const name of ['tailscale', 'postgres']) if ((await inspectService(name)).Image !== originalServices[name].Image) throw new Error(`${name} did not restore its original image.`);
   if ((await run('docker', [...composeArgs, 'exec', '-T', 'tailscale', 'cat', '/var/lib/tailscale/qualification-marker'])).trim() !== 'retained-state') throw new Error('Tailscale state was not preserved during rollback.');
+  await launch(['stop']);
+  if ((await run('docker', [...composeArgs, '--profile', '*', 'ps', '-q'])).trim()) throw new Error('Stop left the enabled Tailscale sidecar or another service running.');
+  await launch(['start']);
+  if (!(await inspectService('tailscale')).State.Running) throw new Error('Start did not resume the previously enabled Tailscale sidecar.');
+  if ((await run('docker', [...composeArgs, 'exec', '-T', 'tailscale', 'cat', '/var/lib/tailscale/qualification-marker'])).trim() !== 'retained-state') throw new Error('Start did not preserve the existing Tailscale state.');
+  const serviceStatus = await launch(['status']);
+  if (!serviceStatus.includes('backup-worker') || !serviceStatus.includes('tailscale')) throw new Error('Status omitted background installation services.');
   await run('docker', [...composeArgs, 'stop', 'tailscale']);
+  result.checks.push('start-resumes-existing-tailnet', 'status-includes-background-services');
   for (const service of Object.values(changedServices)) await run('docker', ['image', 'rm', service.reference]);
   result.checks.push('disabled-tailnet-stays-disabled', 'running-service-image-upgrade-and-rollback', 'tailnet-state-volume-preserved');
   console.log('Terminating the host upgrade command after migrations, then recovering its checkpoint.');

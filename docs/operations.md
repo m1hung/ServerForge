@@ -5,6 +5,12 @@ orchestration and horizontal API scaling are outside this release.
 All host commands below use the supplied launcher with `SERVERFORGE_HOME` set to
 the installation directory.
 
+`./serverforge stop` stops the dashboard, database, backup worker and any enabled
+dashboard Tailscale sidecar. Game containers keep running. `./serverforge start`
+reconnects the panel and resumes a previously created sidecar with its saved state;
+it does not enable Tailscale for a fresh installation. `./serverforge status`
+includes background services and stopped containers.
+
 ## Configuration, resources, and installations
 
 Choose game settings and hardware when creating a server, or edit them later
@@ -68,7 +74,7 @@ Steam links rooted at the game container directory are made portable. Escaping
 links, cycles, writes through links and special files cause a clear failure;
 files are never silently omitted.
 
-Game restores run through **More tools → Backups & restore**. The panel validates
+Game restores run through the server's **Backups & restore** tab. The panel validates
 the checksum/archive, makes a recovery backup, stages replacement files and
 journals the swap. The restored game stays offline for inspection.
 

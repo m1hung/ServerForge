@@ -1,7 +1,7 @@
 # Server management
 
-Open a server and use **More tools** next to Overview, Mods & plugins, and
-Configuration. The desktop overview stays compact; longer tool panels scroll
+Open a server and select a tool from the tabs above its content. All available
+tools stay visible; the desktop overview stays compact and longer panels scroll
 internally. Tools and actions require the corresponding server permissions.
 
 ## Backups and restore
@@ -66,8 +66,9 @@ uses its median when available. CPU alone does not measure game tick health.
 
 ## Schedules and Discord alerts
 
-Create either a five-field cron schedule with an IANA timezone, or an event
-trigger (ready, stopped, crashed, player joined, player left). Add ordered actions:
+Choose a daily, weekly or hourly schedule and its timezone, or use **Custom cron
+expression** for other timings. Event triggers support ready, stopped, crashed,
+player joined and player left. Add ordered actions:
 power, console command, backup with retention, apply an already prepared update,
 or webhook. Minecraft restarts can broadcast a countdown through its console. Palworld uses its private REST save/shutdown path; its displayed in-game commands are not panel-console commands. Set
 **Only when online** according to the task; turn it off for crash alerts or
