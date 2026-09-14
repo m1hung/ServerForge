@@ -70,6 +70,8 @@ export interface ManifestInstallStep {
   /** Further restricts the step to a settings value, e.g. an opt-in toggle. */
   when?: ManifestCondition;
   mkdir?: string;
+  /** Install a pinned loader ZIP (for example BepInEx) beside the game. */
+  download?: { url: string; sha256: string; dest?: string; strip?: number };
   writeFile?: { path: string; contents: string };
   /**
    * Seeds a config file from one the game ships.

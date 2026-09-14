@@ -1,3 +1,4 @@
+import { BEPINEX_DOWNLOAD, BEPINEX_LAUNCH } from './mod-loader.js';
 import type {
   GameAdapter,
   GameVariant,
@@ -36,9 +37,9 @@ const VARIANTS: GameVariant[] = [
   {
     id: 'valheim-bepinex',
     name: 'Valheim + BepInEx',
-    summary: 'Same server, with a BepInEx plugins folder set up for you.',
+    summary: 'BepInEx installed and ready for server plugins.',
     detail:
-      'BepInEx is the mod loader most Valheim server mods are built for. We create the folder structure and explain how to upload mods — BepInEx itself is not bundled, because its releases track game patches and a mismatched build crashes on boot with no useful error.',
+      'Installs BepInExPack Valheim 5.4.2350. Upload server-compatible .dll plugins and their dependencies in Mods. Match plugins to your game version; some also need to be installed by every player.',
     order: 2,
     tags: ['Mods', 'Advanced'],
     supportsMods: true,
@@ -96,7 +97,7 @@ export const valheimAdapter: GameAdapter = {
     });
 
     if (ctx.variantId === 'valheim-bepinex') {
-      await report.phase('extracting', 'Setting up the BepInEx plugins folder…', 85);
+      await report.phase('extracting', 'Installing BepInExPack Valheim 5.4.2350…', 85);
       await setupModLoader(tools);
     }
 
@@ -137,12 +138,20 @@ export const valheimAdapter: GameAdapter = {
 
     return {
       image: STEAMCMD_IMAGE,
-      command: ['./start_server.sh', ...args],
+      command: [
+        ...(ctx.variantId === 'valheim-bepinex' ? BEPINEX_LAUNCH : []),
+        './valheim_server.x86_64',
+        '-nographics',
+        '-batchmode',
+        ...args,
+      ],
       workingDir: '/home/container',
       env: {
         ...ctx.environment,
         LD_LIBRARY_PATH: '/home/container/linux64:/home/container/steamclient',
         TZ: ctx.environment.TZ ?? 'UTC',
+        SteamAppId: '892970',
+        HOME: '/home/container',
       },
       ports: [
         { containerPort: 2456, purpose: 'game', protocol: 'udp' },
@@ -202,35 +211,13 @@ export const valheimAdapter: GameAdapter = {
   },
 };
 
-/**
- * Lays out the directories BepInEx expects and leaves a README explaining
- * the upload workflow. We create the structure rather than downloading
- * BepInEx automatically: its releases are not versioned against Valheim
- * builds, and silently shipping a mismatched loader produces a server that
- * crashes on boot with no explanation.
- */
 async function setupModLoader(tools: InstallTools): Promise<void> {
+  await tools.download(BEPINEX_DOWNLOAD.url, '.serverforge/loader.zip', {
+    sha256: BEPINEX_DOWNLOAD.sha256,
+  });
+  await tools.unzip('.serverforge/loader.zip', '.', { strip: BEPINEX_DOWNLOAD.strip });
+  await tools.remove('.serverforge/loader.zip');
   await tools.mkdir('BepInEx/plugins');
-
-  await tools.writeFile(
-    'BepInEx/plugins/README.txt',
-    [
-      'Drop BepInEx plugin .dll files in this folder.',
-      '',
-      'Each plugin is usually one .dll. Remove a file to disable that mod.',
-      'The Mods tab in the panel manages this folder for you, including',
-      'enabling and disabling without deleting anything.',
-      '',
-      'BepInEx itself is not bundled: its releases track Valheim patches,',
-      'not ServerForge updates, and an incompatible build crashes the server',
-      'at boot. Download the BepInEx release that matches your current',
-      'Valheim version from the BepInEx project and upload it into the',
-      'server root (alongside start_server.sh).',
-      '',
-      'After a Valheim update, check BepInEx and your plugins still match',
-      'before starting.',
-    ].join('\n'),
-  );
 }
 
 export { valheimSettingsSchema };

@@ -1,0 +1,10 @@
+node_modules
+.git
+data
+**/.next
+**/dist
+**/*.tsbuildinfo
+*.log
+packages/db/generated
+apps/web/.next
+apps/api/dist

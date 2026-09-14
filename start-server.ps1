@@ -12,6 +12,12 @@ if (-not (Test-Command "node")) {
   exit 1
 }
 
+if (-not (Test-Command "npm")) {
+  Write-Host "npm is not installed or not on PATH."
+  Write-Host "Reinstall Node.js from https://nodejs.org/ — the official installer includes npm."
+  exit 1
+}
+
 if (-not (Test-Command "docker")) {
   Write-Host "Docker is not installed or not on PATH."
   Write-Host "Install Docker Desktop, start it, then run this again."

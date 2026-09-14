@@ -2,8 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { minecraftAdapter } from '../packages/adapters/src/minecraft/index.js';
 import { palworldAdapter } from '../packages/adapters/src/palworld/index.js';
 import { valheimAdapter } from '../packages/adapters/src/valheim/index.js';
-import { buildCatalogue, getAdapter, getVariant, listAdapters } from '../packages/adapters/src/registry.js';
-import { buildJavaFlags, heapForMemoryLimit, isCalendarVersion, javaImageFor, javaMajorFor, tokenizeFlags } from '../packages/adapters/src/minecraft/java.js';
+import {
+  buildCatalogue,
+  getAdapter,
+  getVariant,
+  listAdapters,
+} from '../packages/adapters/src/registry.js';
+import {
+  buildJavaFlags,
+  heapForMemoryLimit,
+  isCalendarVersion,
+  javaImageFor,
+  javaMajorFor,
+  tokenizeFlags,
+} from '../packages/adapters/src/minecraft/java.js';
 import { mergeProperties, parseProperties } from '../packages/adapters/src/util/properties.js';
 import { parseIni, parseTuple, stringifyTuple } from '../packages/adapters/src/util/ini.js';
 import {
@@ -15,7 +27,10 @@ import {
   steamAppUpdate,
 } from '../packages/adapters/src/util/steamcmd.js';
 import { compareMinecraftVersions } from '../packages/adapters/src/minecraft/versions.js';
-import { normalizeModrinthProject, parseModrinthRef } from '../packages/adapters/src/minecraft/modpacks.js';
+import {
+  normalizeModrinthProject,
+  parseModrinthRef,
+} from '../packages/adapters/src/minecraft/modpacks.js';
 import { defaultsFor } from '../packages/core/src/settings-schema.js';
 import type { ServerContext } from '../packages/adapters/src/types.js';
 
@@ -196,15 +211,21 @@ describe('minecraft adapter', () => {
     });
 
     it('tracks player joins and leaves', () => {
-      const join = minecraftAdapter.inspectLog?.('[12:00:00] [Server thread/INFO]: Notch joined the game');
+      const join = minecraftAdapter.inspectLog?.(
+        '[12:00:00] [Server thread/INFO]: Notch joined the game',
+      );
       expect(join?.playerEvent).toEqual({ type: 'join', name: 'Notch' });
 
-      const leave = minecraftAdapter.inspectLog?.('[12:00:00] [Server thread/INFO]: Notch left the game');
+      const leave = minecraftAdapter.inspectLog?.(
+        '[12:00:00] [Server thread/INFO]: Notch left the game',
+      );
       expect(leave?.playerEvent).toEqual({ type: 'leave', name: 'Notch' });
     });
 
     it('returns null for ordinary lines', () => {
-      expect(minecraftAdapter.inspectLog?.('[12:00:00] [Server thread/INFO]: Preparing spawn area')).toBeNull();
+      expect(
+        minecraftAdapter.inspectLog?.('[12:00:00] [Server thread/INFO]: Preparing spawn area'),
+      ).toBeNull();
     });
   });
 });
@@ -274,7 +295,7 @@ describe('valheim adapter', () => {
       ],
     };
     const plan = valheimAdapter.startup(ctx);
-    expect(plan.command[0]).toBe('./start_server.sh');
+    expect(plan.command[0]).toBe('./valheim_server.x86_64');
     expect(plan.command).toContain('-port');
     expect(plan.command).toContain('2456');
     expect(plan.command).toContain('My Viking Realm');
@@ -305,7 +326,9 @@ describe('palworld adapter', () => {
   });
 
   it('defaults to enough memory that the server will not immediately die', () => {
-    expect(palworldAdapter.defaultLimits('palworld-vanilla').memoryMib).toBeGreaterThanOrEqual(8192);
+    expect(palworldAdapter.defaultLimits('palworld-vanilla').memoryMib).toBeGreaterThanOrEqual(
+      8192,
+    );
   });
 
   it('passes the allocated ports to the launcher', () => {
@@ -328,7 +351,10 @@ describe('palworld adapter', () => {
     const ctx = {
       ...contextFor(minecraftAdapter, 'paper'),
       variantId: 'palworld-vanilla',
-      settings: { ...defaultsFor(palworldAdapter.settingsSchema('palworld-vanilla')), sf_use_perf_threads: false },
+      settings: {
+        ...defaultsFor(palworldAdapter.settingsSchema('palworld-vanilla')),
+        sf_use_perf_threads: false,
+      },
     } as ServerContext;
     expect(palworldAdapter.startup(ctx).command).not.toContain('-useperfthreads');
   });
@@ -358,8 +384,12 @@ describe('java flags', () => {
   });
 
   it('scales the G1 region size with heap', () => {
-    expect(buildJavaFlags({ preset: 'aikar', memoryMib: 4096 })).toContain('-XX:G1HeapRegionSize=8M');
-    expect(buildJavaFlags({ preset: 'aikar', memoryMib: 16384 })).toContain('-XX:G1HeapRegionSize=16M');
+    expect(buildJavaFlags({ preset: 'aikar', memoryMib: 4096 })).toContain(
+      '-XX:G1HeapRegionSize=8M',
+    );
+    expect(buildJavaFlags({ preset: 'aikar', memoryMib: 16384 })).toContain(
+      '-XX:G1HeapRegionSize=16M',
+    );
   });
 
   it('minimal gives only memory flags', () => {
@@ -367,7 +397,11 @@ describe('java flags', () => {
   });
 
   it('appends custom flags after the memory flags', () => {
-    const flags = buildJavaFlags({ preset: 'custom', memoryMib: 2048, custom: '-XX:+UseZGC -Dfoo=bar' });
+    const flags = buildJavaFlags({
+      preset: 'custom',
+      memoryMib: 2048,
+      custom: '-XX:+UseZGC -Dfoo=bar',
+    });
     expect(flags).toContain('-XX:+UseZGC');
     expect(flags).toContain('-Dfoo=bar');
   });
@@ -392,7 +426,8 @@ describe('server.properties round-trip', () => {
   });
 
   it('preserves comments and hand edits when merging', () => {
-    const original = '# Minecraft server properties\n# Do not delete\nmotd=Old\ncustom-key=keepme\n';
+    const original =
+      '# Minecraft server properties\n# Do not delete\nmotd=Old\ncustom-key=keepme\n';
     const merged = mergeProperties(original, { motd: 'New' });
 
     expect(merged).toContain('# Do not delete');
@@ -415,7 +450,9 @@ describe('server.properties round-trip', () => {
 
 describe('unreal ini handling', () => {
   it('parses Palworld option tuples', () => {
-    const options = parseTuple('(Difficulty=None,ServerName="My server, with comma",ExpRate=1.500000)');
+    const options = parseTuple(
+      '(Difficulty=None,ServerName="My server, with comma",ExpRate=1.500000)',
+    );
     expect(options.Difficulty).toBe('None');
     expect(options.ServerName).toBe('My server, with comma');
     expect(options.ExpRate).toBe('1.500000');
@@ -463,7 +500,9 @@ describe('modrinth input normalisation', () => {
   });
 
   it('extracts a version id from a Modrinth version URL', () => {
-    expect(parseModrinthRef('https://modrinth.com/modpack/better-adventures++/version/e18PwvTU')).toEqual({
+    expect(
+      parseModrinthRef('https://modrinth.com/modpack/better-adventures++/version/e18PwvTU'),
+    ).toEqual({
       project: 'better-adventures++',
       versionId: 'e18PwvTU',
     });
@@ -616,7 +655,8 @@ describe('steam install resilience', () => {
   const ok = { exitCode: 0, output: 'Success! App fully installed.' };
   const missingConfig = {
     exitCode: 8,
-    output: "Waiting for user info...OK\nERROR! Failed to install app '2394010' (Missing configuration)\n",
+    output:
+      "Waiting for user info...OK\nERROR! Failed to install app '2394010' (Missing configuration)\n",
   };
 
   it('lets SteamCMD bootstrap before asking it to install', async () => {
@@ -641,7 +681,10 @@ describe('steam install resilience', () => {
   it('does not retry a request that is simply wrong', async () => {
     // A bad app id or branch fails identically twice; retrying only delays
     // the report and makes it look like a flake.
-    const invalid = { exitCode: 1, output: "ERROR! Failed to install app '999' (Invalid platform)" };
+    const invalid = {
+      exitCode: 1,
+      output: "ERROR! Failed to install app '999' (Invalid platform)",
+    };
     const { runs, tools } = fakeTools([ok, invalid]);
 
     await expect(steamAppUpdate(tools, { appId: '999' })).rejects.toThrow(/Invalid platform/);

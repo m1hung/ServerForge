@@ -16,7 +16,7 @@ lives in one.
 | Game                        | Editions                                                                                                        |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Minecraft: Java Edition** | Vanilla · Paper · Purpur · Fabric · Forge · NeoForge · Modrinth modpacks · CurseForge-style `.zip` server packs |
-| **Palworld**                | Vanilla dedicated · Modded (UE4SS workflow)                                                                     |
+| **Palworld**                | Vanilla dedicated · Linux-compatible PAK mods                                                                   |
 | **Valheim**                 | Vanilla dedicated · BepInEx mods                                                                                |
 
 Adding a game usually means writing a **manifest** — a declarative description
@@ -30,10 +30,10 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
 ## Features
 
 - **Guided deploy** — four questions, safe defaults, ready to play
-- **Live console** with command history, filtering, and plain-language
-  explanations of common errors ("the server ran out of memory — raise the
-  limit in Settings")
-- **Live resource graphs** — CPU, memory, disk, players, uptime
+- **Live console** with the latest 500 log lines, installation output, pause/follow
+  scrolling, automatic reconnection, and commands for supported games
+- **Live resource monitoring** — CPU and memory graphs, network traffic rates,
+  and uptime, refreshed every two seconds. Configured limits remain visible.
 - **Who's online** — player names read from the console, for the games whose
   logs announce them; the panel says so plainly for the ones that don't
 - **Settings that explain themselves** — one declarative schema per game drives
@@ -50,8 +50,13 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
 - **Webhook alerts** — post to Discord or any JSON endpoint when a task runs,
   with `{player}` and `{server}` filled in. Outbound requests are checked
   against private address space and never follow redirects
-- **Mods and plugins** — browse and install from Modrinth, toggle without
-  deleting, or upload your own
+- **Mods and plugins** — deploy Modrinth/server-pack Minecraft editions, upload
+  JAR/DLL/PAK files, and enable or disable without deleting. See
+  [modded server support and compatibility](docs/modded-servers.md).
+- **Staged updates and rollback** — review installation-file changes, preserve current
+  saves and configuration, and take a recovery backup before applying
+- **Performance history** — seven days of resource samples, a crash timeline, and
+  Minecraft tick metrics on request when Spark is installed
 - **Steam branches** — run a game's public test build, or pin an older one
   while your mods catch up, with a password for the locked ones
 - **RCON console** — for games that never read stdin, and for the ones that do:
@@ -72,9 +77,13 @@ see [docs/adding-a-game.md](docs/adding-a-game.md).
 
 ---
 
+Server tools are available from **More tools** on each server page. See the
+[server management guide](docs/management.md) for workflows and current limits.
+
 ## Requirements
 
-- **Node.js 20.11+** (22 recommended)
+- **Node.js 20.11+** (22 recommended), including **npm**
+  - Arch Linux splits these: `sudo pacman -S npm`
 - **Docker** — game servers run as Linux containers
   - Linux: Docker Engine
   - macOS / Windows: [Docker Desktop](https://docs.docker.com/desktop/)
@@ -111,11 +120,11 @@ npm start
 
 Or use the platform launcher:
 
-| Platform | Command |
-| -------- | ------- |
-| Linux | `./start-server.sh` (also enables Docker at boot / fixes group access) |
-| macOS | `npm start` |
-| Windows | `start-server.cmd` or `npm start` |
+| Platform | Command                                                                |
+| -------- | ---------------------------------------------------------------------- |
+| Linux    | `./start-server.sh` (also enables Docker at boot / fixes group access) |
+| macOS    | `npm start`                                                            |
+| Windows  | `start-server.cmd` or `npm start`                                      |
 
 The launcher installs dependencies, creates configuration and secrets,
 initializes the database, builds the production containers, and opens the
@@ -254,7 +263,7 @@ Early. The core is built and tested, and the pieces below are the honest gaps:
 
 - **Remote nodes** — the `RuntimeDriver` interface is shaped for it and the
   database models it, but only the local Docker driver is implemented. Note
-  that container operations are the *only* thing it abstracts: the file
+  that container operations are the _only_ thing it abstracts: the file
   manager, backups and installs all reach the filesystem directly, so a remote
   node needs a storage driver that does not exist yet
 - **CurseForge** — modpack import works via uploaded server-pack `.zip`.

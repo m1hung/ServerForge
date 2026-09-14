@@ -29,7 +29,12 @@ interface ModrinthVersion {
   game_versions: string[];
   loaders: string[];
   date_published: string;
-  files: { url: string; filename: string; primary: boolean; hashes: { sha1?: string; sha512?: string } }[];
+  files: {
+    url: string;
+    filename: string;
+    primary: boolean;
+    hashes: { sha1?: string; sha512?: string };
+  }[];
 }
 
 interface MrpackIndex {
@@ -39,7 +44,10 @@ interface MrpackIndex {
   files: {
     path: string;
     hashes: { sha1?: string; sha512?: string };
-    env?: { client: 'required' | 'optional' | 'unsupported'; server: 'required' | 'optional' | 'unsupported' };
+    env?: {
+      client: 'required' | 'optional' | 'unsupported';
+      server: 'required' | 'optional' | 'unsupported';
+    };
     downloads: string[];
     fileSize?: number;
   }[];
@@ -77,10 +85,13 @@ export function parseModrinthRef(input: string): { project: string; versionId?: 
 
 export async function listModrinthPackVersions(project: string): Promise<ModrinthVersion[]> {
   const slug = normalizeModrinthProject(project);
-  return fetchJson<ModrinthVersion[]>(`${MODRINTH_API}/project/${encodeURIComponent(slug)}/version`, {
-    service: 'Modrinth',
-    headers: { 'User-Agent': userAgent() },
-  });
+  return fetchJson<ModrinthVersion[]>(
+    `${MODRINTH_API}/project/${encodeURIComponent(slug)}/version`,
+    {
+      service: 'Modrinth',
+      headers: { 'User-Agent': userAgent() },
+    },
+  );
 }
 
 export async function installModrinthPack(
@@ -108,9 +119,7 @@ export async function installModrinthPack(
   const version =
     requestedVersion === '' || requestedVersion === 'latest'
       ? (versions.find((v) => v.version_type === 'release') ?? versions[0]!)
-      : versions.find(
-          (v) => v.id === requestedVersion || v.version_number === requestedVersion,
-        );
+      : versions.find((v) => v.id === requestedVersion || v.version_number === requestedVersion);
 
   if (!version) throw new Error(`Version "${requestedVersion}" was not found for this modpack.`);
 
@@ -205,17 +214,37 @@ export async function installCustomPack(
 
   // Many Forge/NeoForge server packs still ship the installer jar; run it when
   // present so startup can use a normal server.jar entry point.
-  const installer = (await tools.listDir('.')).find((name) =>
-    /^(forge|neoforge)-.*-installer\.jar$/i.test(name),
-  );
+  const root = await tools.listDir('.');
+  const pack = await readPackVariables(tools);
+  const installer = root.find((name) => /^(forge|neoforge)-.*-installer\.jar$/i.test(name));
+  const minecraft =
+    pack?.minecraftVersion ??
+    root
+      .map(
+        (name) =>
+          /^(?:forge-|minecraft_server[.-]|fabric-server-mc\.)(\d+\.\d+(?:\.\d+)?)/i.exec(
+            name,
+          )?.[1],
+      )
+      .find(Boolean);
+  const javaMajor = minecraft
+    ? javaMajorFor(minecraft, pack?.modloader.toLowerCase() ?? 'forge')
+    : undefined;
+  if (minecraft) await report.runtime?.({ version: minecraft, javaMajor });
   if (installer) {
     await report.phase('configuring', 'Running the mod loader installer…', 70);
-    await runInstaller(ctx, tools, installer);
+    await runInstaller(ctx, tools, installer, javaMajor);
   }
 
   const hasServerJar =
     (await tools.exists('server.jar')) ||
-    (await tools.listDir('.')).some((name) => /^(fabric|minecraft)?server.*\.jar$/i.test(name));
+    root.some((name) => /^(?:(?:fabric|minecraft)[_-]?)?server.*\.jar$/i.test(name)) ||
+    root.some(
+      (name) =>
+        /^(forge|neoforge)-.*\.jar$/i.test(name) &&
+        !/-(installer|sources|javadoc)\.jar$/i.test(name),
+    ) ||
+    (await tools.exists('run.sh'));
 
   if (!hasServerJar && !installer) {
     // The common case for CurseForge downloads, and the one that used to fall
@@ -227,16 +256,8 @@ export async function installCustomPack(
     // Doing that here rather than leaving it to a script we never execute is
     // what makes the pack bootable: the panel launches `java -jar server.jar`,
     // so the pack's own entry point and ours are already the same name.
-    const pack = await readPackVariables(tools);
-
     if (pack && /^(forge|neoforge)$/i.test(pack.modloader)) {
       const loader = pack.modloader.toLowerCase();
-      const javaMajor = javaMajorFor(pack.minecraftVersion, loader);
-
-      // The pack's own version, not `from-pack`. Recorded before the installer
-      // runs because the installer needs the right JDK too — Forge 1.20.1 does
-      // not run on the 21 that a `from-pack` guess would have chosen.
-      await report.runtime?.({ version: pack.minecraftVersion, javaMajor });
 
       await report.phase(
         'configuring',
@@ -263,7 +284,18 @@ export async function installCustomPack(
       await report.log(
         `Server pack ready: Minecraft ${pack.minecraftVersion}, ${pack.modloader} ${pack.modloaderVersion}, Java ${javaMajor}.`,
       );
+    } else if (pack && /^fabric$/i.test(pack.modloader)) {
+      await report.phase('configuring', 'Installing the pack’s Fabric server…', 70);
+      const download = await resolveFabricDownload(
+        pack.minecraftVersion,
+        pack.modloaderVersion || undefined,
+      );
+      await tools.download(download.url, 'server.jar');
     } else {
+      if (await tools.exists('manifest.json'))
+        throw new Error(
+          'This ZIP is a CurseForge client/profile export. Download the Server Pack ZIP from the modpack’s files page and upload that instead.',
+        );
       // Better to fail here, loudly and with the pack layout in hand, than to
       // report success and let the container die with "Unable to access
       // jarfile server.jar" — an error that says nothing about the real cause.
@@ -382,7 +414,9 @@ async function installLoaderForPack(
 
   // A pack with no loader is a vanilla-plus-datapacks pack.
   const download = await resolveVanillaDownload(minecraft);
-  await tools.download(download.url, download.fileName, { ...(download.sha1 ? { sha1: download.sha1 } : {}) });
+  await tools.download(download.url, download.fileName, {
+    ...(download.sha1 ? { sha1: download.sha1 } : {}),
+  });
 }
 
 async function runInstaller(

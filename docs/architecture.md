@@ -42,7 +42,7 @@ splits them when one machine stops being enough.
 Everything game-specific lives behind one of these. Nothing else in the
 codebase should branch on which game it is handling.
 
-### 1. `GameAdapter` — what a game *is*
+### 1. `GameAdapter` — what a game _is_
 
 `packages/adapters/src/types.ts`
 
@@ -106,13 +106,20 @@ concurrent deploys racing for the last port produce one winner and one clean
 
 ### Live updates
 
-The worker publishes to Redis; the API holds the WebSockets. That split means a
-second API replica behind a load balancer works with no extra code.
+The server page opens an authenticated Server-Sent Events connection at
+`/api/servers/:uid/console/stream`. The API checks `server.console` permission,
+replays the latest 500 Docker log lines, then follows stdout and stderr. Before
+the first game launch, it reads the installation transcript instead. Closing
+the page releases the Docker attachment. Connections renew every minute to
+recheck sessions and permissions; the browser replaces its recent history on
+reconnect to avoid duplicate lines. Reverse proxies must allow streaming and
+disable response buffering for this route.
 
-One socket per open server page carries console lines, state changes, resource
-samples and install progress. Subscriptions are reference-counted, so ten
-people watching one server share a single Redis subscription. A capped list in
-Redis keeps recent scrollback, so a fresh page load is never a blank console.
+The page polls `/api/servers/:uid/resources` every two seconds without overlapping
+requests. Docker supplies CPU, memory excluding reclaimable file cache, network
+byte counters, and uptime. The browser calculates traffic rates and keeps a
+short in-memory graph history. Measurements are not persisted. Server state
+is refreshed separately every four seconds.
 
 ### State
 

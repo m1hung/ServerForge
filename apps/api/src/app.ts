@@ -1,144 +1,76 @@
+import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import multipart from '@fastify/multipart';
-import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
-import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
+import { isAppError, PathEscapeError } from '@serverforge/core';
 import { ZodError } from 'zod';
-import { AppError, brand, isAppError } from '@serverforge/core';
-import { config } from './config.js';
+import { config } from './lib/config.js';
 import { logger } from './lib/logger.js';
-import { redis } from './lib/redis.js';
-import { PANEL_VERSION } from './lib/version.js';
+import { registerAuth } from './plugins/auth.js';
+import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { gameRoutes } from './routes/games.js';
 import { serverRoutes } from './routes/servers.js';
-import { fileRoutes } from './routes/files.js';
-import { backupRoutes } from './routes/backups.js';
-import { modRoutes } from './routes/mods.js';
-import { adminRoutes } from './routes/admin.js';
-import { setupRoutes } from './routes/setup.js';
-import { websocketRoutes } from './routes/ws.js';
+import { managementRoutes } from './routes/management.js';
+import { nodeRoutes } from './routes/nodes.js';
+import { startSupervisor } from './workers/supervisor.js';
 
-export async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify({
-    // Pino satisfies the interface Fastify needs; the cast keeps buildApp()
-    // returning a plain FastifyInstance so route modules stay portable.
-    loggerInstance: logger as unknown as FastifyBaseLogger,
-    // Behind a reverse proxy the client IP comes from X-Forwarded-For, and
-    // rate limiting keyed on the proxy's IP would throttle everyone at once.
-    trustProxy: true,
-    bodyLimit: 12 * 1024 * 1024,
-    disableRequestLogging: !config.isProduction,
-  });
+export async function buildApp() {
+  const app = Fastify({ logger: false, trustProxy: true });
 
   await app.register(cors, {
     origin: config.corsOrigins,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
+  await app.register(cookie);
+  await app.register(websocket);
+  await app.register(multipart, { limits: { fileSize: 512 * 1024 * 1024 } });
+  await registerAuth(app);
 
-  await app.register(cookie, { secret: config.SESSION_SECRET });
+  await app.register(healthRoutes);
+  await app.register(authRoutes, { prefix: '/api' });
+  await app.register(gameRoutes, { prefix: '/api' });
+  await app.register(serverRoutes, { prefix: '/api' });
+  await app.register(nodeRoutes, { prefix: '/api' });
+  await app.register(managementRoutes, { prefix: '/api' });
 
-  await app.register(rateLimit, {
-    global: true,
-    max: 300,
-    timeWindow: '1 minute',
-    redis,
-    // Console command spam and file listing are legitimately chatty; the
-    // strict limits live on the auth routes instead.
-    allowList: (request) => request.url.startsWith('/api/servers') && request.method === 'GET',
-    keyGenerator: (request) => request.ip,
-  });
-
-  await app.register(multipart, {
-    limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 20 },
-  });
-
-  await app.register(websocket, {
-    options: { maxPayload: 1024 * 1024 },
-  });
-
-  app.addHook('onSend', async (_request, reply) => {
-    reply.header('X-Powered-By', brand.name);
-    reply.header('X-Content-Type-Options', 'nosniff');
-    reply.header('Referrer-Policy', 'same-origin');
-  });
-
-  // ── Error handling ────────────────────────────────────────────────────
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ZodError) {
-      // Zod's own messages are already written for humans in `contracts.ts`,
-      // so they are surfaced directly rather than replaced with "invalid".
-      const issues = error.issues.map((issue) => ({
-        key: issue.path.join('.'),
-        message: issue.message,
-      }));
-      return reply.code(422).send({
+    if (isAppError(error)) {
+      return reply.status(error.status).send(error.toJSON());
+    }
+    if (error instanceof ZodError || error instanceof PathEscapeError) {
+      return reply.status(400).send({
         error: {
-          code: 'validation_failed',
-          message: issues[0]?.message ?? 'Some fields need fixing.',
-          details: issues,
+          code: 'bad_request',
+          message:
+            error instanceof ZodError
+              ? (error.issues[0]?.message ?? 'Invalid request.')
+              : error.message,
         },
       });
     }
-
-    if (isAppError(error)) {
-      if (error.status >= 500) logger.error({ error, url: request.url }, 'application error');
-      return reply.code(error.status).send(error.toJSON());
-    }
-
-    if ((error as { statusCode?: number }).statusCode === 429) {
-      return reply.code(429).send({
-        error: { code: 'rate_limited', message: 'Too many requests. Slow down a moment.' },
+    if (error.statusCode === 413) {
+      return reply.status(413).send({
+        error: {
+          code: 'file_too_large',
+          message:
+            'Upload limit exceeded. Server pack ZIPs are limited to 2 GiB; individual mods to 256 MiB. Upload one file at a time.',
+        },
       });
     }
-
-    logger.error({ error, url: request.url, method: request.method }, 'unhandled error');
-    return reply.code(500).send({
-      error: {
-        code: 'internal_error',
-        message: 'Something went wrong on our side. The details are in the panel logs.',
-      },
+    logger.error('unhandled error', { message: error.message, url: request.url });
+    return reply.status(500).send({
+      error: { code: 'internal_error', message: 'Something went wrong on our side.' },
     });
   });
-
-  app.setNotFoundHandler((request, reply) => {
-    reply.code(404).send({
-      error: { code: 'not_found', message: `No route for ${request.method} ${request.url}.` },
-    });
-  });
-
-  // ── Routes ────────────────────────────────────────────────────────────
-  app.get('/health', async () => {
-    const { prisma } = await import('@serverforge/db');
-    const [database, cache] = await Promise.all([
-      prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
-      redis.ping().then(() => true).catch(() => false),
-    ]);
-
-    const healthy = database && cache;
-    return {
-      status: healthy ? 'ok' : 'degraded',
-      brand: brand.name,
-      version: PANEL_VERSION,
-      checks: { database, cache },
-    };
-  });
-
-  await app.register(authRoutes);
-  await app.register(serverRoutes);
-  await app.register(fileRoutes);
-  await app.register(backupRoutes);
-  await app.register(modRoutes);
-  const { modpackStagingRoutes } = await import('./routes/modpack-staging.js');
-  await app.register(modpackStagingRoutes);
-  await app.register(adminRoutes);
-  await app.register(setupRoutes);
-  const { themeRoutes } = await import('./routes/themes.js');
-  await app.register(themeRoutes);
-  await app.register(websocketRoutes);
 
   return app;
 }
 
-export { AppError };
+export async function start() {
+  const app = await buildApp();
+  if (process.env.WORKER !== '0') await startSupervisor();
+  await app.listen({ host: config.apiHost, port: config.apiPort });
+  logger.info(`API ready on ${config.apiHost}:${config.apiPort}`);
+}

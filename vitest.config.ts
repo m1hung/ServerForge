@@ -2,6 +2,7 @@ import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       // The dashboard's own alias, so UI logic can be unit tested without

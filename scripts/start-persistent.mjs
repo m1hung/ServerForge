@@ -14,9 +14,9 @@ import { fileURLToPath } from "node:url";
 import { dockerFixHint, ensureDockerGroupAccess, probeDocker } from "./lib/docker-access.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const args = new Set(process.argv.slice(2));
 const winShell = process.platform === "win32";
+const npm = resolveNpm();
 
 // Linux: account may already be in `docker` while this shell is not. Re-exec
 // under `sg docker` before any compose/socket work (same idea as start-server.sh).
@@ -37,6 +37,38 @@ function success(message) {
   console.log(`${color.green("✓")} ${message}`);
 }
 
+function resolveNpm() {
+  const name = process.platform === "win32" ? "npm.cmd" : "npm";
+  const besideNode = path.join(path.dirname(process.execPath), name);
+  if (fs.existsSync(besideNode)) return besideNode;
+  return name;
+}
+
+function commandError(command, error) {
+  const missingNpm =
+    error?.code === "ENOENT" &&
+    (command === "npm" ||
+      command === "npm.cmd" ||
+      path.basename(command) === "npm" ||
+      path.basename(command) === "npm.cmd");
+
+  if (missingNpm) {
+    return [
+      "npm is not installed or is not on PATH.",
+      "ServerForge needs Node.js and npm. On some Linux distributions (including Arch),",
+      "nodejs and npm are separate packages — installing Node does not install npm.",
+      "",
+      "Install npm, then run this launcher again:",
+      "  Arch Linux:    sudo pacman -S npm",
+      "  Debian/Ubuntu: sudo apt install npm",
+      "  Fedora:        sudo dnf install npm",
+      "  macOS/Windows: install Node.js from https://nodejs.org/ (includes npm)",
+    ].join("\n");
+  }
+
+  return `Could not run ${command}: ${error.message}`;
+}
+
 function run(command, commandArgs, options = {}) {
   const result = spawnSync(command, commandArgs, {
     cwd: root,
@@ -45,8 +77,7 @@ function run(command, commandArgs, options = {}) {
     shell: winShell,
   });
 
-  if (result.error)
-    throw new Error(`Could not run ${command}: ${result.error.message}`);
+  if (result.error) throw new Error(commandError(command, result.error));
   if (result.status !== 0) {
     throw new Error(
       `${options.label ?? command} exited with status ${result.status ?? "unknown"}`,
@@ -76,6 +107,10 @@ function readEnv() {
   return values;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function waitForPort(port, timeoutMs = 60_000) {
   const startedAt = Date.now();
 
@@ -95,12 +130,133 @@ async function waitForPort(port, timeoutMs = 60_000) {
     });
 
     if (open) return;
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await sleep(1_500);
   }
 
   throw new Error(
     `PostgreSQL did not become reachable on port ${port} within 60 seconds`,
   );
+}
+
+function composeHasWaitFlag() {
+  for (const command of [
+    ["docker", ["compose", "up", "--help"]],
+    ["docker-compose", ["up", "--help"]],
+  ]) {
+    const result = spawnSync(command[0], command[1], {
+      encoding: "utf8",
+      shell: winShell,
+    });
+    if (/--wait\b/.test(`${result.stdout ?? ""}${result.stderr ?? ""}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function startDatabaseContainers() {
+  if (composeHasWaitFlag()) {
+    compose([
+      "up",
+      "-d",
+      "--wait",
+      "--wait-timeout",
+      "60",
+      "postgres",
+      "redis",
+    ]);
+    return;
+  }
+  compose(["up", "-d", "postgres", "redis"]);
+}
+
+function postgresContainerId() {
+  const result = spawnSync(
+    "docker",
+    ["ps", "-q", "--filter", "name=serverforge-postgres"],
+    { cwd: root, encoding: "utf8", shell: winShell },
+  );
+  return (result.stdout ?? "").trim().split(/\s+/).filter(Boolean)[0] ?? "";
+}
+
+/**
+ * True when Postgres inside the container will accept a connection.
+ *
+ * Do not use the published host port for this: Docker's proxy listens on
+ * 127.0.0.1:5432 the instant the container starts, including during first-boot
+ * initdb, so a TCP connect is not "ready". Prisma then fails with P1001.
+ */
+function pgIsReady() {
+  const id = postgresContainerId();
+  if (!id) return false;
+  const env = readEnv();
+  const result = spawnSync(
+    "docker",
+    [
+      "exec",
+      id,
+      "pg_isready",
+      "-U",
+      env.POSTGRES_USER || "serverforge",
+      "-d",
+      env.POSTGRES_DB || "serverforge",
+    ],
+    { cwd: root, encoding: "utf8", shell: winShell },
+  );
+  return result.status === 0;
+}
+
+async function waitForPostgres(timeoutMs = 60_000) {
+  const startedAt = Date.now();
+  let hits = 0;
+  let lastNotice = 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (pgIsReady()) {
+      hits += 1;
+      // First-boot initdb brings a temporary server up, then shuts it down,
+      // then starts the real one. Require a short streak so we do not hand
+      // Prisma the gap in between.
+      if (hits >= 3) return;
+    } else {
+      hits = 0;
+    }
+
+    const waited = Math.round((Date.now() - startedAt) / 1000);
+    if (waited - lastNotice >= 10) {
+      lastNotice = waited;
+      console.log(color.dim(`  waiting for postgresql… ${waited}s`));
+    }
+    await sleep(500);
+  }
+
+  throw new Error(
+    [
+      "PostgreSQL did not become ready within 60 seconds.",
+      "",
+      ...describeContainerTrouble("serverforge-postgres-1"),
+    ].join("\n"),
+  );
+}
+
+async function runRetry(command, commandArgs, options, attempts = 8) {
+  let lastError;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      run(command, commandArgs, options);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (i === attempts) break;
+      console.log(
+        color.dim(
+          `  ${options.label ?? command} not ready yet, retrying… (${i}/${attempts})`,
+        ),
+      );
+      await sleep(1_000);
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -346,14 +502,15 @@ async function main() {
   ensureDocker();
 
   section("2/5 Starting the database");
-  compose(["up", "-d", "postgres", "redis"]);
+  startDatabaseContainers();
   const env = readEnv();
+  await waitForPostgres();
   await waitForPort(Number(env.POSTGRES_PORT || 5432));
   success("PostgreSQL and Redis are running");
 
   section("3/5 Initializing application data");
-  run(npm, ["run", "db:push"], { label: "Database schema setup" });
-  run(npm, ["run", "db:seed"], { label: "Database seed" });
+  await runRetry(npm, ["run", "db:push"], { label: "Database schema setup" });
+  await runRetry(npm, ["run", "db:seed"], { label: "Database seed" });
   success("Database is ready");
 
   section("4/5 Starting the persistent stack");

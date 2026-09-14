@@ -1,280 +1,245 @@
-import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { conflict, notFound } from '@serverforge/core';
-import { prisma, uid as makeUid } from '@serverforge/db';
-import { logger } from '../lib/logger.js';
-import { chownTreeForGame } from '../lib/ownership.js';
-import { recordActivity } from '../lib/events.js';
-import { localBackupPath, localDataPath } from '../lib/storage-paths.js';
+import * as tar from 'tar';
+import { z } from 'zod';
+import { prisma, uid, type Server, type Backup } from '@serverforge/db';
+import { badRequest, conflict, safeExtractTarget } from '@serverforge/core';
+import { config } from '../lib/config.js';
+import { localDataPath } from '../lib/storage-paths.js';
+import { serverFile, prepareServerOwnership } from '../lib/server-files.js';
+import { fileChecksum } from './file-manager.js';
+import { runtime, startServer, stopServer } from '../routes/servers.js';
+import { activity } from './server-events.js';
 
-/**
- * Backups.
- *
- * Plain gzipped tar rather than a bespoke format, deliberately: a user must
- * be able to download a backup and open it with tools they already have,
- * including after they stop using this panel. Lock-in through file format is
- * not a feature.
- */
-
-/** Never worth archiving: regenerated on start, or huge and disposable. */
-const DEFAULT_EXCLUDES = [
-  './logs',
-  './crash-reports',
-  './cache',
-  './.serverforge',
-  './libraries',
-  './versions',
-  './Pal/Saved/Logs',
-  './steamapps',
-];
-
-export async function createBackupRecord(
-  serverId: string,
-  input: { name?: string; scheduleId?: string },
-) {
-  const running = await prisma.backup.count({
-    where: { serverId, state: { in: ['pending', 'running'] } },
-  });
-  if (running > 0) {
-    throw conflict(
-      'A backup is already running for this server.',
-      'Wait for it to finish — running two at once would slow the server down.',
-    );
-  }
-
-  return prisma.backup.create({
-    data: {
-      uid: makeUid(),
-      serverId,
-      name: input.name?.trim() || `Backup ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
-      state: 'pending',
-      scheduleId: input.scheduleId ?? null,
+export const savedConfigurationSchema = z.object({
+  gameId: z.string(),
+  variantId: z.string(),
+  version: z.string(),
+  build: z.string().nullable(),
+  javaMajor: z.number().nullable(),
+  settings: z.record(z.union([z.string(), z.number(), z.boolean()])),
+  environment: z.record(z.string()),
+  startupOverride: z.string().nullable(),
+  javaFlagsPreset: z.string(),
+  customJavaFlags: z.string().nullable(),
+  memoryMib: z.number(),
+  cpuCores: z.number(),
+  diskMib: z.number(),
+  swapMib: z.number().nullable(),
+  ioWeight: z.number(),
+});
+export type SavedConfiguration = z.infer<typeof savedConfigurationSchema>;
+export function savedConfiguration(server: Server) {
+  return savedConfigurationSchema.parse(server);
+}
+export function operationRoot(serverUid: string) {
+  return path.join(config.dataRoot, '.operations', serverUid);
+}
+export async function backupFile(backup: Pick<Backup, 'filePath'>) {
+  if (!backup.filePath) throw badRequest('This backup has no archive.');
+  return serverFile(config.backupRoot, backup.filePath);
+}
+export async function archiveDirectory(root: string, destination: string) {
+  let count = 0;
+  let invalid: unknown;
+  await tar.c(
+    {
+      cwd: root,
+      file: destination,
+      gzip: true,
+      portable: true,
+      strict: true,
+      filter(entry, stat) {
+        if (invalid) return false;
+        try {
+          safeExtractTarget(root, entry);
+          if (
+            !('isFile' in stat) ||
+            (!stat.isFile() && !stat.isDirectory()) ||
+            (stat.isFile() && stat.nlink > 1)
+          )
+            throw badRequest(`Backup cannot include links or special files: ${entry}`);
+          if (++count > 500000) throw badRequest('Backup exceeds the 500,000-entry limit.');
+          return true;
+        } catch (error) {
+          invalid = error;
+          return false;
+        }
+      },
+    },
+    ['.'],
+  );
+  if (invalid) throw invalid;
+}
+export async function extractBackup(archive: string, destination: string) {
+  let bytes = 0,
+    count = 0;
+  let invalid: unknown;
+  await fs.mkdir(destination, { recursive: true });
+  const disk = await fs.statfs(destination);
+  const available = Number(disk.bavail) * Number(disk.bsize);
+  // Tar invokes callbacks from its stream. Throw only after the stream settles.
+  await tar.t({
+    file: archive,
+    strict: true,
+    onReadEntry(entry) {
+      if (invalid) return;
+      try {
+        safeExtractTarget(destination, entry.path);
+        if (!['File', 'Directory'].includes(entry.type))
+          throw badRequest('Backup contains a link or special file.');
+        bytes += entry.size;
+        if (++count > 500000 || bytes > available - 64 * 1024 ** 2)
+          throw badRequest('Not enough free disk space to restore this archive.');
+      } catch (error) {
+        invalid = error;
+      }
     },
   });
+  if (invalid) throw invalid;
+  await tar.x({ file: archive, cwd: destination, strict: true, noChmod: true, noMtime: true });
 }
-
-export async function runBackup(input: {
-  serverUid: string;
-  backupUid: string;
-  ignore: string[];
-}): Promise<void> {
-  const backup = await prisma.backup.findUnique({
-    where: { uid: input.backupUid },
-    include: { server: { include: { node: true } } },
+export async function createBackup(
+  server: Server,
+  name = '',
+  scheduleId?: string,
+  resume = true,
+): Promise<Backup> {
+  if (!['running', 'offline', 'crashed'].includes(server.state))
+    throw conflict('Wait for the current operation before making a backup.');
+  const record = await prisma.backup.create({
+    data: {
+      uid: uid(),
+      serverId: server.id,
+      name: name || `Backup ${new Date().toLocaleString('en-US')}`,
+      state: 'running',
+      startedAt: new Date(),
+      scheduleId,
+      configuration: savedConfiguration(server),
+    },
   });
-  if (!backup) throw notFound('That backup');
-
-  const server = backup.server;
-  const backupDir = localBackupPath(path.join(server.node.backupRoot, server.uid));
-  const dataPath = localDataPath(server.dataPath);
-  const fileName = `${backup.uid}.tar.gz`;
-  const filePath = path.join(backupDir, fileName);
-
-  await fs.mkdir(backupDir, { recursive: true });
-  await prisma.backup.update({
-    where: { id: backup.id },
-    data: { state: 'running', startedAt: new Date() },
-  });
-
+  const relative = `${server.uid}/${record.uid}.tar.gz`;
+  const file = await serverFile(config.backupRoot, relative);
+  const running = server.state === 'running';
+  let stopped = false;
   try {
-    const excludes = [...DEFAULT_EXCLUDES, ...input.ignore.map((p) => `./${p.replace(/^\.?\//, '')}`)];
-    await tarDirectory(dataPath, filePath, excludes);
-
-    const stat = await fs.stat(filePath);
-    const checksum = await sha256Of(filePath);
-
-    await prisma.backup.update({
-      where: { id: backup.id },
+    if (running) {
+      await stopServer(server.id);
+      stopped = true;
+    }
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await archiveDirectory(localDataPath(server.dataPath), `${file}.partial`);
+    const checksum = await fileChecksum(`${file}.partial`);
+    const stat = await fs.stat(`${file}.partial`);
+    await fs.rename(`${file}.partial`, file);
+    const completed = await prisma.backup.update({
+      where: { id: record.id },
       data: {
         state: 'completed',
-        filePath: path.join(server.uid, fileName),
-        sizeBytes: BigInt(stat.size),
+        filePath: relative,
         checksum,
+        sizeBytes: stat.size,
         finishedAt: new Date(),
       },
     });
-
-    await recordActivity({
-      serverId: server.id,
-      action: 'backup.create',
-      message: `Backup "${backup.name}" completed.`,
-      metadata: { sizeBytes: stat.size },
-    });
+    await activity(server.id, 'backup.completed', `Backup ready: ${completed.name}`);
+    return completed;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error, backupUid: backup.uid }, 'backup failed');
-
-    await fs.rm(filePath, { force: true }).catch(() => undefined);
+    await fs.rm(`${file}.partial`, { force: true });
     await prisma.backup.update({
-      where: { id: backup.id },
-      data: { state: 'failed', error: message, finishedAt: new Date() },
+      where: { id: record.id },
+      data: {
+        state: 'failed',
+        error: error instanceof Error ? error.message : 'Backup failed',
+        finishedAt: new Date(),
+      },
     });
     throw error;
+  } finally {
+    if (stopped && resume) await startServer(server.id);
   }
 }
 
-/**
- * Restores in place after stopping the server.
- *
- * The existing directory is moved aside rather than deleted until the restore
- * succeeds — a failed restore that also destroyed the current world would be
- * the worst possible outcome of a "restore" button.
- */
-export async function runRestore(input: { serverUid: string; backupUid: string }): Promise<void> {
-  const backup = await prisma.backup.findUnique({
-    where: { uid: input.backupUid },
-    include: { server: { include: { node: true } } },
-  });
-  if (!backup || backup.state !== 'completed' || !backup.filePath) {
-    throw conflict('That backup cannot be restored because it did not finish successfully.');
-  }
-
-  const server = backup.server;
-  const archivePath = localBackupPath(path.join(server.node.backupRoot, backup.filePath));
-  const dataPath = localDataPath(server.dataPath);
-  const staging = `${dataPath}.restoring`;
-  const previous = `${dataPath}.previous`;
-
-  const { stopServer } = await import('./servers.js');
-  const { setServerState } = await import('../lib/events.js');
-
-  if (['running', 'starting'].includes(server.state)) {
-    await stopServer(server.uid, { force: false });
-  }
-  await setServerState(server.uid, 'restoring');
-
+/** Journal the swap so a process restart can restore the original files and settings. */
+export async function replaceServerFiles(
+  server: Server,
+  staged: string,
+  configuration: SavedConfiguration,
+  operation: 'restoring' | 'updating' = 'restoring',
+) {
+  const work = operationRoot(server.uid),
+    live = localDataPath(server.dataPath),
+    previous = path.join(work, 'previous');
+  const journal = path.join(work, 'swap.json');
+  if (await fs.lstat(previous).catch(() => null))
+    throw conflict('A previous operation needs recovery before another restore or update.');
+  await fs.mkdir(work, { recursive: true });
+  await fs.writeFile(
+    journal,
+    JSON.stringify({ original: savedConfiguration(server), committed: false }),
+    { flag: 'wx', mode: 0o600 },
+  );
   try {
-    await fs.rm(staging, { recursive: true, force: true });
-    await fs.mkdir(staging, { recursive: true });
-    await untarInto(archivePath, staging);
-
-    await fs.rm(previous, { recursive: true, force: true });
-    await fs.rename(dataPath, previous);
-    await fs.rename(staging, dataPath);
-    await fs.rm(previous, { recursive: true, force: true });
-
-    await chownTreeForGame(dataPath);
-
-    await recordActivity({
-      serverId: server.id,
-      action: 'backup.restore',
-      message: `Restored from backup "${backup.name}".`,
+    await prisma.server.update({ where: { id: server.id }, data: { state: operation } });
+    if (server.containerId) await runtime.remove(server.containerId, { force: false });
+    await fs.rename(live, previous);
+    await fs.rename(staged, live);
+    await prepareServerOwnership(live);
+    await prisma.server.update({
+      where: { id: server.id },
+      data: { ...configuration, state: 'offline', containerId: null },
     });
-    await setServerState(server.uid, 'offline');
+    await fs.writeFile(`${journal}.tmp`, JSON.stringify({ committed: true }), { mode: 0o600 });
+    await fs.rename(`${journal}.tmp`, journal);
   } catch (error) {
-    logger.error({ error, serverUid: server.uid }, 'restore failed');
-    await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
-    // Put the original back if we got as far as moving it.
-    if (await exists(previous)) {
-      await fs.rm(dataPath, { recursive: true, force: true }).catch(() => undefined);
-      await fs.rename(previous, dataPath).catch(() => undefined);
-    }
-    await setServerState(server.uid, 'offline', { message: 'Restore failed — nothing was changed.' });
+    await recoverSwap(server);
     throw error;
   }
+  await recoverSwap(server);
 }
-
-export async function deleteBackup(backupUid: string): Promise<void> {
-  const backup = await prisma.backup.findUnique({
-    where: { uid: backupUid },
-    include: { server: { include: { node: true } } },
+export async function recoverSwap(server: Server) {
+  const work = operationRoot(server.uid),
+    live = localDataPath(server.dataPath),
+    previous = path.join(work, 'previous');
+  const journal = path.join(work, 'swap.json');
+  const text = await fs.readFile(journal, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
   });
-  if (!backup) throw notFound('That backup');
-
-  if (backup.filePath) {
-    const full = localBackupPath(path.join(backup.server.node.backupRoot, backup.filePath));
-    await fs.rm(full, { force: true }).catch((error) =>
-      logger.warn({ error, backupUid }, 'could not remove backup file'),
-    );
-  }
-  await prisma.backup.delete({ where: { id: backup.id } });
-}
-
-/** Keeps the newest `retain` backups from a schedule, deleting the rest. */
-export async function pruneScheduleBackups(scheduleId: string, retain: number): Promise<number> {
-  const backups = await prisma.backup.findMany({
-    where: { scheduleId, state: 'completed' },
-    orderBy: { createdAt: 'desc' },
-    skip: retain,
-  });
-
-  for (const backup of backups) await deleteBackup(backup.uid);
-  return backups.length;
-}
-
-export async function backupFilePath(backupUid: string): Promise<string> {
-  const backup = await prisma.backup.findUnique({
-    where: { uid: backupUid },
-    include: { server: { include: { node: true } } },
-  });
-  if (!backup?.filePath) throw notFound('That backup file');
-  return localBackupPath(path.join(backup.server.node.backupRoot, backup.filePath));
-}
-
-// ────────────────────────────────────────────────────────────────── helpers ──
-
-function tarDirectory(source: string, dest: string, excludes: string[]): Promise<void> {
-  // GNU tar accepts --warning=…; macOS bsdtar does not. Prefer the quieter
-  // GNU flags when available, otherwise fall back to a portable invocation.
-  const gnuQuiet = ['--warning=no-file-changed', '--warning=no-file-removed'];
-  const base = [
-    '--create',
-    '--gzip',
-    ...excludes.map((pattern) => `--exclude=${pattern}`),
-    '--file',
-    dest,
-    '--directory',
-    source,
-    '.',
-  ];
-
-  return runProcess('tar', [...gnuQuiet, ...base], [0, 1]).catch((error: Error) => {
-    if (!/unrecognized option|unknown option|invalid option/i.test(error.message)) {
-      throw error;
+  if (!text) return;
+  const state = JSON.parse(text) as { committed: boolean; original?: unknown };
+  if (!state.committed) {
+    const original = savedConfigurationSchema.parse(state.original);
+    if (server.containerId) await runtime.stop(server.containerId);
+    if (await fs.lstat(previous).catch(() => null)) {
+      await fs.rm(live, { recursive: true, force: true });
+      await fs.rename(previous, live);
     }
-    return runProcess('tar', base, [0, 1]);
-  });
-}
-
-function untarInto(archive: string, dest: string): Promise<void> {
-  return runProcess('tar', ['--extract', '--gzip', '--file', archive, '--directory', dest], [0]);
-}
-
-function runProcess(command: string, args: string[], okExitCodes: number[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
+    await prisma.server.update({
+      where: { id: server.id },
+      data: { ...original, state: 'offline', containerId: null },
     });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      // tar exits 1 for "some files changed while reading", which is normal
-      // on a live server and not a reason to fail the backup.
-      if (okExitCodes.includes(code ?? -1)) resolve();
-      else reject(new Error(`${command} exited ${code}: ${stderr.slice(-2000)}`));
-    });
-  });
+  } else await fs.rm(previous, { recursive: true, force: true });
+  await fs.rm(journal, { force: true });
 }
-
-function sha256Of(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256');
-    const stream = createReadStream(filePath);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('error', reject);
-    stream.on('end', () => resolve(hash.digest('hex')));
-  });
-}
-
-async function exists(target: string): Promise<boolean> {
+export async function restoreBackup(server: Server, backup: Backup) {
+  if (backup.serverId !== server.id || backup.state !== 'completed' || !backup.checksum)
+    throw badRequest('Choose a completed backup for this server.');
+  const configuration = savedConfigurationSchema.parse(backup.configuration);
+  const archive = await backupFile(backup);
+  if ((await fileChecksum(archive)) !== backup.checksum)
+    throw badRequest('Backup checksum failed. No server files have been changed.');
+  const staged = path.join(operationRoot(server.uid), `restore-${uid()}`);
   try {
-    await fs.access(target);
-    return true;
-  } catch {
-    return false;
+    await extractBackup(archive, staged);
+    await createBackup(server, `Before restore: ${backup.name}`, undefined, false);
+    await replaceServerFiles(server, staged, configuration);
+    await activity(
+      server.id,
+      'backup.restored',
+      `Restored ${backup.name}. Server left offline for review.`,
+    );
+  } finally {
+    await fs.rm(staged, { recursive: true, force: true });
   }
 }

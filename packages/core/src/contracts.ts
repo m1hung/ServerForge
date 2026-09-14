@@ -86,10 +86,24 @@ export const serverNameSchema = z
  * waiting to happen in every form that edits limits.
  */
 export const resourceLimitsSchema = z.object({
-  memoryMib: z.number().int().min(0).max(1024 * 1024),
+  memoryMib: z
+    .number()
+    .int()
+    .min(0)
+    .max(1024 * 1024),
   cpuCores: z.number().min(0).max(256),
-  diskMib: z.number().int().min(0).max(1024 * 1024 * 4),
-  swapMib: z.number().int().min(0).max(1024 * 1024).nullable().optional(),
+  diskMib: z
+    .number()
+    .int()
+    .min(0)
+    .max(1024 * 1024 * 4),
+  swapMib: z
+    .number()
+    .int()
+    .min(0)
+    .max(1024 * 1024)
+    .nullable()
+    .optional(),
   ioWeight: z.number().int().min(1).max(1000).nullable().optional(),
 });
 
@@ -108,12 +122,14 @@ export const createServerSchema = z.object({
   /** Requested primary port. Omit to let the allocator choose. */
   port: z.number().int().min(1024).max(65535).optional(),
   startOnCreate: z.boolean().default(true),
+  acceptedEula: z.string().max(100).optional(),
 });
 
 export const updateServerSchema = z.object({
   name: serverNameSchema.optional(),
   description: z.string().trim().max(500).nullable().optional(),
   limits: resourceLimitsSchema.partial().optional(),
+  settings: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
 export const powerActionSchema = z.object({
@@ -157,7 +173,11 @@ export const createBackupSchema = z.object({
 });
 
 export const scheduleActionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('power'), action: z.enum(['start', 'stop', 'restart']) }),
+  z.object({
+    type: z.literal('power'),
+    action: z.enum(['start', 'stop', 'restart']),
+    warningSeconds: z.number().int().min(0).max(300).default(0),
+  }),
   z.object({ type: z.literal('command'), command: z.string().min(1).max(1024) }),
   z.object({ type: z.literal('backup'), retain: z.number().int().min(1).max(50).default(5) }),
   z.object({

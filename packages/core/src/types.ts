@@ -108,9 +108,15 @@ export interface ResourceLimits {
 export interface ResourceUsage {
   timestamp: number;
   cpuPercent: number;
+  /** This container’s usage on each host logical CPU. Null when Docker omits the counters. */
+  cpuPerCorePercent?: number[] | null;
+  /** Active container quota in core equivalents; 0 means unlimited. */
+  cpuLimitCores?: number;
+  cpuHostCores?: number;
   memoryBytes: number;
   memoryLimitBytes: number;
-  diskBytes: number;
+  /** Null when disk usage has not been measured (Docker stats does not include it). */
+  diskBytes: number | null;
   networkRxBytes: number;
   networkTxBytes: number;
   uptimeSeconds: number;

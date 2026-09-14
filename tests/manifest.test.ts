@@ -8,10 +8,7 @@ import {
   renderArgs,
   renderTemplate,
 } from '../packages/adapters/src/manifest/template.js';
-import {
-  planMaterialisation,
-  setDeep,
-} from '../packages/adapters/src/manifest/materialise.js';
+import { planMaterialisation, setDeep } from '../packages/adapters/src/manifest/materialise.js';
 import { palworldManifest } from '../packages/adapters/src/manifest/games/palworld.js';
 import { palworldAdapter } from '../packages/adapters/src/palworld/index.js';
 import { valheimAdapter } from '../packages/adapters/src/valheim/index.js';
@@ -88,12 +85,18 @@ describe('manifest templates', () => {
   it('drops a conditional argument group whose condition fails', () => {
     const args = [
       'run',
-      { when: { ref: 'setting.Password', isSet: true }, args: ['-password', '{{setting.Password}}'] },
+      {
+        when: { ref: 'setting.Password', isSet: true },
+        args: ['-password', '{{setting.Password}}'],
+      },
     ];
 
     expect(renderArgs(args, ctx)).toEqual(['run']);
     expect(
-      renderArgs(args, contextFor('valheim-vanilla', { settings: { ...ctx.settings, Password: 'pw' } })),
+      renderArgs(
+        args,
+        contextFor('valheim-vanilla', { settings: { ...ctx.settings, Password: 'pw' } }),
+      ),
     ).toEqual(['run', '-password', 'pw']);
   });
 });
@@ -173,14 +176,20 @@ describe('settings materialisation', () => {
       },
     ];
 
-    const on = planMaterialisation(guarded, contextFor('valheim-vanilla', {
-      settings: { ...defaultsFor(guarded), Pvp: true },
-    }));
+    const on = planMaterialisation(
+      guarded,
+      contextFor('valheim-vanilla', {
+        settings: { ...defaultsFor(guarded), Pvp: true },
+      }),
+    );
     expect(on.properties.get('server.properties')).toHaveProperty('pvp-damage');
 
-    const off = planMaterialisation(guarded, contextFor('valheim-vanilla', {
-      settings: { ...defaultsFor(guarded), Pvp: false },
-    }));
+    const off = planMaterialisation(
+      guarded,
+      contextFor('valheim-vanilla', {
+        settings: { ...defaultsFor(guarded), Pvp: false },
+      }),
+    );
     expect(off.properties.get('server.properties')).not.toHaveProperty('pvp-damage');
   });
 
@@ -226,7 +235,9 @@ describe('manifest validation', () => {
   it('rejects an unknown filter', () => {
     const manifest = base();
     manifest.runtime.command = ['./run', '{{setting.Public|yesno}}'];
-    expect(validateManifest(manifest)).toEqual([expect.stringContaining('unknown filter "|yesno"')]);
+    expect(validateManifest(manifest)).toEqual([
+      expect.stringContaining('unknown filter "|yesno"'),
+    ]);
   });
 
   it('rejects a player rule whose capture group does not exist', () => {
@@ -264,13 +275,17 @@ describe('manifest validation', () => {
   it('rejects a showWhen pointing at a missing setting', () => {
     const manifest = base();
     manifest.settings[0]!.showWhen = { key: 'Ghost', equals: [true] };
-    expect(validateManifest(manifest)).toEqual([expect.stringContaining('no setting has that key')]);
+    expect(validateManifest(manifest)).toEqual([
+      expect.stringContaining('no setting has that key'),
+    ]);
   });
 
   it('rejects a manifest version it cannot read', () => {
     const manifest = base();
     manifest.manifestVersion = 99;
-    expect(validateManifest(manifest)).toEqual([expect.stringContaining('manifestVersion must be 1')]);
+    expect(validateManifest(manifest)).toEqual([
+      expect.stringContaining('manifestVersion must be 1'),
+    ]);
   });
 
   it('rejects two variants claiming to be recommended', () => {
@@ -491,7 +506,7 @@ describe('palworld manifest matches the hand-written adapter', () => {
    * says so in the target instead. That relocation is the port. It is asserted
    * separately below rather than waved through.
    */
-  it('produces the same settings schema per variant, including the mods toggle', () => {
+  it('produces the same settings schema and does not offer a Windows loader on Linux', () => {
     for (const variantId of variants) {
       const withoutTargets = (schema: SettingsSchema) =>
         schema.map(({ target: _target, ...rest }) => rest);
@@ -504,7 +519,7 @@ describe('palworld manifest matches the hand-written adapter', () => {
     // The variant-only setting must be absent from vanilla, not merely hidden.
     const vanillaKeys = compiled.settingsSchema('palworld-vanilla').map((s) => s.key);
     expect(vanillaKeys).not.toContain('sf_enable_ue4ss');
-    expect(compiled.settingsSchema('palworld-modded').map((s) => s.key)).toContain(
+    expect(compiled.settingsSchema('palworld-modded').map((s) => s.key)).not.toContain(
       'sf_enable_ue4ss',
     );
   });

@@ -17,12 +17,9 @@ import type { GameManifest } from '../types.js';
  *   - **A seeded config.** Palworld writes PalWorldSettings.ini on first boot
  *     and runs on built-in defaults until then, so wizard choices would apply
  *     to the player's *second* world. That is `postInstall.copyFile`.
- *   - **A variant-only setting.** 'Install the mod loader' is meaningless on
- *     the vanilla edition. That is `variants[].settings`.
  *
- * Mods are deliberately files rather than a browser: Palworld has no official
- * dedicated-server mod support, so the panel sets up the layout the community
- * actually uses and says so plainly.
+ * Linux supports compatible PAK mods. Official Workshop / UE4SS server mods
+ * require Windows: https://docs.palworldgame.com/settings-and-operation/mod/
  */
 
 const CONFIG = 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini';
@@ -54,30 +51,15 @@ export const palworldManifest: GameManifest = {
     },
     {
       id: 'palworld-modded',
-      name: 'Palworld + mods',
-      summary: 'Same server, with the UE4SS mod loader set up for you.',
+      name: 'Palworld + PAK mods',
+      summary: 'Linux server with a managed folder for compatible PAK mods.',
       detail:
-        'Palworld has no official mod support on dedicated servers. We install UE4SS — the loader nearly every Palworld mod is built against — and give you a managed mods folder. Mods are added by uploading their files; there is no in-game browser, because Palworld does not provide one. Every player usually needs the same mods installed locally too.',
+        'Upload .pak mods explicitly compatible with the Linux dedicated server. UE4SS scripts, native DLL mods and official Steam Workshop server mods require Windows and are not supported by this Linux edition. Follow each mod’s client and dependency requirements.',
       order: 2,
       tags: ['Mods', 'Advanced'],
       supportsMods: true,
       modLoader: 'none',
       modDirectory: 'Pal/Content/Paks/~mods',
-      settings: [
-        {
-          key: 'sf_enable_ue4ss',
-          type: 'boolean',
-          label: 'Install UE4SS mod loader',
-          help: 'Most Palworld mods need this loader. We install it for you and place a mods folder in the file manager.',
-          tier: 'basic',
-          group: 'Mods',
-          default: true,
-          restartRequired: true,
-          target: {
-            kind: 'internal',
-          },
-        },
-      ],
     },
   ],
 
@@ -409,9 +391,7 @@ export const palworldManifest: GameManifest = {
       default: false,
       showWhen: {
         key: 'bEnablePlayerToPlayerDamage',
-        equals: [
-          true,
-        ],
+        equals: [true],
       },
       target: {
         kind: 'ini',
@@ -498,7 +478,7 @@ export const palworldManifest: GameManifest = {
     {
       key: 'bIsUseBackupSaveData',
       type: 'boolean',
-      label: 'Keep Palworld\'s own save backups',
+      label: "Keep Palworld's own save backups",
       help: 'Independent of ServerForge backups. Costs disk but has saved many worlds.',
       tier: 'advanced',
       group: 'Performance',
@@ -589,8 +569,7 @@ export const palworldManifest: GameManifest = {
   install: {
     kind: 'steam',
     appId: '2394010',
-    message:
-      'Downloading Palworld from Steam — this is around 8 GB and takes a while…',
+    message: 'Downloading Palworld from Steam — this is around 8 GB and takes a while…',
   },
 
   postInstall: [
@@ -609,56 +588,10 @@ export const palworldManifest: GameManifest = {
       },
     },
 
-    // UE4SS itself is not bundled: its releases track Unreal Engine versions
-    // rather than Palworld patches, and a mismatched loader crashes the
-    // server at boot with no explanation.
     {
       variants: ['palworld-modded'],
-      when: { ref: 'setting.sf_enable_ue4ss', isSet: true },
-      message: 'Setting up the UE4SS mod loader…',
+      message: 'Preparing the PAK mods folder…',
       mkdir: 'Pal/Content/Paks/~mods',
-    },
-    {
-      variants: ['palworld-modded'],
-      when: { ref: 'setting.sf_enable_ue4ss', isSet: true },
-      mkdir: 'Pal/Binaries/Linux/Mods',
-    },
-    {
-      variants: ['palworld-modded'],
-      when: { ref: 'setting.sf_enable_ue4ss', isSet: true },
-      writeFile: {
-        path: 'Pal/Content/Paks/~mods/README.txt',
-        contents: [
-          'Drop .pak mod files in this folder.',
-          '',
-          'Files here load automatically when the server starts. Remove a file to',
-          'disable that mod. The Mods tab in the panel manages this folder for you,',
-          'including enabling and disabling without deleting anything.',
-          '',
-          'Important: Palworld mods are not server-only. Every player usually needs',
-          'the same mods installed in their own game, or they will not be able to',
-          'join. Check what the mod page says.',
-          '',
-          'Script mods (UE4SS Lua/C++) go in Pal/Binaries/Linux/Mods instead.',
-        ].join('\n'),
-      },
-    },
-    {
-      variants: ['palworld-modded'],
-      when: { ref: 'setting.sf_enable_ue4ss', isSet: true },
-      writeFile: {
-        path: 'Pal/Binaries/Linux/Mods/README.txt',
-        contents: [
-          'UE4SS script mods go here, one folder per mod.',
-          '',
-          'UE4SS itself is not bundled: its releases track Unreal Engine versions,',
-          'not Palworld patches, and an incompatible build crashes the server at',
-          'boot. Download the release that matches your current Palworld version',
-          'from the UE4SS project and upload it into Pal/Binaries/Linux.',
-          '',
-          'After a Palworld update, check UE4SS still matches before starting.',
-        ].join('\n'),
-      },
     },
   ],
 
@@ -685,6 +618,7 @@ export const palworldManifest: GameManifest = {
       // The shipped launcher resolves Steam libraries relative to itself.
       LD_LIBRARY_PATH: '/home/container/linux64:/home/container/steamclient',
       TZ: 'UTC',
+      HOME: '/home/container',
     },
     ports: [
       { containerPort: 8211, purpose: 'game', protocol: 'udp' },
@@ -694,8 +628,7 @@ export const palworldManifest: GameManifest = {
     // No console command interface on stdin. SIGINT triggers Palworld's clean
     // shutdown path, which flushes the world save.
     stopTimeoutSeconds: 60,
-    readyPattern:
-      'Setting breakpad minidump AppID|Running Palworld dedicated server',
+    readyPattern: 'Setting breakpad minidump AppID|Running Palworld dedicated server',
   },
 
   logRules: [

@@ -114,7 +114,7 @@ const VARIANTS: GameVariant[] = [
     name: 'Modpack from a .zip',
     summary: 'Upload a CurseForge-style server pack and we set it up.',
     detail:
-      'Works with the "server pack" download that most CurseForge modpacks provide. You choose the .zip (or a download link) before the server is created.',
+      'Upload the server pack ZIP downloaded from CurseForge, or paste its public HTTPS download link. The pack must include server files; client profile exports are not server packs.',
     order: 8,
     tags: ['Modpack', 'Manual'],
     supportsMods: true,
@@ -184,7 +184,11 @@ export const minecraftAdapter: GameAdapter = {
 
   async resolveVersion(variantId, version): Promise<VersionInfo> {
     if (variantId === 'modrinth-modpack' || variantId === 'custom-modpack') {
-      return { id: version === 'latest' ? 'from-pack' : version, label: 'From modpack', stable: true };
+      return {
+        id: version === 'latest' ? 'from-pack' : version,
+        label: 'From modpack',
+        stable: true,
+      };
     }
 
     const versions = await this.listVersions(variantId);
@@ -233,6 +237,7 @@ export const minecraftAdapter: GameAdapter = {
       }
     }
 
+    if (ctx.variantId === 'custom-modpack') await normaliseLoaderEntryPoint(ctx, tools);
     await report.phase('configuring', 'Writing your settings…', 85);
     await this.applySettings(ctx, tools);
 
@@ -477,13 +482,19 @@ async function runLoaderInstaller(
  * exactly this: it is a real jar whose first act is to run `run.sh`, so
  * dropping it in as `server.jar` makes the uniform command work again.
  */
-export async function normaliseLoaderEntryPoint(ctx: ServerContext, tools: InstallTools): Promise<void> {
+export async function normaliseLoaderEntryPoint(
+  ctx: ServerContext,
+  tools: InstallTools,
+): Promise<void> {
   if (await tools.exists('server.jar')) return;
 
   const root = await tools.listDir('.');
-  const fatJar = root.find(
-    (name) => /^(forge|neoforge)-.*\.jar$/i.test(name) && !/-(installer|sources|javadoc)\.jar$/i.test(name),
-  );
+  const fatJar =
+    root.find(
+      (name) =>
+        /^(forge|neoforge)-.*\.jar$/i.test(name) &&
+        !/-(installer|sources|javadoc)\.jar$/i.test(name),
+    ) ?? root.find((name) => /^fabric[_-]?server.*\.jar$/i.test(name));
 
   if (fatJar) {
     await tools.rename(fatJar, 'server.jar');
@@ -492,6 +503,12 @@ export async function normaliseLoaderEntryPoint(ctx: ServerContext, tools: Insta
 
   if (await tools.exists('run.sh')) {
     await tools.download(SERVER_STARTER_JAR_URL, 'server.jar');
+    return;
+  }
+
+  const vanillaJar = root.find((name) => /^(?:minecraft[_-]?)?server.*\.jar$/i.test(name));
+  if (vanillaJar) {
+    await tools.rename(vanillaJar, 'server.jar');
     return;
   }
 

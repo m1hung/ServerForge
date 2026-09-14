@@ -1,127 +1,58 @@
-/**
- * Dynamic DNS providers.
- *
- * Kept import-free and pure, like ports.ts: building a URL and reading a
- * response are exactly the parts worth testing, and neither needs config, a
- * database or the network.
- *
- * The rule every provider here follows: **always send the IPv4 address
- * explicitly.** Left to infer it from the connection, providers use whichever
- * family the request happened to arrive on — and on a host with working IPv6
- * that means the A record gets replaced by an AAAA, or deleted outright. That
- * is not hypothetical; it is the deSEC behaviour that produced a hostname with
- * no address on this very machine.
- */
-
-export type DdnsProviderId = 'duckdns';
-
-export interface DdnsCredentials {
-  hostname: string;
-  token: string;
-}
-
-export interface DdnsRequest {
-  url: string;
-  /** Same URL with the token replaced — the only form safe to log. */
-  redactedUrl: string;
-  headers?: Record<string, string>;
-}
-
-export interface DdnsOutcome {
-  ok: boolean;
-  message: string;
-}
-
-export interface DdnsProviderInfo {
-  id: DdnsProviderId;
-  label: string;
-  /** Shown under the hostname field. */
-  hostnameHint: string;
-  /** Shown under the token field. */
-  tokenHint: string;
-  /** Where to go and get the token. */
-  consoleUrl: string;
-}
-
-export const DDNS_PROVIDERS: DdnsProviderInfo[] = [
-  {
-    id: 'duckdns',
-    label: 'DuckDNS',
-    hostnameHint: 'Your DuckDNS name, e.g. myserver.duckdns.org',
-    tokenHint: 'The token shown at the top of duckdns.org once you sign in',
-    consoleUrl: 'https://www.duckdns.org',
+const PROVIDERS = {
+  duckdns: {
+    zone: 'duckdns.org',
+    update: 'https://www.duckdns.org/update',
   },
-];
+} as const;
+
+export type DdnsProviderId = keyof typeof PROVIDERS;
 
 export function isDdnsProvider(value: unknown): value is DdnsProviderId {
-  return typeof value === 'string' && DDNS_PROVIDERS.some((entry) => entry.id === value);
+  return typeof value === 'string' && value in PROVIDERS;
 }
 
-/**
- * The label DuckDNS wants.
- *
- * Their API takes the subdomain only — `myserver`, not `myserver.duckdns.org` —
- * but the full name is what people copy off the site and what they think of as
- * "my hostname". Accept either.
- */
 export function normaliseHostname(provider: DdnsProviderId, hostname: string): string {
-  const trimmed = hostname.trim().toLowerCase().replace(/\.$/, '');
-  if (provider === 'duckdns') return trimmed.replace(/\.duckdns\.org$/, '');
-  return trimmed;
+  const zone = PROVIDERS[provider].zone;
+  let value = hostname.trim().toLowerCase().replace(/\.$/, '');
+  if (value.endsWith(`.${zone}`)) value = value.slice(0, -(zone.length + 1));
+  return value;
 }
 
-/** The name that should be handed to players and stored as publicHost. */
 export function fullHostname(provider: DdnsProviderId, hostname: string): string {
-  const label = normaliseHostname(provider, hostname);
-  if (provider === 'duckdns') return `${label}.duckdns.org`;
-  return label;
+  const zone = PROVIDERS[provider].zone;
+  const short = normaliseHostname(provider, hostname);
+  return `${short}.${zone}`;
 }
 
 export function buildUpdateRequest(
   provider: DdnsProviderId,
-  credentials: DdnsCredentials,
+  credentials: { hostname: string; token: string },
   ipv4: string,
-): DdnsRequest {
-  if (provider === 'duckdns') {
-    const domains = encodeURIComponent(normaliseHostname(provider, credentials.hostname));
-    const ip = encodeURIComponent(ipv4);
-    const build = (token: string) =>
-      `https://www.duckdns.org/update?domains=${domains}&token=${encodeURIComponent(token)}&ip=${ip}`;
-
-    return {
-      url: build(credentials.token),
-      redactedUrl: build('***'),
-    };
-  }
-
-  throw new Error(`Unsupported dynamic DNS provider: ${provider as string}`);
+): { url: string; redactedUrl: string } {
+  const domains = normaliseHostname(provider, credentials.hostname);
+  const url = new URL(PROVIDERS[provider].update);
+  url.searchParams.set('domains', domains);
+  url.searchParams.set('token', credentials.token);
+  url.searchParams.set('ip', ipv4);
+  const redacted = new URL(url);
+  redacted.searchParams.set('token', '***');
+  return { url: url.toString(), redactedUrl: redacted.toString() };
 }
 
-/**
- * Reads a provider's answer.
- *
- * DuckDNS replies with a bare `OK` or `KO` and HTTP 200 either way, so status
- * code alone would report every failure as a success — including a wrong
- * token, which is the single most likely thing to be wrong.
- */
 export function interpretResponse(
   provider: DdnsProviderId,
   status: number,
   body: string,
-): DdnsOutcome {
+): { ok: boolean; message: string } {
   const text = body.trim();
-
   if (provider === 'duckdns') {
-    if (status !== 200) return { ok: false, message: `DuckDNS returned HTTP ${status}.` };
-    if (/^OK/i.test(text)) return { ok: true, message: 'Address published.' };
-    if (/^KO/i.test(text)) {
-      return {
-        ok: false,
-        message: 'DuckDNS rejected the update — check the name and token are both correct.',
-      };
+    if (status === 200 && /^OK$/i.test(text)) return { ok: true, message: 'Updated.' };
+    if (status === 200 && /^KO$/i.test(text)) {
+      return { ok: false, message: 'DuckDNS rejected the token.' };
     }
-    return { ok: false, message: `Unexpected reply from DuckDNS: ${text.slice(0, 60) || '(empty)'}` };
   }
-
-  return { ok: false, message: `Unsupported dynamic DNS provider: ${provider as string}` };
+  if (status >= 200 && status < 300 && text === '') {
+    return { ok: false, message: 'The provider answered without a recognisable body.' };
+  }
+  return { ok: false, message: text || `HTTP ${status}` };
 }

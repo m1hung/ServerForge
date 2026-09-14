@@ -38,9 +38,15 @@ export function validateManifest(manifest: GameManifest): string[] {
     manifest.manifestVersion === MANIFEST_VERSION,
     `manifestVersion must be ${MANIFEST_VERSION}, not ${JSON.stringify(manifest.manifestVersion)}. This panel does not know how to read other versions.`,
   );
-  need(/^[a-z0-9][a-z0-9-]*$/.test(manifest.id ?? ''), 'id must be a lowercase slug, e.g. "valheim".');
+  need(
+    /^[a-z0-9][a-z0-9-]*$/.test(manifest.id ?? ''),
+    'id must be a lowercase slug, e.g. "valheim".',
+  );
   need(Boolean(manifest.name?.trim()), 'name is required.');
-  need(Boolean(manifest.summary?.trim()), 'summary is required — it is what the game picker shows.');
+  need(
+    Boolean(manifest.summary?.trim()),
+    'summary is required — it is what the game picker shows.',
+  );
   need(Boolean(manifest.icon?.trim()), 'icon is required. Use a Lucide icon name, e.g. "Axe".');
 
   // ── Variants ────────────────────────────────────────────────────────────
@@ -51,7 +57,10 @@ export function validateManifest(manifest: GameManifest): string[] {
   for (const variant of variants) {
     if (variantIds.has(variant.id)) issues.push(`two variants share the id "${variant.id}".`);
     variantIds.add(variant.id);
-    need(Boolean(variant.summary?.trim()), `variant "${variant.id}" needs a summary a beginner can choose on.`);
+    need(
+      Boolean(variant.summary?.trim()),
+      `variant "${variant.id}" needs a summary a beginner can choose on.`,
+    );
   }
 
   const recommended = variants.filter((v) => v.recommended);
@@ -64,7 +73,10 @@ export function validateManifest(manifest: GameManifest): string[] {
   const ports = manifest.ports ?? [];
   need(ports.length > 0, 'at least one port is required.');
   const purposes = new Set(ports.map((p) => p.purpose));
-  need(purposes.size === ports.length, 'two ports share the same purpose; purposes must be unique.');
+  need(
+    purposes.size === ports.length,
+    'two ports share the same purpose; purposes must be unique.',
+  );
 
   // ── Settings ────────────────────────────────────────────────────────────
   // Variant settings count: a template may legitimately reference one, and
@@ -136,7 +148,9 @@ export function validateManifest(manifest: GameManifest): string[] {
     if (runtime.console) {
       const c = runtime.console;
       if (c.transport !== 'rcon') {
-        issues.push(`runtime.console.transport must be "rcon" — stdin is the default and needs no declaration.`);
+        issues.push(
+          `runtime.console.transport must be "rcon" — stdin is the default and needs no declaration.`,
+        );
       }
       if (!purposes.has(c.portPurpose)) {
         issues.push(
@@ -161,7 +175,10 @@ export function validateManifest(manifest: GameManifest): string[] {
   if (!install) {
     issues.push('install is required.');
   } else if (install.kind === 'steam') {
-    need(/^\d+$/.test(install.appId ?? ''), 'install.appId must be the numeric Steam app id of the dedicated server.');
+    need(
+      /^\d+$/.test(install.appId ?? ''),
+      'install.appId must be the numeric Steam app id of the dedicated server.',
+    );
   } else if (install.kind === 'download') {
     need(
       typeof install.url === 'string' && install.url.startsWith('https://'),
@@ -175,14 +192,31 @@ export function validateManifest(manifest: GameManifest): string[] {
   for (const [index, step] of (manifest.postInstall ?? []).entries()) {
     for (const variantId of step.variants ?? []) {
       if (!variantIds.has(variantId)) {
-        issues.push(`postInstall[${index}] names the variant "${variantId}", which this game does not have.`);
+        issues.push(
+          `postInstall[${index}] names the variant "${variantId}", which this game does not have.`,
+        );
       }
     }
-    if (!step.mkdir && !step.writeFile && !step.copyFile) {
-      issues.push(`postInstall[${index}] does nothing — give it mkdir, writeFile or copyFile.`);
+    if (!step.mkdir && !step.writeFile && !step.copyFile && !step.download) {
+      issues.push(
+        `postInstall[${index}] does nothing — give it mkdir, writeFile, copyFile or download.`,
+      );
     }
-    if (step.when) checkRef(step.when.ref, `postInstall[${index}].when.ref`, settingKeys, purposes, issues);
-    if (step.writeFile) checkTemplate(step.writeFile.contents, `postInstall[${index}].writeFile.contents`);
+    if (step.download) {
+      if (!/^https:\/\//.test(step.download.url) || !/^[a-f0-9]{64}$/i.test(step.download.sha256)) {
+        issues.push(`postInstall[${index}].download needs an HTTPS URL and SHA-256 checksum.`);
+      }
+      if (
+        step.download.strip !== undefined &&
+        (!Number.isInteger(step.download.strip) || step.download.strip < 0)
+      ) {
+        issues.push(`postInstall[${index}].download.strip must be a non-negative integer.`);
+      }
+    }
+    if (step.when)
+      checkRef(step.when.ref, `postInstall[${index}].when.ref`, settingKeys, purposes, issues);
+    if (step.writeFile)
+      checkTemplate(step.writeFile.contents, `postInstall[${index}].writeFile.contents`);
   }
 
   // Config values are the ports-in-the-config path, and a typo here produces
@@ -194,7 +228,9 @@ export function validateManifest(manifest: GameManifest): string[] {
       continue;
     }
     if (typeof entry.value !== 'string') {
-      issues.push(`configValues[${index}].value must be a string, optionally with {{…}} references.`);
+      issues.push(
+        `configValues[${index}].value must be a string, optionally with {{…}} references.`,
+      );
       continue;
     }
     if (entry.target.kind === 'internal') {
@@ -288,7 +324,9 @@ function checkRef(
   if (ref.startsWith('env.')) return;
 
   if (!BARE_REFS.includes(ref)) {
-    issues.push(`${where} refers to "${ref}", which is not a known value. Known: ${BARE_REFS.join(', ')}, setting.*, port.*, env.*.`);
+    issues.push(
+      `${where} refers to "${ref}", which is not a known value. Known: ${BARE_REFS.join(', ')}, setting.*, port.*, env.*.`,
+    );
   }
 }
 

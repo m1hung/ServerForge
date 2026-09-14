@@ -86,6 +86,18 @@ function absolutise(contents, key) {
   return contents.replace(pattern, () => `${key}="${path.resolve(root, current)}"`);
 }
 
+/** Rewrites loopback hostnames to IPv4, matching Compose's 127.0.0.1 bind. */
+function preferIpv4Loopback(contents, key) {
+  const pattern = new RegExp(`^${key}=(.*)$`, "m");
+  const match = contents.match(pattern);
+  if (!match) return contents;
+  const updated = match[1]
+    .replace(/@localhost(?=:)/g, "@127.0.0.1")
+    .replace(/:\/\/localhost(?=:)/g, "://127.0.0.1");
+  if (updated === match[1]) return contents;
+  return contents.replace(pattern, () => `${key}=${updated}`);
+}
+
 async function main() {
   console.log(`\n${c.bold("ServerForge setup")}\n`);
 
@@ -151,6 +163,18 @@ async function main() {
   }
   if (contents !== pathsBefore) {
     console.log(`${c.green("✓")} made data paths absolute`);
+  }
+
+  // Compose publishes Postgres and Redis on 127.0.0.1 only. `localhost` is
+  // dual-stack on most Linux hosts, so Prisma can try ::1 first and fail with
+  // P1001 even while 127.0.0.1 is accepting connections.
+  const loopbackBefore = contents;
+  contents = preferIpv4Loopback(contents, "DATABASE_URL");
+  contents = preferIpv4Loopback(contents, "REDIS_URL");
+  if (contents !== loopbackBefore) {
+    console.log(
+      `${c.green("✓")} pointed DATABASE_URL / REDIS_URL at 127.0.0.1`,
+    );
   }
 
   await fs.writeFile(envPath, contents, { mode: 0o600 });

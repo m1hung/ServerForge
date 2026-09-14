@@ -296,6 +296,7 @@ model Backup {
   filePath   String?
   sizeBytes  BigInt      @default(0)
   checksum   String?
+  configuration Json?
   /// Set when a schedule created it, so retention can prune only its own.
   scheduleId String?
   error      String?
@@ -331,6 +332,7 @@ model Schedule {
   onlyWhenOnline Boolean   @default(true)
   /// Array of {type:"power"|"command"|"backup"|"update"|"webhook", ...}
   actions        Json
+  creatorId      String?
   lastRunAt      DateTime?
   lastRunOk      Boolean?
   lastRunError   String?
@@ -359,6 +361,7 @@ model InstalledMod {
   kind       String   @default("mod")
   sizeBytes  BigInt   @default(0)
   checksum   String?
+  configuration Json?
   /// Upstream version string for update checks.
   versionName String?
   updateAvailable Boolean @default(false)
@@ -380,7 +383,9 @@ model MetricSample {
   at           DateTime @default(now())
   cpuPercent   Float
   memoryBytes  BigInt
-  diskBytes    BigInt
+  diskBytes    BigInt?
+  tps          Float?
+  mspt         Float?
   networkRx    BigInt   @default(0)
   networkTx    BigInt   @default(0)
   playersOnline Int?

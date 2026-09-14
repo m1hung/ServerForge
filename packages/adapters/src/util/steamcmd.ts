@@ -50,9 +50,7 @@ export function steamBranchArgs(options: {
 
   // Password only after a branch: `-betapassword` alone is meaningless and
   // older SteamCMD builds treat the stray value as the app id.
-  return password === ''
-    ? ['-beta', branch]
-    : ['-beta', branch, '-betapassword', password];
+  return password === '' ? ['-beta', branch] : ['-beta', branch, '-betapassword', password];
 }
 
 /** Setting keys the schema below defines, so adapters do not retype them. */
@@ -74,8 +72,9 @@ export function steamBranchSettings(): SettingsSchema {
     {
       key: STEAM_BRANCH_KEY,
       type: 'string',
+      installOnly: true,
       label: 'Steam branch',
-      help: 'Leave empty for the normal released build. Set it to a branch from the game\'s Steam betas tab to run a public test build, or to pin an older one while your mods catch up. Takes effect the next time the server is updated or reinstalled.',
+      help: "Leave empty for the normal released build. Set it to a branch from the game's Steam betas tab to run a public test build, or to pin an older one while your mods catch up. Takes effect the next time the server is updated or reinstalled.",
       tier: 'expert',
       group: 'Updates',
       default: '',
@@ -88,6 +87,7 @@ export function steamBranchSettings(): SettingsSchema {
     {
       key: STEAM_BRANCH_PASSWORD_KEY,
       type: 'string',
+      installOnly: true,
       label: 'Branch password',
       help: 'Only for branches the publisher has locked. Most branches need nothing here.',
       tier: 'expert',
@@ -174,11 +174,17 @@ export async function steamAppUpdate(
   // every later install and update returns almost immediately.
   await tools.runInContainer({
     image: STEAMCMD_IMAGE,
+    env: { HOME: '/home/container' },
     command: ['+login', 'anonymous', '+quit'],
     timeoutMs: Math.min(timeoutMs, 10 * 60 * 1000),
   });
 
-  let result = await tools.runInContainer({ image: STEAMCMD_IMAGE, command, timeoutMs });
+  let result = await tools.runInContainer({
+    image: STEAMCMD_IMAGE,
+    env: { HOME: '/home/container' },
+    command,
+    timeoutMs,
+  });
 
   // One retry, and only for the race above. Steam hands out that error for a
   // transient condition, so a second attempt usually just works — whereas a
@@ -186,7 +192,12 @@ export async function steamAppUpdate(
   // by pretending to try harder.
   if (result.exitCode !== 0 && isTransientSteamFailure(result.output)) {
     await options.report?.('Steam was not ready — trying once more…');
-    result = await tools.runInContainer({ image: STEAMCMD_IMAGE, command, timeoutMs });
+    result = await tools.runInContainer({
+      image: STEAMCMD_IMAGE,
+      env: { HOME: '/home/container' },
+      command,
+      timeoutMs,
+    });
   }
 
   if (result.exitCode !== 0) {

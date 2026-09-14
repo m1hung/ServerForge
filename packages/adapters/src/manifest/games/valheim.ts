@@ -1,3 +1,4 @@
+import { BEPINEX_DOWNLOAD, BEPINEX_LAUNCH } from '../../valheim/mod-loader.js';
 import { STEAMCMD_IMAGE } from '../../util/steamcmd.js';
 import type { GameManifest } from '../types.js';
 
@@ -39,9 +40,9 @@ export const valheimManifest: GameManifest = {
     {
       id: 'valheim-bepinex',
       name: 'Valheim + BepInEx',
-      summary: 'Same server, with a BepInEx plugins folder set up for you.',
+      summary: 'BepInEx installed and ready for server plugins.',
       detail:
-        'BepInEx is the mod loader most Valheim server mods are built for. We create the folder structure and explain how to upload mods — BepInEx itself is not bundled, because its releases track game patches and a mismatched build crashes on boot with no useful error.',
+        'Installs BepInExPack Valheim 5.4.2350. Upload server-compatible .dll plugins and their dependencies in Mods. Match plugins to your game version; some also need to be installed by every player.',
       order: 2,
       tags: ['Mods', 'Advanced'],
       supportsMods: true,
@@ -118,33 +119,9 @@ export const valheimManifest: GameManifest = {
   postInstall: [
     {
       variants: ['valheim-bepinex'],
-      message: 'Setting up the BepInEx plugins folder…',
+      message: 'Installing BepInExPack Valheim 5.4.2350…',
+      download: BEPINEX_DOWNLOAD,
       mkdir: 'BepInEx/plugins',
-    },
-    {
-      variants: ['valheim-bepinex'],
-      writeFile: {
-        path: 'BepInEx/plugins/README.txt',
-        // BepInEx itself is not bundled: its releases are versioned against
-        // Valheim builds, not against this panel, and shipping a mismatched
-        // loader produces a server that crashes at boot with no explanation.
-        contents: [
-          'Drop BepInEx plugin .dll files in this folder.',
-          '',
-          'Each plugin is usually one .dll. Remove a file to disable that mod.',
-          'The Mods tab in the panel manages this folder for you, including',
-          'enabling and disabling without deleting anything.',
-          '',
-          'BepInEx itself is not bundled: its releases track Valheim patches,',
-          'not ServerForge updates, and an incompatible build crashes the server',
-          'at boot. Download the BepInEx release that matches your current',
-          'Valheim version from the BepInEx project and upload it into the',
-          'server root (alongside start_server.sh).',
-          '',
-          'After a Valheim update, check BepInEx and your plugins still match',
-          'before starting.',
-        ].join('\n'),
-      },
     },
   ],
 
@@ -156,7 +133,10 @@ export const valheimManifest: GameManifest = {
     // arrives as arguments to steamcmd and the game never starts.
     entrypoint: [],
     command: [
-      './start_server.sh',
+      { when: { ref: 'variantId', equals: ['valheim-bepinex'] }, args: BEPINEX_LAUNCH },
+      './valheim_server.x86_64',
+      '-nographics',
+      '-batchmode',
       '-name',
       '{{setting.ServerName}}',
       '-port',
@@ -167,11 +147,16 @@ export const valheimManifest: GameManifest = {
       '{{setting.Public|number}}',
       // Omitted rather than passed empty: Valheim treats `-password ""` as a
       // password of zero length and refuses to start.
-      { when: { ref: 'setting.Password', isSet: true }, args: ['-password', '{{setting.Password}}'] },
+      {
+        when: { ref: 'setting.Password', isSet: true },
+        args: ['-password', '{{setting.Password}}'],
+      },
     ],
     env: {
       LD_LIBRARY_PATH: '/home/container/linux64:/home/container/steamclient',
       TZ: 'UTC',
+      SteamAppId: '892970',
+      HOME: '/home/container',
     },
     ports: [
       { containerPort: 2456, purpose: 'game', protocol: 'udp' },
@@ -249,7 +234,8 @@ export const valheimManifest: GameManifest = {
       {
         category: 'Panel',
         command: 'save location',
-        summary: 'Worlds live under .config/unity3d/IronGate/Valheim/worlds_local in the server files.',
+        summary:
+          'Worlds live under .config/unity3d/IronGate/Valheim/worlds_local in the server files.',
       },
     ],
   },

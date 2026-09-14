@@ -127,6 +127,12 @@ export function compileManifest(manifest: GameManifest): GameAdapter {
 
         if (step.message) await report.phase('extracting', step.message, 85);
         if (step.mkdir) await tools.mkdir(step.mkdir);
+        if (step.download) {
+          const archive = '.serverforge/loader.zip';
+          await tools.download(step.download.url, archive, { sha256: step.download.sha256 });
+          await tools.unzip(archive, step.download.dest ?? '.', { strip: step.download.strip });
+          await tools.remove(archive);
+        }
         if (step.copyFile) {
           const { from, to, ifMissing = true } = step.copyFile;
           // Not overwriting by default: a reinstall must not throw away the
@@ -252,12 +258,7 @@ function compileLogInspection(
  * client has its own endpoint for.
  */
 function stripManifestOnlyFields(variant: ManifestVariant) {
-  const {
-    limits: _limits,
-    modDirectory: _modDirectory,
-    settings: _settings,
-    ...rest
-  } = variant;
+  const { limits: _limits, modDirectory: _modDirectory, settings: _settings, ...rest } = variant;
   return rest;
 }
 

@@ -42,10 +42,22 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
       group: 'Basics',
       default: 'survival',
       options: [
-        { value: 'survival', label: 'Survival', help: 'Gather resources, take damage, the normal game.' },
+        {
+          value: 'survival',
+          label: 'Survival',
+          help: 'Gather resources, take damage, the normal game.',
+        },
         { value: 'creative', label: 'Creative', help: 'Unlimited blocks, flight, no damage.' },
-        { value: 'adventure', label: 'Adventure', help: 'Survival, but blocks can only be broken with the right tool. Used by map makers.' },
-        { value: 'spectator', label: 'Spectator', help: 'Fly through the world without interacting.' },
+        {
+          value: 'adventure',
+          label: 'Adventure',
+          help: 'Survival, but blocks can only be broken with the right tool. Used by map makers.',
+        },
+        {
+          value: 'spectator',
+          label: 'Spectator',
+          help: 'Fly through the world without interacting.',
+        },
       ],
       target: { kind: 'properties', file: 'server.properties', key: 'gamemode' },
     },
@@ -124,9 +136,17 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
       default: 'minecraft:normal',
       options: [
         { value: 'minecraft:normal', label: 'Normal' },
-        { value: 'minecraft:flat', label: 'Superflat', help: 'A flat world, useful for building and testing.' },
+        {
+          value: 'minecraft:flat',
+          label: 'Superflat',
+          help: 'A flat world, useful for building and testing.',
+        },
         { value: 'minecraft:large_biomes', label: 'Large biomes' },
-        { value: 'minecraft:amplified', label: 'Amplified', help: 'Extreme terrain. Demanding on the server.' },
+        {
+          value: 'minecraft:amplified',
+          label: 'Amplified',
+          help: 'Extreme terrain. Demanding on the server.',
+        },
       ],
       restartRequired: true,
       target: { kind: 'properties', file: 'server.properties', key: 'level-type' },
@@ -281,6 +301,7 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
     schema.unshift(
       {
         key: 'modpack_project',
+        installOnly: true,
         type: 'string',
         label: 'Modrinth modpack',
         help: 'Paste the modpack link or its short name, e.g. "cobblemon-fabric". You can find it in the address bar on modrinth.com.',
@@ -295,6 +316,7 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
       },
       {
         key: 'modpack_version',
+        installOnly: true,
         type: 'string',
         label: 'Pack version',
         help: 'Leave empty to install the newest release the pack offers.',
@@ -313,6 +335,7 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
     schema.unshift(
       {
         key: 'modpack_zip_url',
+        installOnly: true,
         type: 'string',
         label: 'Server pack URL',
         help: 'Direct download link to the server pack .zip, if you have one. Otherwise upload the file in the wizard.',
@@ -326,6 +349,7 @@ export function minecraftSettingsSchema(variantId: string): SettingsSchema {
       },
       {
         key: 'modpack_staging_id',
+        installOnly: true,
         type: 'string',
         label: 'Uploaded pack',
         help: 'Filled automatically when you upload a .zip in the deploy wizard.',

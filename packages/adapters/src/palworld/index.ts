@@ -6,7 +6,15 @@ import type {
   StartupPlan,
   VersionInfo,
 } from '../types.js';
-import { parseIni, parseTuple, quoteUnreal, stringifyIni, stringifyTuple, unrealBool, unrealFloat } from '../util/ini.js';
+import {
+  parseIni,
+  parseTuple,
+  quoteUnreal,
+  stringifyIni,
+  stringifyTuple,
+  unrealBool,
+  unrealFloat,
+} from '../util/ini.js';
 import { STEAMCMD_IMAGE, steamAppUpdate, steamBranchFrom } from '../util/steamcmd.js';
 import { palworldConsoleGlossary } from './console-commands.js';
 import { palworldSettingsSchema } from './settings.js';
@@ -14,11 +22,8 @@ import { palworldSettingsSchema } from './settings.js';
 /**
  * Palworld dedicated server.
  *
- * Installed through SteamCMD (app 2394010) in a throwaway container, then
- * run from the same directory. Palworld has no official Workshop support for
- * dedicated servers, so the modded variant sets up UE4SS plus a managed
- * `~mods` directory and treats mods as files — which is what the community
- * actually does, and is honest about what it is.
+ * Linux PAK mods only. Official Workshop and UE4SS server mods require
+ * Windows: https://docs.palworldgame.com/settings-and-operation/mod/
  */
 
 const STEAM_APP_ID = '2394010';
@@ -42,10 +47,10 @@ const VARIANTS: GameVariant[] = [
   },
   {
     id: 'palworld-modded',
-    name: 'Palworld + mods',
-    summary: 'Same server, with the UE4SS mod loader set up for you.',
+    name: 'Palworld + PAK mods',
+    summary: 'Linux server with a managed folder for compatible PAK mods.',
     detail:
-      'Palworld has no official mod support on dedicated servers. We install UE4SS — the loader nearly every Palworld mod is built against — and give you a managed mods folder. Mods are added by uploading their files; there is no in-game browser, because Palworld does not provide one. Every player usually needs the same mods installed locally too.',
+      'Upload .pak mods explicitly compatible with the Linux dedicated server. UE4SS scripts, native DLL mods and official Steam Workshop server mods require Windows and are not supported by this Linux edition. Follow each mod’s client and dependency requirements.',
     order: 2,
     tags: ['Mods', 'Advanced'],
     supportsMods: true,
@@ -115,8 +120,8 @@ export const palworldAdapter: GameAdapter = {
       await tools.writeFile(CONFIG_PATH, defaults);
     }
 
-    if (ctx.variantId === 'palworld-modded' && ctx.settings.sf_enable_ue4ss !== false) {
-      await report.phase('extracting', 'Setting up the UE4SS mod loader…', 85);
+    if (ctx.variantId === 'palworld-modded') {
+      await report.phase('extracting', 'Preparing the PAK mods folder…', 85);
       await setupModLoader(tools);
     }
 
@@ -196,6 +201,7 @@ export const palworldAdapter: GameAdapter = {
         // The shipped launcher resolves Steam libraries relative to itself.
         LD_LIBRARY_PATH: '/home/container/linux64:/home/container/steamclient',
         TZ: ctx.environment.TZ ?? 'UTC',
+        HOME: '/home/container',
       },
       ports: [
         { containerPort: 8211, purpose: 'game', protocol: 'udp' },
@@ -243,47 +249,8 @@ export const palworldAdapter: GameAdapter = {
   },
 };
 
-/**
- * Lays out the directories UE4SS and pak mods expect, and leaves a README
- * explaining the workflow. We create the structure rather than downloading
- * UE4SS binaries automatically: its releases are not versioned against
- * Palworld builds, and silently shipping a mismatched loader produces a
- * server that crashes on boot with no explanation.
- */
 async function setupModLoader(tools: InstallTools): Promise<void> {
   await tools.mkdir('Pal/Content/Paks/~mods');
-  await tools.mkdir('Pal/Binaries/Linux/Mods');
-
-  await tools.writeFile(
-    'Pal/Content/Paks/~mods/README.txt',
-    [
-      'Drop .pak mod files in this folder.',
-      '',
-      'Files here load automatically when the server starts. Remove a file to',
-      'disable that mod. The Mods tab in the panel manages this folder for you,',
-      'including enabling and disabling without deleting anything.',
-      '',
-      'Important: Palworld mods are not server-only. Every player usually needs',
-      'the same mods installed in their own game, or they will not be able to',
-      'join. Check what the mod page says.',
-      '',
-      'Script mods (UE4SS Lua/C++) go in Pal/Binaries/Linux/Mods instead.',
-    ].join('\n'),
-  );
-
-  await tools.writeFile(
-    'Pal/Binaries/Linux/Mods/README.txt',
-    [
-      'UE4SS script mods go here, one folder per mod.',
-      '',
-      'UE4SS itself is not bundled: its releases track Unreal Engine versions,',
-      'not Palworld patches, and an incompatible build crashes the server at',
-      'boot. Download the release that matches your current Palworld version',
-      'from the UE4SS project and upload it into Pal/Binaries/Linux.',
-      '',
-      'After a Palworld update, check UE4SS still matches before starting.',
-    ].join('\n'),
-  );
 }
 
 export { palworldSettingsSchema };

@@ -2,7 +2,8 @@
 
 ## Requirements
 
-- Node.js 20.11 or newer (22 recommended)
+- Node.js 20.11 or newer (22 recommended), **including npm**
+  - On Arch Linux these are separate packages: `sudo pacman -S npm`
 - Docker with a working CLI (`docker ps`)
   - **Linux:** Docker Engine; your user should be in the `docker` group
   - **macOS / Windows:** [Docker Desktop](https://docs.docker.com/desktop/)
@@ -247,6 +248,23 @@ environment.
 Modrinth needs no key and works out of the box.
 
 ## Troubleshooting
+
+**"Could not run npm: spawnSync npm ENOENT"** — Node is installed but npm is
+not. On Arch (and some other distros) they are separate packages:
+
+```bash
+sudo pacman -S npm
+```
+
+`./start-server.sh` installs npm itself when it can. Official Node.js
+installers on macOS and Windows already include npm.
+
+**"Can't reach database server at localhost:5432" / P1001** — Compose publishes
+Postgres on `127.0.0.1` only. On Linux `localhost` often tries `::1` first,
+and first boot can also hit Docker's proxy before Postgres has finished
+initdb. Use `127.0.0.1` in `DATABASE_URL` (bootstrap rewrites the default)
+and run `./start-server.sh` again; the launcher waits until `pg_isready`
+succeeds inside the container.
 
 **"Cannot reach PostgreSQL"** — `npm run stack:up`, then check
 `docker ps` shows the postgres container as healthy.

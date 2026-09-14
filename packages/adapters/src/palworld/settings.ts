@@ -9,14 +9,13 @@ import { steamBranchSettings } from '../util/steamcmd.js';
  * existing tuple, overwrites only the keys we model, and writes it back —
  * so keys added by a future Palworld patch survive our round-trip.
  */
-export function palworldSettingsSchema(variantId: string): SettingsSchema {
-  const ini = (key: string) =>
-    ({
-      kind: 'ini' as const,
-      file: 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini',
-      section: '/Script/Pal.PalGameWorldSettings',
-      key,
-    });
+export function palworldSettingsSchema(_variantId: string): SettingsSchema {
+  const ini = (key: string) => ({
+    kind: 'ini' as const,
+    file: 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini',
+    section: '/Script/Pal.PalGameWorldSettings',
+    key,
+  });
 
   const schema: SettingsSchema = [
     // ── Server ──────────────────────────────────────────────────────────
@@ -331,20 +330,6 @@ export function palworldSettingsSchema(variantId: string): SettingsSchema {
     },
     ...steamBranchSettings(),
   ];
-
-  if (variantId === 'palworld-modded') {
-    schema.unshift({
-      key: 'sf_enable_ue4ss',
-      type: 'boolean',
-      label: 'Install UE4SS mod loader',
-      help: 'Most Palworld mods need this loader. We install it for you and place a mods folder in the file manager.',
-      tier: 'basic',
-      group: 'Mods',
-      default: true,
-      restartRequired: true,
-      target: { kind: 'internal' },
-    });
-  }
 
   return schema;
 }

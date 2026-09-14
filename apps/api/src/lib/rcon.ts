@@ -1,150 +1,70 @@
 import net from 'node:net';
 
-/**
- * Source RCON client.
- *
- * The protocol Valve defined for Half-Life and that most dedicated servers
- * since have adopted — Minecraft, ARK, Conan, Project Zomboid, Squad. It
- * matters here because a large share of games never read stdin at all: their
- * console is RCON or nothing, and without this the panel can stream their logs
- * but not command them.
- *
- * A packet is:
- *
- *     int32  length of everything after this field
- *     int32  request id, echoed back so replies can be matched
- *     int32  type
- *     bytes  body, NUL-terminated
- *     byte   a second NUL
- *
- * Connections are not pooled. A game server holds a small fixed number of RCON
- * slots and a panel that keeps one open per server would exhaust them on a busy
- * host; commands are rare and human-paced, so a connection per command is the
- * right trade.
- */
-
-// ── Packet types ────────────────────────────────────────────────────────────
-const SERVERDATA_AUTH = 3;
-const SERVERDATA_EXECCOMMAND = 2;
-/** Also the type of a successful auth reply, which is why matching is by id. */
-const SERVERDATA_AUTH_RESPONSE = 2;
-const SERVERDATA_RESPONSE_VALUE = 0;
-
-/** Servers signal a rejected password by echoing this id instead of ours. */
-const AUTH_FAILED_ID = -1;
-
-const HEADER_BYTES = 12;
-/** Valve's documented ceiling for a single packet. */
-const MAX_PACKET_BYTES = 4096;
-/**
- * Refuses a length field that would have us buffer unbounded memory. A real
- * server never sends this; something that is not an RCON server might.
- */
-const MAX_ACCEPTED_BYTES = 64 * 1024;
-
-export interface RconOptions {
-  host: string;
-  port: number;
-  password: string;
-  /** Applies to the whole exchange — connect, authenticate and command. */
-  timeoutMs?: number;
-}
+const AUTH = 3;
+const EXEC = 2;
+const AUTH_RESPONSE = 2;
+const RESPONSE_VALUE = 0;
+const MAX_PACKET = 32_768;
 
 export class RconError extends Error {
-  constructor(
-    message: string,
-    /** True when the password was rejected, which is worth saying plainly. */
-    readonly authFailed = false,
-  ) {
+  readonly authFailed: boolean;
+
+  constructor(message: string, options: { authFailed?: boolean } = {}) {
     super(message);
     this.name = 'RconError';
+    this.authFailed = options.authFailed === true;
   }
 }
 
 export function encodePacket(id: number, type: number, body: string): Buffer {
-  const payload = Buffer.from(body, 'utf8');
-  // length counts id + type + body + the two trailing NULs.
-  const buffer = Buffer.alloc(HEADER_BYTES + payload.length + 2);
-
-  buffer.writeInt32LE(buffer.length - 4, 0);
-  buffer.writeInt32LE(id, 4);
-  buffer.writeInt32LE(type, 8);
-  payload.copy(buffer, 12);
-  buffer.writeUInt8(0, 12 + payload.length);
-  buffer.writeUInt8(0, 13 + payload.length);
-
-  return buffer;
+  const bodyBuf = Buffer.from(body, 'utf8');
+  const packet = Buffer.alloc(4 + 4 + 4 + bodyBuf.length + 2);
+  packet.writeInt32LE(packet.length - 4, 0);
+  packet.writeInt32LE(id, 4);
+  packet.writeInt32LE(type, 8);
+  bodyBuf.copy(packet, 12);
+  packet.writeUInt8(0, packet.length - 2);
+  packet.writeUInt8(0, packet.length - 1);
+  return packet;
 }
 
-export interface RconPacket {
-  id: number;
-  type: number;
-  body: string;
-}
-
-/**
- * Pulls whole packets off a growing buffer.
- *
- * TCP gives no message boundaries, so a reply can arrive split across reads or
- * several replies can arrive in one. Both happen in practice — long `list`
- * output from a busy server is the usual trigger — and treating a read as a
- * message is the bug that makes RCON clients drop output intermittently.
- */
-export function readPackets(buffer: Buffer): { packets: RconPacket[]; rest: Buffer } {
-  const packets: RconPacket[] = [];
+export function readPackets(buffer: Buffer): {
+  packets: { id: number; type: number; body: string }[];
+  rest: Buffer;
+} {
+  const packets: { id: number; type: number; body: string }[] = [];
   let offset = 0;
-
-  while (buffer.length - offset >= 4) {
-    const length = buffer.readInt32LE(offset);
-
-    if (length < 8 || length > MAX_ACCEPTED_BYTES) {
-      throw new RconError(
-        'The server sent something that is not a valid RCON reply. Check that the RCON port is right and is not being used by something else.',
-      );
+  while (offset + 4 <= buffer.length) {
+    const size = buffer.readInt32LE(offset);
+    if (size < 10 || size > MAX_PACKET) {
+      throw new Error('not a valid RCON reply');
     }
-    if (buffer.length - offset - 4 < length) break; // Wait for the rest.
-
+    if (offset + 4 + size > buffer.length) break;
     const id = buffer.readInt32LE(offset + 4);
     const type = buffer.readInt32LE(offset + 8);
-    // Body runs to the first of the two trailing NULs.
-    const body = buffer.subarray(offset + 12, offset + 4 + length - 2).toString('utf8');
-
+    const body = buffer.subarray(offset + 12, offset + 4 + size - 2).toString('utf8');
     packets.push({ id, type, body });
-    offset += 4 + length;
+    offset += 4 + size;
   }
-
   return { packets, rest: buffer.subarray(offset) };
 }
 
-/**
- * Connects, authenticates, runs one command and disconnects.
- *
- * The response is whatever the game chose to print. Many commands print
- * nothing at all and return an empty string; that is success, not a failure.
- */
-export async function rconCommand(options: RconOptions, command: string): Promise<string> {
-  const timeoutMs = options.timeoutMs ?? 5000;
+export async function rconCommand(
+  target: { host: string; port: number; password: string; timeoutMs?: number },
+  command: string,
+): Promise<string> {
+  const timeoutMs = target.timeoutMs ?? 5_000;
+  const id = 1;
+  const sentinelId = 2;
 
-  return new Promise<string>((resolve, reject) => {
-    const socket = new net.Socket();
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: target.host, port: target.port });
     let buffer = Buffer.alloc(0);
+    let authed = false;
+    let bodies = '';
     let settled = false;
-    let authenticated = false;
-    const chunks: string[] = [];
 
-    const AUTH_ID = 1;
-    const COMMAND_ID = 2;
-    /**
-     * A second, empty request sent straight after the command.
-     *
-     * Responses longer than one packet arrive as several with the same id and
-     * no end marker. Servers answer in order, so the reply to this sentinel
-     * cannot arrive before the command's last packet — which makes it the end
-     * marker the protocol otherwise lacks.
-     */
-    const SENTINEL_ID = 3;
-
-    const finish = (error: RconError | null, value?: string) => {
+    const finish = (error?: Error, value?: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -153,86 +73,67 @@ export async function rconCommand(options: RconOptions, command: string): Promis
       else resolve(value ?? '');
     };
 
-    const timer = setTimeout(() => {
-      finish(
-        new RconError(
-          authenticated
-            ? 'The server accepted the connection but did not answer the command in time.'
-            : 'Timed out talking to the server over RCON. Check that RCON is enabled and the port is reachable.',
-        ),
-      );
-    }, timeoutMs);
+    const timer = setTimeout(
+      () => finish(new RconError('The server timed out waiting for an RCON reply.')),
+      timeoutMs,
+    );
 
     socket.on('error', (error) => {
-      finish(
-        new RconError(
-          `Could not reach the server over RCON: ${error.message}. Check that RCON is enabled in Settings and the server has been restarted since.`,
-        ),
-      );
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EHOSTUNREACH') {
+        finish(new RconError('Could not reach the server over RCON.'));
+        return;
+      }
+      finish(new RconError(error.message));
     });
 
     socket.on('close', () => {
-      // A server that hangs up mid-exchange has usually rejected the password
-      // and closed rather than replying, which is worth naming.
-      finish(
-        new RconError(
-          authenticated
-            ? 'The server closed the RCON connection before finishing its reply.'
-            : 'The server closed the RCON connection during sign-in. This is usually a wrong RCON password.',
-          !authenticated,
-        ),
-      );
+      if (!settled) {
+        finish(
+          new RconError(
+            authed ? 'The server closed the connection.' : 'The password is wrong.',
+            { authFailed: !authed },
+          ),
+        );
+      }
+    });
+
+    socket.on('connect', () => {
+      socket.write(encodePacket(id, AUTH, target.password));
     });
 
     socket.on('data', (chunk) => {
       buffer = Buffer.concat([buffer, chunk]);
-
       let parsed;
       try {
         parsed = readPackets(buffer);
       } catch (error) {
-        finish(error as RconError);
+        finish(error instanceof Error ? error : new RconError('not a valid RCON reply'));
         return;
       }
       buffer = parsed.rest;
-
       for (const packet of parsed.packets) {
-        if (!authenticated) {
-          // The empty RESPONSE_VALUE some servers send before the auth reply
-          // is not the answer — wait for the AUTH_RESPONSE.
-          if (packet.type !== SERVERDATA_AUTH_RESPONSE) continue;
-
-          if (packet.id === AUTH_FAILED_ID) {
-            finish(new RconError('The RCON password is wrong.', true));
-            return;
+        if (!authed) {
+          if (packet.type === RESPONSE_VALUE) continue;
+          if (packet.type === AUTH_RESPONSE) {
+            if (packet.id === -1) {
+              finish(new RconError('The password is wrong.', { authFailed: true }));
+              return;
+            }
+            authed = true;
+            socket.write(encodePacket(id, EXEC, command));
+            socket.write(encodePacket(sentinelId, RESPONSE_VALUE, ''));
           }
-
-          authenticated = true;
-          socket.write(encodePacket(COMMAND_ID, SERVERDATA_EXECCOMMAND, command));
-          socket.write(encodePacket(SENTINEL_ID, SERVERDATA_RESPONSE_VALUE, ''));
           continue;
         }
-
-        if (packet.id === SENTINEL_ID) {
-          finish(null, chunks.join('').trim());
+        if (packet.id === sentinelId) {
+          finish(undefined, bodies);
           return;
         }
-        if (packet.id === COMMAND_ID) chunks.push(packet.body);
+        if (packet.id === id && packet.type === RESPONSE_VALUE) {
+          bodies += packet.body;
+        }
       }
-    });
-
-    socket.setNoDelay(true);
-    socket.connect(options.port, options.host, () => {
-      socket.write(encodePacket(AUTH_ID, SERVERDATA_AUTH, options.password));
     });
   });
 }
-
-export const RCON_INTERNALS = {
-  SERVERDATA_AUTH,
-  SERVERDATA_EXECCOMMAND,
-  SERVERDATA_AUTH_RESPONSE,
-  SERVERDATA_RESPONSE_VALUE,
-  AUTH_FAILED_ID,
-  MAX_PACKET_BYTES,
-};

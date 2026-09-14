@@ -10,6 +10,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo npm is not installed or not on PATH.
+  echo Reinstall Node.js from https://nodejs.org/ — the official installer includes npm.
+  pause
+  exit /b 1
+)
+
 where docker >nul 2>nul
 if errorlevel 1 (
   echo Docker is not installed or not on PATH.

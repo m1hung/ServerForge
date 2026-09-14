@@ -1,40 +1,22 @@
-import { pino } from 'pino';
-import { config } from '../config.js';
+type Level = 'debug' | 'info' | 'warn' | 'error';
 
-/**
- * Structured logs in production, readable logs in development.
- *
- * Redaction is not optional here: request bodies routinely carry passwords
- * and RCON secrets, and a self-hosted panel's logs are frequently pasted
- * into support threads.
- */
-export const logger = pino({
-  level: config.LOG_LEVEL,
-  redact: {
-    paths: [
-      'req.headers.cookie',
-      'req.headers.authorization',
-      '*.password',
-      '*.passwordHash',
-      '*.token',
-      '*.tokenHash',
-      '*.AdminPassword',
-      '*.ServerPassword',
-      // Keys that contain a dot need bracket notation — pino/fast-redact
-      // treats a bare dot as a path separator and rejects escaped forms.
-      'settings["rcon.password"]',
-      'values["rcon.password"]',
-    ],
-    censor: '[redacted]',
-  },
-  ...(config.isProduction
-    ? {}
-    : {
-        transport: {
-          target: 'pino-pretty',
-          options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
-        },
-      }),
-});
+const order: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
-export type Logger = typeof logger;
+function currentLevel(): number {
+  const name = (process.env.LOG_LEVEL ?? 'info').toLowerCase();
+  return order[name as Level] ?? order.info;
+}
+
+function write(level: Level, message: string, extra?: Record<string, unknown>) {
+  if (order[level] < currentLevel()) return;
+  const line = extra ? `${message} ${JSON.stringify(extra)}` : message;
+  const stream = level === 'error' || level === 'warn' ? process.stderr : process.stdout;
+  stream.write(`[${level}] ${line}\n`);
+}
+
+export const logger = {
+  debug: (message: string, extra?: Record<string, unknown>) => write('debug', message, extra),
+  info: (message: string, extra?: Record<string, unknown>) => write('info', message, extra),
+  warn: (message: string, extra?: Record<string, unknown>) => write('warn', message, extra),
+  error: (message: string, extra?: Record<string, unknown>) => write('error', message, extra),
+};

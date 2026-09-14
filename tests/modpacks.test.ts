@@ -23,9 +23,7 @@ vi.mock('../packages/adapters/src/minecraft/versions.js', async (importOriginal)
 const { installCustomPack, readPackVariables } = await import(
   '../packages/adapters/src/minecraft/modpacks.js'
 );
-const { normaliseLoaderEntryPoint } = await import(
-  '../packages/adapters/src/minecraft/index.js'
-);
+const { normaliseLoaderEntryPoint } = await import('../packages/adapters/src/minecraft/index.js');
 
 /**
  * A server pack on disk, in memory. `installCustomPack` only ever reaches the
@@ -73,7 +71,7 @@ const VARIABLES = 'MINECRAFT_VERSION=1.20.1\nMODLOADER=Forge\nMODLOADER_VERSION=
 const SERVER_PACK = {
   'variables.txt': VARIABLES,
   'start.sh': '#!/usr/bin/env bash',
-  'mods': '',
+  mods: '',
   '.serverforge/pack.zip': '',
 };
 
@@ -140,7 +138,7 @@ describe('curseforge server packs', () => {
   it('leaves a pack that already ships its own server.jar alone', async () => {
     const { tools, report, downloads, containerRuns } = fakePack({
       'server.jar': '',
-      'mods': '',
+      mods: '',
       '.serverforge/pack.zip': '',
     });
 
@@ -148,6 +146,16 @@ describe('curseforge server packs', () => {
 
     expect(downloads).toHaveLength(0);
     expect(containerRuns).toHaveLength(0);
+  });
+
+  it('uses the bundled Forge installer’s Minecraft version to select Java', async () => {
+    const { tools, report, images, detected } = fakePack({
+      'forge-1.20.1-47.4.20-installer.jar': '',
+      '.serverforge/pack.zip': '',
+    });
+    await installCustomPack({ settings: {} } as never, tools as never, report as never);
+    expect(images).toEqual(['eclipse-temurin:17-jre-jammy']);
+    expect(detected).toEqual([{ version: '1.20.1', javaMajor: 17 }]);
   });
 });
 
@@ -160,14 +168,15 @@ describe('forge and neoforge loader normalisation', () => {
   const PRE_117 = {
     'forge-1.16.5-36.2.42.jar': '',
     'minecraft_server.1.16.5.jar': '',
-    'libraries': '',
+    libraries: '',
     'eula.txt': '',
   };
 
   const POST_117 = {
+    'minecraft_server.1.20.1.jar': '',
     'run.sh': '',
     'user_jvm_args.txt': '',
-    'libraries': '',
+    libraries: '',
     'eula.txt': '',
   };
 
@@ -232,6 +241,16 @@ describe('forge and neoforge loader normalisation', () => {
     expect(downloads).toHaveLength(0);
   });
 
+  it('normalises a Fabric server-pack launcher to the panel’s entry point', async () => {
+    const { tools, renames } = fakeInstalled({
+      'minecraft_server.1.20.1.jar': '',
+      'fabric-server-launch.jar': '',
+      mods: '',
+    });
+    await normaliseLoaderEntryPoint({ variantId: 'custom-modpack' } as never, tools as never);
+    expect(renames).toEqual([{ from: 'fabric-server-launch.jar', to: 'server.jar' }]);
+  });
+
   it('never mistakes the installer jar for the launcher', async () => {
     // The installer is removed before normalising, but a failed cleanup must
     // not leave it to be renamed into the entry point.
@@ -246,7 +265,7 @@ describe('forge and neoforge loader normalisation', () => {
   });
 
   it('fails loudly when the installer left nothing launchable', async () => {
-    const { tools } = fakeInstalled({ 'libraries': '', 'eula.txt': '' });
+    const { tools } = fakeInstalled({ libraries: '', 'eula.txt': '' });
 
     await expect(
       normaliseLoaderEntryPoint({ variantId: 'forge' } as never, tools as never),

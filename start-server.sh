@@ -23,6 +23,43 @@ pause_on_error() {
 }
 trap pause_on_error ERR
 
+if ! command -v node >/dev/null 2>&1; then
+  printf '\nNode.js is not installed. Install Node 20.11 or newer, then run this launcher again.\n'
+  false
+fi
+
+# Arch and several other distros ship nodejs without npm. Installing Node as a
+# dependency of another app often leaves the package manager missing, which is
+# exactly "spawnSync npm ENOENT" from the persistent launcher.
+if ! command -v npm >/dev/null 2>&1; then
+  printf '\nnpm is not installed. ServerForge needs it alongside Node.js.\n'
+  if command -v pacman >/dev/null 2>&1; then
+    printf 'Installing npm (sudo may ask for your password).\n'
+    sudo pacman -S --needed --noconfirm npm
+  elif command -v apt-get >/dev/null 2>&1; then
+    printf 'Installing npm (sudo may ask for your password).\n'
+    sudo apt-get install -y npm
+  elif command -v dnf >/dev/null 2>&1; then
+    printf 'Installing npm (sudo may ask for your password).\n'
+    sudo dnf install -y npm
+  elif command -v apk >/dev/null 2>&1; then
+    printf 'Installing npm (sudo may ask for your password).\n'
+    sudo apk add npm
+  else
+    printf 'Install npm, then run this launcher again:\n'
+    printf '  Arch Linux:    sudo pacman -S npm\n'
+    printf '  Debian/Ubuntu: sudo apt install npm\n'
+    printf '  Fedora:        sudo dnf install npm\n'
+    false
+  fi
+  hash -r 2>/dev/null || true
+  if ! command -v npm >/dev/null 2>&1; then
+    printf '\nnpm is still not on PATH after installation.\n'
+    printf 'Install it manually, then run this launcher again.\n'
+    false
+  fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   printf '\nDocker is not installed. Install Docker Engine, then run this launcher again.\n'
   false

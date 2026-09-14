@@ -1,701 +1,645 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { z } from 'zod';
+import {
+  listMods,
+  modSupport,
+  MOD_UPLOAD_LIMIT,
+  requireStopped,
+  setModEnabled,
+  uploadMod,
+} from '../services/mods.js';
+import { emitServerEvent } from '../services/server-events.js';
+import { withServerLock, isServerBusy } from '../services/server-lock.js';
+import { streamConsole } from '../services/console-stream.js';
+import { saveServerPack, SERVER_PACK_UPLOAD_LIMIT } from '../services/server-pack-upload.js';
+import { prepareServerOwnership } from '../lib/server-files.js';
 import type { FastifyInstance } from 'fastify';
 import {
-  badRequest,
-  cloneServerSchema,
-  conflict,
-  consoleCommandSchema,
   createServerSchema,
-  defaultsFor,
-  forbidden,
-  groupSettings,
   powerActionSchema,
+  consoleCommandSchema,
   settingsPatchSchema,
-  startupPatchSchema,
   updateServerSchema,
-  validateSettings,
   canAccessServer,
-  effectiveServerPermissions,
-  sanitisePermissionMap,
-  type Role,
+  validateSettings,
+  defaultsFor,
+  notFound,
+  badRequest,
+  conflict,
+  brand,
+  type SettingValues,
+  type UpdateServerInput,
   type ServerPermission,
+  effectiveServerPermissions,
 } from '@serverforge/core';
-import { buildCatalogue, getAdapter } from '@serverforge/adapters';
-import { prisma, serializeBigInts, type ServerWithAccess } from '@serverforge/db';
-import { accessInputFor, apiKeyAllows, requireAuth, requireServerAccess } from '../lib/auth.js';
-import { readConsoleBuffer, recordActivity } from '../lib/events.js';
-import { installQueue } from '../queue/index.js';
-import {
-  cloneServer,
-  createServer,
-  deleteServer,
-  restartServer,
-  sendConsoleCommand,
-  startServer,
-  stopServer,
-} from '../services/servers.js';
-import { changePrimaryPort } from '../services/allocations.js';
-import { isWatching, playerCount, playersOnline } from '../services/monitor.js';
-import { lanHost, localConnectAddress } from '../services/network.js';
-import { getRuntime } from '../runtime/index.js';
+import { getAdapter, type ServerContext } from '@serverforge/adapters';
+import { prisma, uid, serializeBigInts, type ServerWithAccess } from '@serverforge/db';
+import { requireUser, type AuthUser } from '../plugins/auth.js';
+import { config, runningInContainer } from '../lib/config.js';
+import { hostDataPath, localDataPath } from '../lib/storage-paths.js';
+import { mapPorts } from '../services/ports.js';
+import { installToolsFor } from '../services/install-tools.js';
+import { DockerRuntime } from '../runtime/docker.js';
+import { logger } from '../lib/logger.js';
+import { rconCommand } from '../lib/rcon.js';
+import { resolveRconTarget } from '../lib/rcon-target.js';
 
-export async function serverRoutes(app: FastifyInstance): Promise<void> {
-  // ── Catalogue: what the deploy wizard renders ─────────────────────────
-  app.get('/api/games', async (request) => {
-    await requireAuth(request);
-    return { games: buildCatalogue() };
+export const runtime = new DockerRuntime();
+
+export function accessInput(user: AuthUser, server: ServerWithAccess) {
+  const membership = server.subusers.find((row) => row.userId === user.id);
+  return {
+    panelRole: user.role,
+    isServerOwner: server.ownerId === user.id,
+    directGrants: membership?.permissions ?? [],
+    roles: (membership?.roles ?? []).map((role) => ({
+      name: role.name,
+      permissions: role.permissions as Record<string, 'allow' | 'deny'>,
+    })),
+  };
+}
+
+export async function loadServer(
+  uidValue: string,
+  user: AuthUser,
+  permission: ServerPermission = 'server.view',
+): Promise<ServerWithAccess> {
+  const server = await prisma.server.findUnique({
+    where: { uid: uidValue },
+    include: { allocations: true, node: true, owner: true, subusers: { include: { roles: true } } },
   });
+  if (!server) throw notFound('That server');
+  if (user.scopes && !user.scopes.includes('*') && !user.scopes.includes(permission))
+    throw notFound('That server');
+  if (!canAccessServer(accessInput(user, server), permission)) throw notFound('That server');
+  return server;
+}
 
-  app.get('/api/games/:gameId/variants/:variantId/versions', async (request) => {
-    await requireAuth(request);
-    const { gameId, variantId } = request.params as { gameId: string; variantId: string };
-    const adapter = getAdapter(gameId);
-    // Upstream registries are flaky; a failure here should degrade the wizard
-    // to "latest", not break it.
-    try {
-      return { versions: await adapter.listVersions(variantId) };
-    } catch {
-      return {
-        versions: [{ id: 'latest', label: 'Latest', stable: true }],
-        warning: 'We could not reach the version list just now. "Latest" will be resolved at install time.',
-      };
+export function containerName(serverUid: string) {
+  return `${brand.resourcePrefix}-${serverUid}`;
+}
+
+export function contextOf(server: Awaited<ReturnType<typeof loadServer>>): ServerContext {
+  return {
+    serverUid: server.uid,
+    name: server.name,
+    dataPath: server.dataPath,
+    version: server.version,
+    build: server.build,
+    runtimeMajor: server.javaMajor,
+    variantId: server.variantId,
+    settings: (server.settings ?? {}) as Record<string, string | number | boolean>,
+    memoryMib: server.memoryMib,
+    cpuCores: server.cpuCores,
+    allocations: server.allocations,
+    environment: (server.environment ?? {}) as Record<string, string>,
+    javaFlagsPreset: server.javaFlagsPreset,
+    customJavaFlags: server.customJavaFlags,
+  };
+}
+
+function publicServer(server: Record<string, unknown>) {
+  const {
+    settings: _settings,
+    environment: _environment,
+    owner: _owner,
+    subusers: _subusers,
+    ...visible
+  } = server;
+  return serializeBigInts(visible);
+}
+
+async function updateConfiguration(serverUid: string, user: AuthUser, body: UpdateServerInput) {
+  return withServerLock(serverUid, async () => {
+    const server = await loadServer(serverUid, user, 'server.settings');
+    if (!['running', 'offline', 'crashed', 'install_failed'].includes(server.state))
+      throw conflict(
+        'Wait for the current server operation to finish before saving configuration.',
+      );
+    let settings: SettingValues | undefined;
+    if (body.settings !== undefined) {
+      const schema = getAdapter(server.gameId).settingsSchema(server.variantId);
+      const current = (server.settings ?? {}) as SettingValues;
+      for (const field of schema) {
+        if (
+          field.installOnly &&
+          body.settings[field.key] !== undefined &&
+          body.settings[field.key] !== current[field.key]
+        )
+          throw badRequest(
+            `${field.label} is chosen during installation. Deploy a new server to change it.`,
+          );
+      }
+      const known: SettingValues = {};
+      for (const field of schema) {
+        const value = current[field.key];
+        if (value !== undefined) known[field.key] = value;
+      }
+      const checked = validateSettings(schema, { ...known, ...body.settings });
+      if (!checked.ok)
+        throw badRequest(
+          checked.issues
+            .map(
+              (issue) =>
+                `${schema.find((field) => field.key === issue.key)?.label ?? issue.key}: ${issue.message}`,
+            )
+            .join(' '),
+          checked.issues,
+        );
+      // Keep hidden values (including saved passwords) when their parent switch is off.
+      settings = { ...known, ...body.settings, ...checked.values };
     }
-  });
-
-  app.get('/api/games/:gameId/variants/:variantId/settings-schema', async (request) => {
-    await requireAuth(request);
-    const { gameId, variantId } = request.params as { gameId: string; variantId: string };
-    const adapter = getAdapter(gameId);
-    const schema = adapter.settingsSchema(variantId);
-    return {
-      schema,
-      defaults: defaultsFor(schema),
-      groups: groupSettings(schema).map((g) => g.group),
-      defaultLimits: adapter.defaultLimits(variantId),
-    };
-  });
-
-  // ── Fleet ─────────────────────────────────────────────────────────────
-  app.get('/api/servers', async (request) => {
-    const user = await requireAuth(request);
-    if (!apiKeyAllows(user, 'server.view')) {
-      throw forbidden('This API key is missing the "view" scope.');
-    }
-    const isAdmin = user.role === 'owner' || user.role === 'admin';
-
-    const rows = await prisma.server.findMany({
-      where: isAdmin
-        ? {}
-        : { OR: [{ ownerId: user.id }, { subusers: { some: { userId: user.id } } }] },
-      include: {
-        allocations: { where: { primary: true } },
-        node: true,
-        owner: true,
-        subusers: { include: { roles: true } },
+    const updated = await prisma.server.update({
+      where: { id: server.id },
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.description !== undefined ? { description: body.description } : {}),
+        ...(body.limits?.memoryMib !== undefined ? { memoryMib: body.limits.memoryMib } : {}),
+        ...(body.limits?.cpuCores !== undefined ? { cpuCores: body.limits.cpuCores } : {}),
+        ...(body.limits?.diskMib !== undefined ? { diskMib: body.limits.diskMib } : {}),
+        ...(body.limits?.swapMib !== undefined ? { swapMib: body.limits.swapMib } : {}),
+        ...(body.limits?.ioWeight !== undefined ? { ioWeight: body.limits.ioWeight ?? 500 } : {}),
+        ...(settings !== undefined ? { settings } : {}),
       },
+      include: { allocations: true, node: true },
+    });
+    return { server: publicServer(updated), restartRequired: server.state === 'running' };
+  });
+}
+
+async function allocatePorts(nodeId: string, serverId: string, purposes: { purpose: string }[]) {
+  for (const [index, entry] of purposes.entries()) {
+    const row = await prisma.allocation.findFirst({
+      where: { nodeId, serverId: null },
+      orderBy: { port: 'asc' },
+    });
+    if (!row) throw conflict('This machine has no free ports left.');
+    const claimed = await prisma.allocation.updateMany({
+      where: { id: row.id, serverId: null },
+      data: { serverId, purpose: entry.purpose, primary: index === 0 },
+    });
+    if (claimed.count !== 1) throw conflict('This machine has no free ports left.');
+  }
+}
+
+export async function serverRoutes(app: FastifyInstance) {
+  app.get('/servers', async (request) => {
+    const user = requireUser(request);
+    const servers = await prisma.server.findMany({
+      where:
+        user.role === 'user'
+          ? { OR: [{ ownerId: user.id }, { subusers: { some: { userId: user.id } } }] }
+          : {},
+      include: { allocations: true, node: true },
       orderBy: { createdAt: 'desc' },
     });
-
-    // A role that denies `server.view` has to remove the server from the list
-    // as well as from the detail route. Otherwise it appears on the dashboard
-    // and 403s the moment it is opened, which reads as a bug rather than as a
-    // permission.
-    const servers = rows.filter((server) =>
-      canAccessServer(accessInputFor(user, server), 'server.view'),
-    );
-
-    const lan = lanHost();
-    const withCounts = await Promise.all(
-      servers.map(async (server) => {
-        const port = server.allocations[0]?.port;
-        return {
-          uid: server.uid,
-          name: server.name,
-          description: server.description,
-          state: server.state,
-          gameId: server.gameId,
-          variantId: server.variantId,
-          version: server.version,
-          memoryMib: server.memoryMib,
-          cpuCores: server.cpuCores,
-          diskMib: server.diskMib,
-          installedAt: server.installedAt,
-          createdAt: server.createdAt,
-          owner: { uid: server.owner.uid, displayName: server.owner.displayName },
-          node: { uid: server.node.uid, name: server.node.name, publicHost: server.node.publicHost },
-          address: connectAddress(server.node.publicHost, port),
-          lanAddress: localConnectAddress(server.node.publicHost, lan, port),
-          players: await playerCount(server.uid),
-          isOwner: server.ownerId === user.id,
-          permissions: effectivePermissions(user, server),
-        };
-      }),
-    );
-
-    return { servers: withCounts };
+    return { servers: servers.map(publicServer) };
   });
 
-  app.post('/api/servers', async (request, reply) => {
-    const user = await requireAuth(request);
-    if (!apiKeyAllows(user, 'server.settings')) {
-      throw forbidden('This API key is missing the "settings" scope required to create servers.');
+  app.post('/servers', async (request, reply) => {
+    const user = requireUser(request);
+    const parts = request.isMultipart?.()
+      ? request.parts({
+          limits: {
+            files: 1,
+            fields: 1,
+            parts: 2,
+            fieldSize: 128 * 1024,
+            fileSize: SERVER_PACK_UPLOAD_LIMIT,
+          },
+        })
+      : null;
+    let input = request.body;
+    if (parts) {
+      const first = await parts.next();
+      if (
+        first.done ||
+        first.value.type !== 'field' ||
+        first.value.fieldname !== 'configuration' ||
+        first.value.valueTruncated
+      )
+        throw badRequest('Send the server configuration before the ZIP file.');
+      try {
+        input = JSON.parse(String(first.value.value));
+      } catch {
+        throw badRequest('The server configuration is not valid JSON.');
+      }
     }
-    const input = createServerSchema.parse(request.body);
+    const body = createServerSchema.parse(input);
+    if (parts && (body.gameId !== 'minecraft-java' || body.variantId !== 'custom-modpack'))
+      throw badRequest('ZIP uploads require Minecraft’s Modpack from a .zip edition.');
+    const adapter = getAdapter(body.gameId);
+    const variant = adapter.variants.find((item) => item.id === body.variantId);
+    if (!variant) throw badRequest('That game option does not exist.');
+    const eula = adapter.eula?.(body.variantId);
+    if (eula && body.acceptedEula !== eula.key)
+      throw badRequest('Accept the game EULA before creating a server.');
+    if (
+      body.variantId === 'custom-modpack' &&
+      !parts &&
+      !String(body.settings.modpack_zip_url ?? '').trim()
+    ) {
+      throw badRequest('Upload a server pack ZIP or enter a public HTTPS download URL.');
+    }
+    if (parts) body.settings.modpack_zip_url = '';
+    const schema = adapter.settingsSchema(body.variantId);
+    const settings = { ...defaultsFor(schema), ...body.settings };
+    const checked = validateSettings(schema, settings);
+    if (!checked.ok) throw badRequest('Some settings are not valid.', checked.issues);
 
-    const server = await createServer(input, { id: user.id, displayName: user.displayName });
+    const node = body.nodeId
+      ? await prisma.node.findUnique({ where: { id: body.nodeId } })
+      : await prisma.node.findFirst({ where: { transport: 'docker' } });
+    if (!node) throw badRequest('No machine is available to run this server.');
 
-    await installQueue().add('install', {
-      serverUid: server.uid,
-      mode: 'install',
-      startAfter: input.startOnCreate,
-      actorId: user.id,
-    });
-
-    return reply.code(202).send({
-      server: { uid: server.uid, name: server.name, state: server.state },
-      message: 'Your server is being set up. You can watch progress on its page.',
-    });
-  });
-
-  // ── Single server ─────────────────────────────────────────────────────
-  app.get('/api/servers/:uid', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.view');
-
-    const adapter = getAdapter(server.gameId);
-    const variant = adapter.variants.find((v) => v.id === server.variantId);
-
-    return {
-      server: {
-        uid: server.uid,
-        name: server.name,
-        description: server.description,
-        state: server.state,
-        gameId: server.gameId,
-        game: { id: adapter.id, name: adapter.name, icon: adapter.icon },
-        variantId: server.variantId,
-        variant: variant ? { id: variant.id, name: variant.name, supportsMods: variant.supportsMods } : null,
-        version: server.version,
-        build: server.build,
-        limits: {
-          memoryMib: server.memoryMib,
-          cpuCores: server.cpuCores,
-          diskMib: server.diskMib,
-          swapMib: server.swapMib,
-          ioWeight: server.ioWeight,
+    const dataPath = path.join(config.dataRoot, uid());
+    await fs.mkdir(localDataPath(dataPath), { recursive: true });
+    let createdServer = false;
+    try {
+      if (parts) {
+        const next = await parts.next();
+        if (next.done || next.value.type !== 'file')
+          throw badRequest('Choose a server pack ZIP to upload.');
+        await saveServerPack(localDataPath(dataPath), next.value);
+        if (!(await parts.next()).done) throw badRequest('Upload one ZIP file at a time.');
+      }
+      const purposes = adapter.requiredPorts(body.variantId);
+      const server = await prisma.server.create({
+        data: {
+          uid: path.basename(dataPath),
+          name: body.name,
+          description: body.description,
+          ownerId: user.id,
+          nodeId: node.id,
+          gameId: body.gameId,
+          variantId: body.variantId,
+          version: body.version,
+          settings: checked.values,
+          memoryMib: body.limits.memoryMib,
+          cpuCores: body.limits.cpuCores,
+          diskMib: body.limits.diskMib,
+          swapMib: body.limits.swapMib ?? null,
+          ioWeight: body.limits.ioWeight ?? 500,
+          dataPath: hostDataPath(dataPath),
+          state: 'installing',
         },
-        settings: server.settings,
-        environment: server.environment,
-        startupOverride: server.startupOverride,
-        javaFlagsPreset: server.javaFlagsPreset,
-        customJavaFlags: server.customJavaFlags,
-        autoRestart: server.autoRestart,
-        allocations: server.allocations.map((a) => ({
-          id: a.id,
-          ip: a.ip,
-          port: a.port,
-          purpose: a.purpose,
-          primary: a.primary,
-        })),
-        address: connectAddress(server.node.publicHost, server.allocations.find((a) => a.primary)?.port),
-        lanAddress: localConnectAddress(
-          server.node.publicHost,
-          lanHost(),
-          server.allocations.find((a) => a.primary)?.port,
+      });
+      createdServer = true;
+      await allocatePorts(node.id, server.id, purposes);
+      const created = await prisma.server.findUniqueOrThrow({
+        where: { id: server.id },
+        include: { allocations: true, node: true },
+      });
+
+      void installServer(created.id).catch((error) =>
+        logger.error('install failed', { message: String(error) }),
+      );
+      return reply.status(202).send({ server: publicServer(created) });
+    } finally {
+      if (!createdServer) await fs.rm(localDataPath(dataPath), { recursive: true, force: true });
+    }
+  });
+
+  app.get('/servers/:uid', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const server = await loadServer(serverUid, user);
+    const glossary = getAdapter(server.gameId).consoleGlossary?.(server.variantId);
+    return {
+      server: publicServer({
+        ...server,
+        busy: isServerBusy(server.uid),
+        permissions: effectiveServerPermissions(accessInput(user, server)).filter(
+          (permission) =>
+            !user.scopes || user.scopes.includes('*') || user.scopes.includes(permission),
         ),
-        node: { uid: server.node.uid, name: server.node.name, publicHost: server.node.publicHost },
-        installedAt: server.installedAt,
-        lastStartAt: server.lastStartAt,
-        crashCount: server.crashCount,
-        createdAt: server.createdAt,
-        isOwner: server.ownerId === user.id,
-        modDirectory: adapter.modDirectory?.(server.variantId) ?? null,
-        consoleGlossary: adapter.consoleGlossary?.(server.variantId) ?? null,
-        /**
-         * What this caller may actually do here. The UI hides what it cannot
-         * use rather than rendering buttons that fail with a 403 on click.
-         */
-        permissions: effectivePermissions(user, server),
-      },
+        canConfigure: canAccessServer(accessInput(user, server), 'server.settings'),
+        console: {
+          canRead: canAccessServer(accessInput(user, server), 'server.console'),
+          acceptsCommands: glossary?.acceptsCommands ?? true,
+          note: glossary?.note,
+        },
+      }),
     };
   });
 
-  app.patch('/api/servers/:uid', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
-    const input = updateServerSchema.parse(request.body);
+  app.get('/servers/:uid/settings', async (request, reply) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const server = await loadServer(serverUid, user, 'server.settings');
+    const schema = getAdapter(server.gameId)
+      .settingsSchema(server.variantId)
+      .filter((field) => !field.installOnly);
+    const current = { ...defaultsFor(schema), ...(server.settings as SettingValues) };
+    const values: SettingValues = {};
+    const configuredSecrets: string[] = [];
+    for (const field of schema) {
+      if (field.type === 'string' && field.secret) {
+        if (current[field.key]) configuredSecrets.push(field.key);
+      } else values[field.key] = current[field.key]!;
+    }
+    reply.header('Cache-Control', 'no-store');
+    return { schema, values, configuredSecrets, server: publicServer(server) };
+  });
 
-    const data: Record<string, unknown> = {};
-    if (input.name !== undefined) data.name = input.name;
-    if (input.description !== undefined) data.description = input.description;
-    if (input.limits) {
-      Object.assign(data, input.limits);
-      // Applying limits live avoids a restart for a memory bump, which is the
-      // most common reason someone touches this page.
-      if (server.containerId && server.state === 'running') {
-        const runtime = getRuntime(server.node);
-        await runtime
-          .updateLimits(server.containerId, {
-            memoryMib: input.limits.memoryMib ?? server.memoryMib,
-            cpuCores: input.limits.cpuCores ?? server.cpuCores,
-            diskMib: input.limits.diskMib ?? server.diskMib,
-            ioWeight: input.limits.ioWeight ?? server.ioWeight,
-          })
-          .catch(() => undefined);
+  app.get('/servers/:uid/resources', async (request, reply) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const server = await loadServer(serverUid, user);
+    reply.header('Cache-Control', 'no-store');
+    return {
+      containerId: server.containerId,
+      usage: server.containerId ? await runtime.stats(server.containerId) : null,
+    };
+  });
+
+  app.get('/servers/:uid/console/stream', async (request, reply) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const server = await loadServer(serverUid, user, 'server.console');
+    streamConsole(reply, server, runtime);
+  });
+
+  app.patch('/servers/:uid', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const body = updateServerSchema.parse(request.body);
+    return updateConfiguration(serverUid, user, body);
+  });
+
+  app.post('/servers/:uid/power', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    return withServerLock(serverUid, async () => {
+      const server = await loadServer(serverUid, user, 'server.power');
+      const { action } = powerActionSchema.parse(request.body);
+      if (action === 'start') await startServer(server.id);
+      else if (action === 'stop') await stopServer(server.id);
+      else if (action === 'restart') {
+        await stopServer(server.id);
+        await startServer(server.id);
+      } else {
+        if (!['running', 'starting'].includes(server.state))
+          throw conflict('The server is not running.');
+        await runtime.kill(server.containerId ?? containerName(server.uid));
+        await prisma.server.update({ where: { id: server.id }, data: { state: 'offline' } });
       }
-    }
-
-    const updated = await prisma.server.update({ where: { id: server.id }, data });
-    await recordActivity({
-      serverId: server.id,
-      actorId: user.id,
-      actorName: user.displayName,
-      action: 'server.update',
-      message: `${user.displayName} updated the server configuration.`,
+      const updated = await prisma.server.findUniqueOrThrow({ where: { id: server.id } });
+      return { server: publicServer(updated) };
     });
-
-    return { server: { uid: updated.uid, name: updated.name, description: updated.description } };
   });
 
-  app.delete('/api/servers/:uid', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { user } = await requireServerAccess(request, uid, 'server.delete');
-
-    await deleteServer(uid, { id: user.id, displayName: user.displayName });
-    return { ok: true, message: 'Server deleted.' };
-  });
-
-  // ── Power ─────────────────────────────────────────────────────────────
-  app.post('/api/servers/:uid/power', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { user } = await requireServerAccess(request, uid, 'server.power');
-    const { action } = powerActionSchema.parse(request.body);
-    const actor = { id: user.id, displayName: user.displayName };
-
-    switch (action) {
-      case 'start':
-        await startServer(uid, actor);
-        break;
-      case 'stop':
-        await stopServer(uid, {}, actor);
-        break;
-      case 'restart':
-        await restartServer(uid, actor);
-        break;
-      case 'kill':
-        await stopServer(uid, { force: true }, actor);
-        break;
-    }
-
-    return { ok: true, action };
-  });
-
-  app.post('/api/servers/:uid/command', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.console');
+  app.post('/servers/:uid/console', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const server = await loadServer(serverUid, user, 'server.console');
     const { command } = consoleCommandSchema.parse(request.body);
-
-    await sendConsoleCommand(uid, command);
-    await recordActivity({
-      serverId: server.id,
-      actorId: user.id,
-      actorName: user.displayName,
-      action: 'server.command',
-      message: `${user.displayName} ran: ${command.slice(0, 120)}`,
-    });
-
-    return { ok: true };
+    return { output: await sendServerCommand(server, command) };
   });
 
-  app.get('/api/servers/:uid/console', async (request) => {
-    const { uid } = request.params as { uid: string };
-    await requireServerAccess(request, uid, 'server.console');
-    const query = request.query as { limit?: string };
-    return { lines: await readConsoleBuffer(uid, Math.min(Number(query.limit ?? 200), 500)) };
-  });
-
-  // ── Settings ──────────────────────────────────────────────────────────
-  app.get('/api/servers/:uid/settings', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.view');
-
-    const adapter = getAdapter(server.gameId);
-    const schema = adapter.settingsSchema(server.variantId);
-    const values = { ...defaultsFor(schema), ...(server.settings as Record<string, never>) };
-
-    // Secrets are never echoed back; the UI shows a "set"/"not set" state and
-    // writes a new value if the user chooses to change it.
-    const redacted = { ...values } as Record<string, unknown>;
-    for (const setting of schema) {
-      if (setting.type === 'string' && setting.secret && redacted[setting.key]) {
-        redacted[setting.key] = '';
-      }
-    }
-
-    return { schema, values: redacted, groups: groupSettings(schema) };
-  });
-
-  app.patch('/api/servers/:uid/settings', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
+  app.patch('/servers/:uid/settings', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
     const { values } = settingsPatchSchema.parse(request.body);
-
-    const adapter = getAdapter(server.gameId);
-    const schema = adapter.settingsSchema(server.variantId);
-
-    const merged = { ...defaultsFor(schema), ...(server.settings as Record<string, never>), ...values };
-    const result = validateSettings(schema, merged);
-    if (!result.ok) {
-      throw badRequest('Some settings need fixing.', result.issues);
-    }
-
-    await prisma.server.update({
-      where: { id: server.id },
-      data: { settings: result.values as never },
-    });
-
-    const changedKeys = Object.keys(values);
-    const needsRestart = schema.some(
-      (s) => changedKeys.includes(s.key) && s.restartRequired,
-    );
-
-    await recordActivity({
-      serverId: server.id,
-      actorId: user.id,
-      actorName: user.displayName,
-      action: 'settings.update',
-      message: `${user.displayName} changed ${changedKeys.length} setting${changedKeys.length === 1 ? '' : 's'}.`,
-      metadata: { keys: changedKeys },
-    });
-
-    return {
-      ok: true,
-      needsRestart: needsRestart && ['running', 'starting'].includes(server.state),
-      message:
-        needsRestart && ['running', 'starting'].includes(server.state)
-          ? 'Saved. Restart the server for these to take effect.'
-          : 'Saved.',
-    };
+    const result = await updateConfiguration(serverUid, user, { settings: values });
+    return { ok: true, restartRequired: result.restartRequired };
   });
 
-  app.patch('/api/servers/:uid/startup', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
-    const input = startupPatchSchema.parse(request.body);
+  app.get('/servers/:uid/mods', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const server = await loadServer(serverUid, user);
+    const support = modSupport(server.gameId, server.variantId);
+    const canManage = canAccessServer(accessInput(user, server), 'server.mods');
+    const files =
+      support.directory && canManage
+        ? await listMods(localDataPath(server.dataPath), support.directory, support.extensions)
+        : [];
+    return { ...support, canManage, files };
+  });
 
-    const data: Record<string, unknown> = {};
-    if (input.startupOverride !== undefined) data.startupOverride = input.startupOverride;
-    if (input.javaFlagsPreset !== undefined) data.javaFlagsPreset = input.javaFlagsPreset;
-    if (input.customJavaFlags !== undefined) data.customJavaFlags = input.customJavaFlags;
-    if (input.environment !== undefined) {
-      // Container env is a privileged surface: refuse the variables that
-      // would let a user redirect the runtime outside its own directory.
-      const blocked = ['LD_PRELOAD', 'PATH', 'HOME'];
-      for (const key of Object.keys(input.environment)) {
-        if (blocked.includes(key.toUpperCase())) {
-          throw badRequest(`The environment variable ${key} cannot be changed.`);
-        }
+  app.post('/servers/:uid/mods', async (request, reply) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    return withServerLock(serverUid, async () => {
+      const server = await loadServer(serverUid, user, 'server.mods');
+      requireStopped(server.state);
+      const support = modSupport(server.gameId, server.variantId);
+      if (!support.directory) throw badRequest('This edition does not support mods.');
+      const file = await request.file({
+        limits: { fileSize: MOD_UPLOAD_LIMIT, files: 1, fields: 0 },
+      });
+      if (!file) throw badRequest('Choose a mod file to upload.');
+      try {
+        await uploadMod(
+          localDataPath(server.dataPath),
+          support.directory,
+          support.extensions,
+          file.filename,
+          file.file,
+        );
+      } finally {
+        file.file.resume();
       }
-      data.environment = input.environment;
-    }
-
-    await prisma.server.update({ where: { id: server.id }, data });
-    await recordActivity({
-      serverId: server.id,
-      actorId: user.id,
-      actorName: user.displayName,
-      action: 'startup.update',
-      message: `${user.displayName} changed the startup configuration.`,
-    });
-
-    return { ok: true, needsRestart: true };
-  });
-
-  app.post('/api/servers/:uid/reinstall', async (request, reply) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
-
-    if (['installing', 'updating', 'restoring'].includes(server.state)) {
-      throw conflict('This server is already busy with another job.');
-    }
-    if (['running', 'starting'].includes(server.state)) {
-      throw conflict('Stop the server before reinstalling it.');
-    }
-
-    const body = request.body as { version?: string } | undefined;
-    if (body?.version) {
-      await prisma.server.update({ where: { id: server.id }, data: { version: body.version } });
-    }
-
-    await installQueue().add('install', {
-      serverUid: uid,
-      mode: 'reinstall',
-      startAfter: false,
-      actorId: user.id,
-    });
-
-    return reply.code(202).send({
-      ok: true,
-      message: 'Reinstalling. Your world and configuration files are kept.',
+      return reply.status(201).send({ ok: true });
     });
   });
 
-  /**
-   * Downloads the latest game/server binaries without wiping the world.
-   *
-   * Steam games re-run `app_update`; Minecraft clears known jars/loaders then
-   * reinstalls the chosen version. Optional `version` switches Minecraft
-   * builds; Steam servers always track the public branch.
-   */
-  app.post('/api/servers/:uid/update', async (request, reply) => {
-    const { uid } = request.params as { uid: string };
-    const { server, user } = await requireServerAccess(request, uid, 'server.settings');
-
-    if (['installing', 'updating', 'restoring', 'creating'].includes(server.state)) {
-      throw conflict('This server is already busy with another job.');
-    }
-    if (['running', 'starting', 'stopping'].includes(server.state)) {
-      throw conflict('Stop the server before updating it.');
-    }
-
-    const body = (request.body ?? {}) as { version?: string; startAfter?: boolean };
-    if (body.version) {
-      await prisma.server.update({ where: { id: server.id }, data: { version: body.version } });
-    }
-
-    await installQueue().add('install', {
-      serverUid: uid,
-      mode: 'update',
-      startAfter: body.startAfter === true,
-      actorId: user.id,
-    });
-
-    return reply.code(202).send({
-      ok: true,
-      message: 'Updating. Your world and configuration files are kept.',
+  app.patch('/servers/:uid/mods', async (request) => {
+    const user = requireUser(request);
+    const { uid: serverUid } = request.params as { uid: string };
+    const { name, enabled } = z
+      .object({ name: z.string().min(1).max(1024), enabled: z.boolean() })
+      .parse(request.body);
+    return withServerLock(serverUid, async () => {
+      const server = await loadServer(serverUid, user, 'server.mods');
+      requireStopped(server.state);
+      const support = modSupport(server.gameId, server.variantId);
+      if (!support.directory) throw badRequest('This edition does not support mods.');
+      await setModEnabled(
+        localDataPath(server.dataPath),
+        support.directory,
+        support.extensions,
+        name,
+        enabled,
+      );
+      return { ok: true };
     });
   });
+}
 
-  /** Duplicate settings + files onto a new server with fresh ports. */
-  app.post('/api/servers/:uid/clone', async (request, reply) => {
-    const { uid } = request.params as { uid: string };
-    const { user } = await requireServerAccess(request, uid, 'server.settings');
-    const input = cloneServerSchema.parse(request.body);
-
-    const cloned = await cloneServer(uid, input, {
-      id: user.id,
-      displayName: user.displayName,
+async function installServer(id: string) {
+  const server = await prisma.server.findUniqueOrThrow({
+    where: { id },
+    include: { allocations: true, node: true, owner: true, subusers: { include: { roles: true } } },
+  });
+  const adapter = getAdapter(server.gameId);
+  try {
+    const resolved = await adapter.resolveVersion(server.variantId, server.version);
+    const javaMajor = (await adapter.detectRuntime?.(server.variantId, resolved.id)) ?? null;
+    await prisma.server.update({
+      where: { id },
+      data: { version: resolved.id, build: resolved.build ?? null, javaMajor },
     });
-
-    return reply.code(201).send({
-      server: { uid: cloned.uid, name: cloned.name, state: cloned.state },
-      message: `Cloned as "${cloned.name}". It is offline — start it when you are ready.`,
+    const tools = installToolsFor(server.dataPath);
+    await adapter.install(
+      contextOf({ ...server, version: resolved.id, build: resolved.build ?? null, javaMajor }),
+      tools,
+      {
+        async phase(phase, message) {
+          await prisma.installLog.create({ data: { serverId: id, phase, message } });
+        },
+        async runtime(detected) {
+          await prisma.server.update({
+            where: { id },
+            data: {
+              ...(detected.javaMajor ? { javaMajor: detected.javaMajor } : {}),
+              ...(detected.version ? { version: detected.version } : {}),
+            },
+          });
+        },
+        async log(message) {
+          await prisma.installLog.create({ data: { serverId: id, phase: 'log', message } });
+        },
+      },
+    );
+    await adapter.applySettings(contextOf({ ...server, version: resolved.id }), tools);
+    await prepareServerOwnership(localDataPath(server.dataPath));
+    await prisma.server.update({
+      where: { id },
+      data: { state: 'offline', installedAt: new Date() },
     });
-  });
-
-  app.get('/api/servers/:uid/install-log', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.view');
-    const entries = await prisma.installLog.findMany({
-      where: { serverId: server.id },
-      orderBy: { at: 'desc' },
-      take: 200,
+  } catch (error) {
+    await prisma.server.update({
+      where: { id },
+      data: { state: 'install_failed' },
     });
-    return { entries: serializeBigInts(entries).reverse() };
-  });
-
-  // ── Network ───────────────────────────────────────────────────────────
-  app.patch('/api/servers/:uid/port', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.settings');
-    const body = request.body as { port?: number };
-
-    if (typeof body.port !== 'number') throw badRequest('Choose a port number.');
-    if (['running', 'starting'].includes(server.state)) {
-      throw conflict('Stop the server before changing its port.');
-    }
-
-    await changePrimaryPort(server.id, body.port);
-    return { ok: true, needsRestart: false };
-  });
-
-  // ── Timeline and metrics ──────────────────────────────────────────────
-  app.get('/api/servers/:uid/activity', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.view');
-    const entries = await prisma.activity.findMany({
-      where: { serverId: server.id },
-      orderBy: { at: 'desc' },
-      take: 50,
-    });
-    return { entries };
-  });
-
-  app.get('/api/servers/:uid/metrics', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.view');
-    const query = request.query as { hours?: string };
-    const hours = Math.min(Math.max(Number(query.hours ?? 6), 1), 168);
-
-    const samples = await prisma.metricSample.findMany({
-      where: { serverId: server.id, at: { gte: new Date(Date.now() - hours * 3600 * 1000) } },
-      orderBy: { at: 'asc' },
-      take: 2000,
-    });
-
-    return { samples: serializeBigInts(samples) };
-  });
-
-  /**
-   * Who is connected.
-   *
-   * `supported` is the honest part: a game whose adapter cannot parse join and
-   * leave lines would otherwise return an empty array that reads as "nobody is
-   * playing" rather than "the panel cannot tell".
-   */
-  app.get('/api/servers/:uid/players', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.view');
-
-    const adapter = getAdapter(server.gameId);
-    if (!adapter.reportsPlayers) {
-      return { supported: false, players: [], online: 0, live: false };
-    }
-
-    const players = await playersOnline(server.uid);
-    return {
-      supported: true,
-      players,
-      online: players.length,
-      // False when this process has not been watching the container from the
-      // start — the list is then whatever the replayed log tail revealed.
-      live: isWatching(server.uid),
-    };
-  });
-
-  // ── Sub-users ─────────────────────────────────────────────────────────
-  app.get('/api/servers/:uid/subusers', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.subusers');
-    const rows = await prisma.serverUser.findMany({
-      where: { serverId: server.id },
-      include: {
-        user: { select: { uid: true, username: true, displayName: true, avatarColor: true, role: true } },
-        roles: true,
+    await prisma.installLog.create({
+      data: {
+        serverId: id,
+        phase: 'failed',
+        message: error instanceof Error ? error.message : String(error),
       },
     });
+  }
+}
 
-    // The effective list is what the screen should show: "has the Operators
-    // role" does not tell you whether they can restart the server once another
-    // role denies it. Working that out in the UI would be a second copy of the
-    // rules, so it is resolved here.
-    const subusers = rows.map((row) => ({
-      ...row,
-      roles: row.roles.map((role) => ({
-        uid: role.uid,
-        name: role.name,
-        permissions: sanitisePermissionMap(role.permissions),
-      })),
-      effectivePermissions: effectiveServerPermissions(
-        accessInputFor({ id: row.userId, role: row.user.role }, server),
-      ),
-    }));
-
-    return { subusers };
+export async function startServer(id: string, automatic = false) {
+  const server = await prisma.server.findUniqueOrThrow({
+    where: { id },
+    include: { allocations: true, node: true, owner: true, subusers: { include: { roles: true } } },
   });
-
-  app.post('/api/servers/:uid/subusers', async (request) => {
-    const { uid } = request.params as { uid: string };
-    const { user, server } = await requireServerAccess(request, uid, 'server.subusers');
-    const body = request.body as {
-      username?: string;
-      permissions?: ServerPermission[];
-      roleUids?: string[];
-    };
-    const handle = body.username?.trim().toLowerCase();
-    const permissions = body.permissions ?? [];
-    const roleUids = body.roleUids ?? [];
-
-    // A membership needs *something* to define it. Roles alone are fine — that
-    // is the point of having them — so this is no longer "at least one
-    // permission".
-    if (!handle || (permissions.length === 0 && roleUids.length === 0)) {
-      throw badRequest('Choose a person, and give them a role or at least one permission.');
-    }
-
-    const target = await prisma.user.findUnique({ where: { username: handle } });
-    if (!target) {
+  requireStopped(server.state);
+  const adapter = getAdapter(server.gameId);
+  if (server.gameId === 'valheim' && server.variantId === 'valheim-bepinex') {
+    const files = installToolsFor(server.dataPath);
+    if (
+      !(await files.exists('BepInEx/core/BepInEx.Preloader.dll')) ||
+      !(await files.exists('doorstop_libs/libdoorstop_x64.so'))
+    ) {
       throw badRequest(
-        'Nobody with that username has an account here yet.',
-        'They need an account first — then you can add them.',
+        'BepInEx is missing from this older server. Install BepInExPack Valheim in the server folder, or deploy a new BepInEx edition.',
       );
     }
-    if (target.id === server.ownerId) throw conflict('That person already owns this server.');
-
-    const roles = roleUids.length
-      ? await prisma.accessRole.findMany({ where: { uid: { in: roleUids } } })
-      : [];
-    if (roles.length !== roleUids.length) {
-      throw badRequest('One of those roles no longer exists.', 'Reload the page and try again.');
-    }
-
-    const membership = await prisma.serverUser.upsert({
-      where: { serverId_userId: { serverId: server.id, userId: target.id } },
-      create: {
-        serverId: server.id,
-        userId: target.id,
-        permissions,
-        roles: { connect: roles.map((role) => ({ id: role.id })) },
-      },
-      update: {
-        permissions,
-        // `set` rather than `connect`: the request carries the whole list, so
-        // removing a role has to mean removing it.
-        roles: { set: roles.map((role) => ({ id: role.id })) },
-      },
-      include: { roles: true },
-    });
-
-    await recordActivity({
-      serverId: server.id,
-      actorId: user.id,
-      actorName: user.displayName,
-      action: 'server.subuser_changed',
-      message: `Access for ${target.displayName} was updated.`,
-      metadata: { permissions, roles: roles.map((role) => role.name) },
-    });
-
-    return { subuser: membership };
+  }
+  const plan = adapter.startup(contextOf(server));
+  await runtime.ensureImage(plan.image, () => undefined);
+  const name = containerName(server.uid);
+  const existing = await runtime.status(name);
+  if (existing.exists) await runtime.remove(name, { force: true });
+  // Settings saved in the panel are materialised only after the old process stops.
+  await adapter.applySettings(contextOf(server), installToolsFor(server.dataPath));
+  await prepareServerOwnership(localDataPath(server.dataPath));
+  const containerId = await runtime.create({
+    name,
+    image: plan.image,
+    command: server.startupOverride ? server.startupOverride.split(/\s+/) : plan.command,
+    entrypoint: plan.entrypoint,
+    workingDir: plan.workingDir,
+    env: { ...plan.env, ...(server.environment as Record<string, string>) },
+    dataPath: server.dataPath,
+    limits: {
+      memoryMib: server.memoryMib,
+      cpuCores: server.cpuCores,
+      diskMib: server.diskMib,
+      swapMib: server.swapMib,
+      ioWeight: server.ioWeight,
+    },
+    ports: mapPorts(plan.ports, server.allocations),
+    network: config.dockerNetwork,
+    labels: {
+      [`${brand.labelNamespace}/managed`]: 'true',
+      [`${brand.labelNamespace}/server`]: server.uid,
+    },
   });
-
-  app.delete('/api/servers/:uid/subusers/:userUid', async (request) => {
-    const { uid, userUid } = request.params as { uid: string; userUid: string };
-    const { server } = await requireServerAccess(request, uid, 'server.subusers');
-
-    const target = await prisma.user.findUnique({ where: { uid: userUid } });
-    if (!target) throw badRequest('That person could not be found.');
-
-    await prisma.serverUser.deleteMany({ where: { serverId: server.id, userId: target.id } });
-    return { ok: true };
+  await runtime.start(containerId);
+  const started = await prisma.server.update({
+    where: { id },
+    data: {
+      containerId,
+      state: 'running',
+      lastStartAt: new Date(),
+      ...(automatic ? {} : { crashCount: 0 }),
+    },
   });
+  const { observeServer } = await import('../services/telemetry.js');
+  await observeServer(started, true).catch(() => undefined);
 }
 
-/** Builds the copy-paste join address shown on the server card. */
-function connectAddress(host: string, port?: number): string | null {
-  if (!port) return null;
-  return `${host}:${port}`;
+export async function stopServer(id: string) {
+  const server = await prisma.server.findUniqueOrThrow({ where: { id } });
+  if (!['running', 'starting', 'offline', 'crashed'].includes(server.state))
+    throw conflict('Wait for the current operation before stopping.');
+  const adapter = getAdapter(server.gameId);
+  const plan = adapter.startup({
+    serverUid: server.uid,
+    name: server.name,
+    dataPath: server.dataPath,
+    version: server.version,
+    variantId: server.variantId,
+    settings: server.settings as Record<string, string | number | boolean>,
+    memoryMib: server.memoryMib,
+    cpuCores: server.cpuCores,
+    allocations: [],
+    environment: {},
+    javaFlagsPreset: server.javaFlagsPreset,
+  });
+  if (server.containerId) {
+    await runtime.stop(server.containerId, {
+      stopCommand: plan.stopCommand,
+      timeoutSeconds: plan.stopTimeoutSeconds,
+    });
+  }
+  await prisma.server.update({ where: { id }, data: { state: 'offline' } });
+  emitServerEvent({ serverUid: server.uid, type: 'server.stopped', at: Date.now() });
 }
 
-/**
- * The caller's effective permissions on a server.
- *
- * Runs the same resolver as `requireServerAccess` over the same inputs, so the
- * tabs the dashboard shows and the requests the API accepts cannot drift
- * apart. Anything else here — a second copy of the rules, a shortcut for
- * admins — is how you end up with a tab that 403s when you click it.
- */
-function effectivePermissions(
-  user: { id: string; role: Role },
-  server: { ownerId: string; subusers: ServerWithAccess['subusers'] },
-): ServerPermission[] {
-  return effectiveServerPermissions(accessInputFor(user, server));
+export async function sendServerCommand(
+  server: Awaited<ReturnType<typeof loadServer>>,
+  command: string,
+): Promise<string> {
+  const adapter = getAdapter(server.gameId);
+  const glossary = adapter.consoleGlossary?.(server.variantId);
+  if (glossary?.acceptsCommands === false)
+    throw badRequest(glossary.note ?? 'This game provides a read-only console.');
+  if (server.state !== 'running' || !server.containerId)
+    throw conflict('Start the server before sending a command.');
+  const plan = adapter.startup(contextOf(server));
+  const target = resolveRconTarget({
+    plan,
+    containerName: containerName(server.uid),
+    allocations: server.allocations,
+    settings: server.settings as Record<string, unknown>,
+    inContainer: runningInContainer(),
+  });
+  if (target) {
+    const password = String(
+      (server.settings as Record<string, unknown>)[plan.console!.passwordSetting] ?? '',
+    );
+    const output = await rconCommand({ ...target, password }, command);
+    return output;
+  }
+  if (server.containerId) await runtime.writeStdin(server.containerId, `${command}\n`);
+  return '';
 }

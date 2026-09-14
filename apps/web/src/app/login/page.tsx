@@ -1,305 +1,119 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { Loader2, Server } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { api, ApiError } from '@/lib/api';
-import { BRAND } from '@/lib/utils';
-import { Button, Card, CardBody, Field, Input } from '@/components/ui';
+import { FormEvent, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { api } from '@/lib/api';
+import { Icon } from '@/components/Icon';
 
-interface AuthContext {
-  needsSetup: boolean;
-  user: { uid: string } | null;
-  brand: { name: string; tagline: string };
-}
-
-/**
- * Sign in, or create the very first account.
- *
- * A fresh install shows "create your account" instead of a login form with no
- * credentials to enter — the single most common first-run confusion in
- * self-hosted software.
- */
 export default function LoginPage() {
-  const router = useRouter();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
-  /** Set once the password is accepted and a second factor is owed. */
-  const [ticket, setTicket] = useState<string | null>(null);
-  const [code, setCode] = useState('');
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [error, setError] = useState('');
+  const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? 'ServerForge';
 
-  const context = useQuery({
-    queryKey: ['auth-context'],
-    queryFn: () => api.get<AuthContext>('/api/auth/context'),
-    retry: 1,
-  });
+  useEffect(() => {
+    api<{ needsSetup: boolean }>('/api/setup')
+      .then((data) => setNeedsSetup(data.needsSetup))
+      .catch(() => undefined);
+  }, []);
 
-  const isSetup = context.data?.needsSetup ?? false;
-
-  const submit = useMutation({
-    mutationFn: async (): Promise<{ twoFactorRequired?: boolean; ticket?: string }> => {
-      const handle = username.trim().toLowerCase();
-      if (isSetup) {
-        return api.post('/api/auth/register', {
-          username: handle,
-          password,
-          displayName: handle,
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setError('');
+    try {
+      const path = needsSetup ? '/api/auth/register' : '/api/auth/login';
+      const result = await api<{ twoFactor?: boolean; ticket?: string }>(path, {
+        method: 'POST',
+        body: JSON.stringify({
+          username: String(form.get('username')),
+          password: String(form.get('password')),
+          displayName: String(form.get('displayName') || ''),
+        }),
+      });
+      if (result.twoFactor && result.ticket) {
+        const code = window.prompt('Authenticator code');
+        if (!code) return;
+        await api('/api/auth/login/2fa', {
+          method: 'POST',
+          body: JSON.stringify({ ticket: result.ticket, code }),
         });
       }
-      return api.post<{ twoFactorRequired?: boolean; ticket?: string }>('/api/auth/login', {
-        username: handle,
-        password,
-      });
-    },
-    onSuccess: (result) => {
-      // A password alone is not a session for an account with 2FA on; the
-      // server hands back a ticket good for nothing but the second step.
-      if (result?.twoFactorRequired && result.ticket) {
-        setTicket(result.ticket);
-        setPassword('');
-        return;
-      }
-      router.push('/servers');
-    },
-    onError: (err) => {
-      if (err instanceof ApiError) {
-        setError(err.body.message);
-        setHint(err.body.hint ?? err.fieldIssues[0]?.message ?? null);
-      } else {
-        setError('Could not reach the panel. Is the API running?');
-        setHint(null);
-      }
-    },
-  });
-
-  const submitCode = useMutation({
-    mutationFn: () => api.post('/api/auth/login/2fa', { ticket, code: code.trim() }),
-    onSuccess: () => router.push('/servers'),
-    onError: (err) => {
-      if (err instanceof ApiError) {
-        setError(err.body.message);
-        setHint(err.body.hint ?? null);
-        setCode('');
-        // An expired or burnt-through ticket cannot be retried, so the form
-        // goes back to the password step rather than looping on a dead code.
-        if (err.status === 401 && /expired|no longer valid/i.test(err.body.message)) {
-          setTicket(null);
-        }
-      } else {
-        setError('Could not reach the panel. Is the API running?');
-        setHint(null);
-      }
-    },
-  });
-
-  if (context.isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-ink-subtle" />
-        <span className="sr-only">Loading</span>
-      </div>
-    );
-  }
-
-  if (context.isError) {
-    return (
-      <main className="flex min-h-screen items-center justify-center p-6">
-        <Card className="max-w-md">
-          <CardBody className="space-y-3 text-center">
-            <p className="eyebrow text-danger">connection refused</p>
-            <h1 className="display text-lg">Can&apos;t reach the panel</h1>
-            <p className="text-[13px] leading-relaxed text-ink-muted">
-              The dashboard loaded, but the API did not answer. Check that it is running and that{' '}
-              <code className="rounded bg-surface-raised px-1 py-0.5 text-[12px]">
-                NEXT_PUBLIC_API_URL
-              </code>{' '}
-              points at it.
-            </p>
-            <Button variant="secondary" onClick={() => context.refetch()}>
-              Try again
-            </Button>
-          </CardBody>
-        </Card>
-      </main>
-    );
+      window.location.href = '/';
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sign in.');
+    }
   }
 
   return (
-    <main
-      id="main"
-      className="flex min-h-screen flex-col items-center justify-center px-4 py-10"
-    >
-      <div className="w-full max-w-sm">
-        <div className="mb-7 flex flex-col items-center text-center">
-          <div className="inset-well mb-4 flex h-11 w-11 items-center justify-center rounded-xl text-accent">
-            <Server className="h-5 w-5" aria-hidden />
-          </div>
-          <h1 className="engraved text-lg">{BRAND.name}</h1>
-          <p className="mt-2.5 text-[13px] text-ink-muted">
-            {ticket
-              ? 'One more step.'
-              : isSetup
-                ? 'Create the account that will own this panel.'
-                : BRAND.tagline}
-          </p>
+    <main className="login-page">
+      <section className="login-brand-panel">
+        <Link href="/" className="brand">
+          <span className="brand-mark">
+            <Icon name="server" size={24} />
+          </span>
+          {brand}
+          <span className="brand-dot">.</span>
+        </Link>
+        <div>
+          <div className="eyebrow">YOUR WORLD. YOUR RULES.</div>
+          <h2>
+            Good times.
+            <br />
+            Great company.
+            <br />
+            Your own server.
+          </h2>
+          <p>A home for your community and a launchpad for your next adventure.</p>
         </div>
-
-        {ticket ? (
-          <Card>
-            <CardBody>
-              <form
-                className="space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  setError(null);
-                  setHint(null);
-                  submitCode.mutate();
-                }}
-              >
-                <Field
-                  label="Authentication code"
-                  help="The six digits from your authenticator app. If you have lost your phone, enter one of your recovery codes instead."
-                  required
-                >
-                  <Input
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    // Numeric so phones raise the digit keypad, but not
-                    // type="number": a recovery code goes in this box too.
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    placeholder="123456"
-                    maxLength={32}
-                    required
-                    data-autofocus
-                  />
-                </Field>
-
-                {error && (
-                  <div
-                    role="alert"
-                    className="rounded-md border border-line border-l-2 border-l-danger bg-danger/[0.07] px-3 py-2.5"
-                  >
-                    <p className="text-[12.5px] font-medium text-danger">{error}</p>
-                    {hint && <p className="mt-1 text-[12.5px] text-ink-muted">{hint}</p>}
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
-                  loading={submitCode.isPending}
-                  loadingText="Checking…"
-                >
-                  Verify
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full"
-                  onClick={() => {
-                    setTicket(null);
-                    setCode('');
-                    setError(null);
-                    setHint(null);
-                  }}
-                >
-                  Back
-                </Button>
-              </form>
-            </CardBody>
-          </Card>
-        ) : (
-        <Card>
-          <CardBody>
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setError(null);
-                setHint(null);
-                submit.mutate();
-              }}
-            >
-              <Field
-                label="Username"
-                help={
-                  isSetup
-                    ? 'Letters, numbers, underscores or dashes. This is how you sign in.'
-                    : undefined
-                }
-                required
-              >
-                <Input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="alex"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  minLength={3}
-                  maxLength={32}
-                  required
-                  data-autofocus
-                />
-              </Field>
-
-              <Field
-                label="Password"
-                help={isSetup ? 'At least 10 characters. A short phrase works well.' : undefined}
-                required
-              >
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={isSetup ? 'new-password' : 'current-password'}
-                  minLength={isSetup ? 10 : undefined}
-                  required
-                />
-              </Field>
-
-              {error && (
-                <div
-                  role="alert"
-                  className="rounded-md border border-line border-l-2 border-l-danger bg-danger/[0.07] px-3 py-2.5"
-                >
-                  <p className="text-[12.5px] font-medium text-danger">{error}</p>
-                  {hint && <p className="mt-1 text-[12.5px] text-ink-muted">{hint}</p>}
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                className="w-full"
-                loading={submit.isPending}
-                loadingText={isSetup ? 'Creating account…' : 'Signing in…'}
-              >
-                {isSetup ? 'Create account' : 'Sign in'}
-              </Button>
-            </form>
-          </CardBody>
-        </Card>
-        )}
-
-        {isSetup && !ticket && (
-          <p className="mt-4 text-center text-[12.5px] leading-relaxed text-ink-subtle">
-            This first account becomes the owner. Everyone else joins by invitation.
+        <span>Self-hosted. Under your control.</span>
+      </section>
+      <section className="login-form-panel">
+        <div className="login-form">
+          <div className="eyebrow">WELCOME TO YOUR WORKSPACE</div>
+          <h1 className="h1">{needsSetup ? 'Make yourself at home.' : 'Welcome back.'}</h1>
+          <p className="muted">
+            {needsSetup
+              ? 'Create the owner account. The first one owns the panel.'
+              : 'Sign in to manage your servers.'}
           </p>
-        )}
-      </div>
+          <form className="card stack" onSubmit={(event) => void onSubmit(event)}>
+            {needsSetup ? (
+              <label>
+                Display name
+                <input name="displayName" placeholder="Will" />
+              </label>
+            ) : null}
+            <label>
+              Username
+              <input name="username" autoComplete="username" required minLength={3} />
+            </label>
+            <label>
+              Password
+              <input
+                name="password"
+                type="password"
+                autoComplete={needsSetup ? 'new-password' : 'current-password'}
+                required
+                minLength={10}
+              />
+            </label>
+            {error ? (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <button className="btn" type="submit">
+              {needsSetup ? 'Create account' : 'Sign in'}
+            </button>
+            {!needsSetup ? (
+              <p className="muted">
+                Need an account? Ask the owner, or <Link href="/login">refresh</Link> if this is a
+                new install.
+              </p>
+            ) : null}
+          </form>
+        </div>
+      </section>
     </main>
   );
 }

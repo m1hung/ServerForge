@@ -70,7 +70,13 @@ export interface ServerContext {
 
 export interface InstallReporter {
   phase(
-    phase: 'preparing' | 'resolving_version' | 'downloading' | 'extracting' | 'configuring' | 'finalizing',
+    phase:
+      | 'preparing'
+      | 'resolving_version'
+      | 'downloading'
+      | 'extracting'
+      | 'configuring'
+      | 'finalizing',
     message: string,
     percent?: number,
   ): Promise<void>;
@@ -97,7 +103,7 @@ export interface InstallTools {
     destRelative: string,
     options?: { headers?: Record<string, string>; sha1?: string; sha256?: string; sha512?: string },
   ): Promise<number>;
-  /** Extracts a zip inside the server dir, zip-slip guarded. */
+  /** Extracts a ZIP, or copies an extracted directory’s contents, with path/link guards. */
   unzip(archiveRelative: string, destRelative: string, options?: { strip?: number }): Promise<void>;
   writeFile(relative: string, contents: string): Promise<void>;
   readFile(relative: string): Promise<string | null>;

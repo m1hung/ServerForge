@@ -55,6 +55,8 @@ interface SettingBase {
   group: string;
   /** Requires a server restart to take effect. Surfaces a badge in the UI. */
   restartRequired?: boolean;
+  /** Used during installation; changing it requires a new installation. */
+  installOnly?: boolean;
   /** Only show/apply when another setting has one of these values. */
   showWhen?: { key: string; equals: (string | number | boolean)[] };
   target: SettingTarget;
