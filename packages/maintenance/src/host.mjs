@@ -9,6 +9,9 @@ import { parseEnv } from './environment.mjs';
 import net from 'node:net';
 
 const installation = '/installation';
+// The launcher creates this directory as the host user. Preserve that user's
+// access to private configuration on Linux, including when the command crashes.
+const hostOwner = await fs.stat(installation);
 const configRoot = path.join(installation, 'config');
 const configFile = path.join(configRoot, '.env');
 const hostRoot = process.env.SF_HOST_ROOT;
@@ -52,6 +55,7 @@ async function atomic(file, contents) {
   const temporary = `${file}.partial`;
   const handle = await fs.open(temporary, 'w', 0o600);
   try {
+    await handle.chown(hostOwner.uid, hostOwner.gid);
     await handle.writeFile(contents);
     await handle.sync();
   } finally {
@@ -249,6 +253,7 @@ async function setup() {
     if (probe) await run('docker', ['rm', '-f', probe]);
   }
   await fs.mkdir(configRoot, { recursive: true, mode: 0o700 });
+  await fs.chown(configRoot, hostOwner.uid, hostOwner.gid);
   const paths = {
     DATA: 'servers',
     BACKUP: 'backups',
@@ -330,6 +335,7 @@ async function adopt() {
   if (!binding?.length || binding.length !== 1) throw new Error('Inspect the existing dashboard port binding before adoption.');
   for (const key of ['SESSION_SECRET', 'ENCRYPTION_KEY']) if (!apiEnvironment[key]) throw new Error(`Existing API is missing ${key}; restore configuration before proceeding.`);
   await fs.mkdir(configRoot, { mode: 0o700 });
+  await fs.chown(configRoot, hostOwner.uid, hostOwner.gid);
   const values = { ...source, COMPOSE_PROJECT_NAME: project, APP_VERSION: 'legacy', HEALTH_PATH: '/health', API_IMAGE: containers.api.Image, WEB_IMAGE: containers.web.Image, MAINTENANCE_IMAGE: process.env.SF_MAINTENANCE_IMAGE,
     HOST_DATA_ROOT: expectedDataRoot, POSTGRES_IMAGE: containers.postgres.Image, POSTGRES_VOLUME: databaseVolume.Name, POSTGRES_USER: postgresEnvironment.POSTGRES_USER, POSTGRES_PASSWORD: postgresEnvironment.POSTGRES_PASSWORD, POSTGRES_DB: postgresEnvironment.POSTGRES_DB,
     SESSION_SECRET: apiEnvironment.SESSION_SECRET, ENCRYPTION_KEY: apiEnvironment.ENCRYPTION_KEY, HOST_CONFIG_ROOT: path.join(hostRoot, 'config'), HOST_CACHE_ROOT: source.HOST_CACHE_ROOT || path.join(hostRoot, 'data/cache'), HOST_RECOVERY_ROOT: source.HOST_RECOVERY_ROOT || path.join(hostRoot, 'data/recovery'),
@@ -588,6 +594,7 @@ try {
       );
     });
     locked = true;
+    await fs.chown(lock, hostOwner.uid, hostOwner.gid);
     await writeJson(path.join(lock, 'owner.json'), {
       command: action,
       startedAt: new Date().toISOString(),
@@ -662,5 +669,22 @@ try {
   console.error(error.message);
   process.exitCode = 1;
 } finally {
-  if (locked) await fs.rm(lock, { recursive: true, force: true });
+  if (locked) {
+    try {
+      // Restore/qualification helpers also write private config files. Change
+      // ownership only inside this installation's config, never game files or
+      // symlink targets. Keep every existing file mode intact.
+      const ownConfig = async (directory) => {
+        const entries = await fs.readdir(directory, { withFileTypes: true });
+        for (const entry of entries) {
+          const file = path.join(directory, entry.name);
+          if (entry.isDirectory()) await ownConfig(file);
+          else if (entry.isFile()) await fs.chown(file, hostOwner.uid, hostOwner.gid);
+        }
+        await fs.chown(directory, hostOwner.uid, hostOwner.gid);
+      };
+      const entry = await fs.lstat(configRoot).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+      if (entry?.isDirectory()) await ownConfig(configRoot);
+    } finally { await fs.rm(lock, { recursive: true, force: true }); }
+  }
 }

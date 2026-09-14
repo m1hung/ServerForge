@@ -53,6 +53,12 @@ try {
   await fs.writeFile(path.join(scratch, 'setup.log'), setup, { mode: 0o600 });
   const token = /One-time owner setup token: (\S+)/.exec(setup)?.[1];
   if (!token) throw new Error('Setup did not supply a one-time token.');
+  const configStat = await fs.stat(path.join(scratch, 'config'));
+  const envStat = await fs.stat(path.join(scratch, 'config/.env'));
+  const hostStat = await fs.stat(scratch);
+  if (configStat.uid !== hostStat.uid || envStat.uid !== hostStat.uid || (configStat.mode & 0o777) !== 0o700 || (envStat.mode & 0o777) !== 0o600)
+    throw new Error('The host user must own private configuration without widening its permissions.');
+  result.checks.push('host-owned-private-configuration');
   const composeArgs = ['compose', '--project-directory', path.join(scratch, 'config'), '--env-file', path.join(scratch, 'config/.env'), '-f', path.join(scratch, 'config/compose.yml')];
   // Only this freshly created database is touched. Keep game ports separate
   // from both the live installation and the other qualification fixture.
