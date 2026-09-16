@@ -64,7 +64,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!menuOpen) return;
-    const frame = requestAnimationFrame(() => firstNavLink.current?.focus());
+    firstNavLink.current?.focus();
     const desktop = window.matchMedia('(min-width: 701px)');
     const closeOnDesktop = () => {
       if (desktop.matches) setMenuOpen(false);
@@ -83,6 +83,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         const first = controls[0],
           last = controls.at(-1);
         if (
+          !sidebar.current?.contains(document.activeElement) ||
           (event.shiftKey && document.activeElement === first) ||
           (!event.shiftKey && document.activeElement === last)
         ) {
@@ -93,7 +94,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => {
-      cancelAnimationFrame(frame);
       desktop.removeEventListener('change', closeOnDesktop);
       document.removeEventListener('keydown', closeOnEscape);
     };

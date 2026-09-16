@@ -36,7 +36,8 @@ async function removeFixtureGames(config) {
       for (const id of ids) {
         const [container] = JSON.parse(await run('docker', ['inspect', id]));
         const bind = container.Mounts.find((mount) => mount.Type === 'bind' && mount.Destination === container.Config.WorkingDir);
-        if (container.Config.Labels[label] !== 'true' || !container.Name.startsWith(`/${config.BRAND_RESOURCE_PREFIX}-`) || !bind?.Source.startsWith(path.join(scratch, 'data/servers') + '/'))
+        // Game containers are named after the server, so ownership is the label + fixture mount, not the name.
+        if (container.Config.Labels[label] !== 'true' || !bind?.Source.startsWith(path.join(scratch, 'data/servers') + '/'))
           throw new Error('Refusing cleanup of a container whose fixture mount does not match.');
         await run('docker', ['rm', '-f', id]);
       }

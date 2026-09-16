@@ -87,7 +87,7 @@ try {
   await request(`/servers/${uid}/power`, { action: 'start' });
   let server = (await request(`/servers/${uid}`)).server;
   await waitFor(async () => (await docker(['logs', '--tail', '300', server.containerId])).includes('Done ('), 180000);
-  const count = (await docker(['ps', '-q', '--filter', `name=^/${resourcePrefix}-${uid}$`])).trim().split(/\s+/).filter(Boolean).length;
+  const count = (await docker(['ps', '-q', '--filter', `label=${resourcePrefix}.io/server=${uid}`])).trim().split(/\s+/).filter(Boolean).length;
   assert.equal(count, 1); report.checks.push('retried-modpack-starts', 'exactly-one-game-container');
   await request(`/servers/${uid}/power`, { action: 'stop' });
   report.ok = true;
