@@ -18,7 +18,7 @@ import {
 } from '@serverforge/core';
 import { getAdapter } from '@serverforge/adapters';
 import { requireUser } from '../plugins/auth.js';
-import { loadServer, accessInput, sendServerCommand } from './servers.js';
+import { loadServer, accessInput, sendServerCommand, runtime } from './servers.js';
 import { beginServerOperation, isServerBusy, withServerLock } from '../services/server-lock.js';
 import { localDataPath } from '../lib/storage-paths.js';
 import { prepareServerOwnership } from '../lib/server-files.js';
@@ -67,8 +67,12 @@ async function permissions(request: FastifyRequest, required: ServerPermission[]
   for (const permission of required.slice(1)) await loadServer(id, user, permission);
   return server;
 }
-function stopped(state: string) {
-  if (!['offline', 'crashed'].includes(state))
+async function stopped(request: FastifyRequest) {
+  // Recheck inside the operation lock: a start can finish after the route's
+  // initial permission lookup. Never write files beside a running game.
+  const server = await permissions(request, ['server.files']);
+  if (!['offline', 'crashed'].includes(server.state) ||
+      (server.containerId && (await runtime.status(server.containerId)).running))
     throw conflict('Stop the server before changing its files.');
 }
 
@@ -119,7 +123,7 @@ export async function managementRoutes(app: FastifyInstance) {
       })
       .parse(request.body);
     return withServerLock(server.uid, async () => {
-      stopped(server.state);
+      await stopped(request);
       const result = await writeTextFile(
         localDataPath(server.dataPath),
         body.path,
@@ -135,7 +139,7 @@ export async function managementRoutes(app: FastifyInstance) {
     const server = await permissions(request, ['server.files']);
     const directory = filePathQuerySchema.parse(request.query).path;
     return withServerLock(server.uid, async () => {
-      stopped(server.state);
+      await stopped(request);
       const file = await request.file({ limits: { fileSize: FILE_LIMIT, files: 1, fields: 0 } });
       if (!file || !isSafeFileName(file.filename))
         throw badRequest('Choose a file with a valid name.');
@@ -162,7 +166,7 @@ export async function managementRoutes(app: FastifyInstance) {
     const server = await permissions(request, ['server.files']);
     const body = z.object({ path: z.string().min(1).max(4096) }).parse(request.body);
     return withServerLock(server.uid, async () => {
-      stopped(server.state);
+      await stopped(request);
       await fs.mkdir(await managedFile(localDataPath(server.dataPath), body.path));
       await prepareServerOwnership(localDataPath(server.dataPath));
       return { ok: true };
@@ -173,7 +177,7 @@ export async function managementRoutes(app: FastifyInstance) {
       body = renameFileSchema.parse(request.body),
       root = localDataPath(server.dataPath);
     return withServerLock(server.uid, async () => {
-      stopped(server.state);
+      await stopped(request);
       const from = await managedFile(root, body.from),
         to = await managedFile(root, body.to);
       if (from === root || to === root) throw badRequest('The server root cannot be renamed.');
@@ -194,7 +198,7 @@ export async function managementRoutes(app: FastifyInstance) {
         .object({ path: z.string().min(1).max(4096), destination: z.string().min(1).max(4096) })
         .parse(request.body);
     return withServerLock(server.uid, async () => {
-      stopped(server.state);
+      await stopped(request);
       await unpackFile(localDataPath(server.dataPath), body.path, body.destination);
       await prepareServerOwnership(localDataPath(server.dataPath));
       await activity(

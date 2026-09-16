@@ -83,6 +83,7 @@ export async function qualify(cases, minutes = 180) {
     }
     const system = await request('/system/status'); report.capabilities = system.capabilities;
     report.host = await fs.readFile(path.join(configRoot, 'qualification-host.json'), 'utf8').then(JSON.parse, () => ({ status: 'host evidence unavailable' }));
+    report.candidate = report.host.candidate;
     report.release = JSON.parse(await fs.readFile('/app/release.json', 'utf8'));
     for (const name of selected) {
       if (Date.now() >= deadline) { report.cases.push({ name, status: 'not-run', reason: 'Run deadline reached.' }); continue; }

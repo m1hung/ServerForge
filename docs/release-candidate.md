@@ -1,9 +1,20 @@
 # ServerForge release candidate report
 
-**Status: awaiting platform qualification. This candidate is not approved for
-production or public publication.** The application release checks pass. Native
-AMD64 and ARM64 artifacts are built, scanned and checksummed; successful image
-builds do not qualify a platform or its games.
+**RC2 status: assembly and validation in progress; awaiting platform qualification.**
+Version `0.1.0-rc.2` includes Bedrock and the current dashboard. The schema and
+rollback compatibility declarations are unchanged. The current installation is
+not replaced during assembly. Private bundle manifests identify the committed
+source revision, source digest and exact image IDs; their validation receipts
+must be checked before calling a bundle ready for external testing.
+
+The preceding main check passed application/packaged checks but failed five
+PostgreSQL image findings. Their review and the fixed file-state race are in
+[the RC2 security review](security-review-rc2.md). Qualification export and
+[platform/independent handoffs](platform-handoffs.md) are included. Green CI,
+both-architecture scans, current recovery and a new four-hour unchanged-image
+soak remain mandatory RC2 acceptance gates. External platform/independent results
+and real-client/mod effects must be recorded separately. Historical RC1 evidence
+below does not qualify RC2.
 
 ## Color picker simplification — 2026-09-16 UTC
 

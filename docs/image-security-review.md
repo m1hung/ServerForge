@@ -58,3 +58,13 @@ unmodified scanner findings. Its exact-version exception expires on 2026-10-14.
 [Debian's advisory](https://security-tracker.debian.org/tracker/CVE-2026-19499)
 lists no fixed trixie package at review time. Upgrade to a stable fix when
 available; do not switch the production image to Debian unstable for this issue.
+
+## RC2 review — 2026-09-16
+
+The failed main check's five additional PostgreSQL libxml2 findings were reproduced
+on the supported stable image. [The RC2 review](security-review-rc2.md) records
+individual advisories, the exact vulnerable package, available upstream fixes and
+the non-XML workload assessment. Five separate PostgreSQL-only exceptions expire
+on 2026-10-14; existing exceptions were not broadened or extended. The library is
+still vulnerable and findings remain visible. Both candidate architectures must
+pass fresh scans before external testing is approved.

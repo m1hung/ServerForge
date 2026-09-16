@@ -101,7 +101,7 @@ installation directory, with `SERVERFORGE_HOME` pointing there:
 
 ```bash
 ./serverforge adopt --project serverforge
-./serverforge upgrade 0.1.0-rc.1
+./serverforge upgrade 0.1.0-rc.2
 ```
 
 Replace the project name with the existing Compose project. Adoption verifies

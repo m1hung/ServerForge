@@ -1,14 +1,14 @@
 {
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "status": "awaiting-platform-qualification",
   "schemaVersion": "202609140003_release_candidate",
   "postgresMajor": 17,
-  "postgresImage": "serverforge-postgres:0.1.0-rc.1",
+  "postgresImage": "serverforge-postgres:0.1.0-rc.2",
   "minimumDockerVersion": "24.0.0",
   "minimumComposeVersion": "2.24.0",
   "imageOnlyRollbackFromSchemas": [
     "202609140003_release_candidate"
   ],
   "platformQualification": "pending",
-  "tailscaleImage": "serverforge-tailscale:0.1.0-rc.1"
+  "tailscaleImage": "serverforge-tailscale:0.1.0-rc.2"
 }

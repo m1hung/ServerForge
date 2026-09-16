@@ -24,11 +24,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:unit
-      - run: docker build --file docker/Dockerfile.api --target maintenance --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-maintenance:check .
-      - run: docker build --file docker/Dockerfile.api --target runner --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-api:check .
-      - run: docker build --file docker/Dockerfile.web --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-web:check .
-      - run: docker build --file docker/Dockerfile.services --target postgres --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-postgres:$(node -p 'require("./release.json").version') .
-      - run: docker build --file docker/Dockerfile.services --target tailscale --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-tailscale:$(node -p 'require("./release.json").version') .
+      - run: docker build --file docker/Dockerfile.api --target maintenance --build-arg REVISION=${{ github.sha }} --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-maintenance:check .
+      - run: docker build --file docker/Dockerfile.api --target runner --build-arg REVISION=${{ github.sha }} --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-api:check .
+      - run: docker build --file docker/Dockerfile.web --build-arg REVISION=${{ github.sha }} --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-rc-web:check .
+      - run: docker build --file docker/Dockerfile.services --target postgres --build-arg REVISION=${{ github.sha }} --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-postgres:$(node -p 'require("./release.json").version') .
+      - run: docker build --file docker/Dockerfile.services --target tailscale --build-arg REVISION=${{ github.sha }} --build-arg VERSION=$(node -p 'require("./release.json").version') --tag serverforge-tailscale:$(node -p 'require("./release.json").version') .
       - run: npm run test:integration
       - run: npx playwright install --with-deps chromium
       - run: npm run test:packaged

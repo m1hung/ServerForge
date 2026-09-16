@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { freeSpace } from './recovery.mjs';
 import { parseEnv } from './environment.mjs';
 import net from 'node:net';
+import { candidateIdentity, assertCandidate, qualificationReport } from './qualification-report.mjs';
 
 const installation = '/installation';
 // The launcher creates this directory as the host user. Preserve that user's
@@ -120,9 +121,25 @@ async function imageInfo(image) {
     reference: image,
     digest: details.Id,
     architecture: details.Architecture,
+    revision: details.Config.Labels?.['org.opencontainers.image.revision'] || 'unknown',
     version: details.Config.Labels?.['org.opencontainers.image.version'] || 'unknown',
     postgresMajor: details.Config.Env?.find((entry) => entry.startsWith('PG_MAJOR='))?.slice(9) || null,
   };
+}
+async function qualificationContext() {
+  const configuration = await readConfig();
+  const marker = JSON.parse(await fs.readFile(path.join(configRoot, 'qualification.json'), 'utf8'));
+  if (marker.format !== 1 || marker.project !== configuration.COMPOSE_PROJECT_NAME)
+    throw new Error('Create a separate setup --qualification installation first.');
+  const images = {};
+  for (const key of ['API_IMAGE', 'WEB_IMAGE', 'MAINTENANCE_IMAGE', 'POSTGRES_IMAGE', 'TAILSCALE_IMAGE']) images[key] = await imageInfo(configuration[key]);
+  const candidate = candidateIdentity(configuration.APP_VERSION, images);
+  for (const service of ['api', 'web', 'postgres']) {
+    const id = await compose(['ps', '-q', service]);
+    if (!id || await run('docker', ['inspect', '--format', '{{.Image}}', id]) !== candidate.images[service])
+      throw new Error(`Running ${service} does not match the selected candidate.`);
+  }
+  return { ...await preflight(), candidate, images, checkedAt: new Date().toISOString() };
 }
 async function repairCollation(force = false, beforeReindex = async () => {}) {
   const current = await readConfig();
@@ -680,33 +697,50 @@ try {
   else if (action === 'restore') await restore();
   else if (action === 'upgrade') await upgrade();
   else if (action === 'qualify') {
-    const marker = JSON.parse(await fs.readFile(path.join(configRoot, 'qualification.json'), 'utf8').catch(() => { throw new Error('Create an isolated setup --qualification installation before running game checks.'); }));
-    const configuration = await readConfig();
-    if (marker.project !== configuration.COMPOSE_PROJECT_NAME) throw new Error('Qualification project mismatch.');
-    const host = await preflight();
-    const images = {};
-    for (const key of ['API_IMAGE', 'WEB_IMAGE', 'MAINTENANCE_IMAGE', 'POSTGRES_IMAGE']) images[key] = await imageInfo(configuration[key]);
-    await writeJson(path.join(configRoot, 'qualification-host.json'), { ...host, images, checkedAt: new Date().toISOString() });
+    await writeJson(path.join(configRoot, 'qualification-host.json'), await qualificationContext());
     console.log(await maintenance(['qualify', option('--cases', ''), option('--minutes', '180')], [...(process.env.SF_QUALIFY_EMULATION === 'true' || args.includes('--allow-experimental') ? ['-e', 'SF_QUALIFY_EMULATION=true'] : []), ...(args.includes('--reuse') ? ['-e', 'SF_QUALIFY_REUSE=true'] : [])]));
   }
   else if (action === 'soak') {
-    const marker = JSON.parse(await fs.readFile(path.join(configRoot, 'qualification.json'), 'utf8'));
-    if (marker.project !== (await readConfig()).COMPOSE_PROJECT_NAME) throw new Error('Soak project mismatch.');
+    const context = await qualificationContext();
+    await writeJson(path.join(configRoot, 'qualification-host.json'), context);
     const ids = (await compose(['ps', '-q', 'api', 'web', 'postgres'])).split(/\s+/).filter(Boolean);
     if (ids.length !== 3) throw new Error('All three panel services must be running before a soak.');
     const file = path.join(configRoot, `soak-host-${Date.now()}.jsonl`);
-    let pending;
+    let pending, hostFailure;
+    const configuration = await readConfig();
     const sample = () => {
       if (pending) return;
-      pending = run('docker', ['stats', '--no-stream', '--format', '{{json .}}', ...ids])
-        .then((output) => fs.appendFile(file, JSON.stringify({ at: new Date().toISOString(), containers: output.split('\n').filter(Boolean).map(JSON.parse) }) + '\n', { mode: 0o600 }))
-        .catch((error) => fs.appendFile(file, JSON.stringify({ at: new Date().toISOString(), error: error.message }) + '\n', { mode: 0o600 }))
+      pending = (async () => {
+        const games = (await run('docker', ['ps', '-a', '--filter', `label=${configuration.BRAND_RESOURCE_PREFIX}.io/managed=true`, '--format', `{{.Label "${configuration.BRAND_RESOURCE_PREFIX}.io/server"}}`])).split('\n').filter(Boolean);
+        if (new Set(games).size !== games.length) throw new Error('Duplicate owned game containers detected.');
+        const services = JSON.parse(await run('docker', ['inspect', ...ids]));
+        for (const service of services) {
+          const name = service.Config.Labels['com.docker.compose.service'];
+          if (service.Image !== context.candidate.images[name] || !service.State.Running || service.RestartCount !== 0) throw new Error(`Unexpected ${name} image, exit or restart during soak.`);
+        }
+        return run('docker', ['stats', '--no-stream', '--format', '{{json .}}', ...ids]);
+      })()
+        .then((output) => fs.appendFile(file, JSON.stringify({ candidate: context.candidate, at: new Date().toISOString(), containers: output.split('\n').filter(Boolean).map(JSON.parse) }) + '\n', { mode: 0o600 }))
+        .catch((error) => { hostFailure = error; return fs.appendFile(file, JSON.stringify({ candidate: context.candidate, at: new Date().toISOString(), error: error.message }) + '\n', { mode: 0o600 }); })
         .finally(() => { pending = undefined; });
     };
     sample();
     const timer = setInterval(sample, 30000);
-    try { console.log(await maintenance(['soak', option('--server', ''), option('--minutes', '240')])); }
+    try {
+      console.log(await maintenance(['soak', option('--server', ''), option('--minutes', '240')]));
+      await pending;
+      if (hostFailure) throw hostFailure;
+      assertCandidate((await qualificationContext()).candidate, context.candidate);
+    }
     finally { clearInterval(timer); await pending; console.log(`Host resource samples: ${hostRoot}/config/${path.basename(file)}`); }
+  }
+  else if (action === 'qualification-report') {
+    const configuration = await readConfig();
+    const context = await qualificationContext();
+    const secrets = Object.entries(configuration).filter(([key]) => /SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL/.test(key)).map(([, value]) => value);
+    const report = await qualificationReport(configRoot, configuration.COMPOSE_PROJECT_NAME, context.candidate, context, secrets);
+    await writeJson(path.join(configRoot, 'qualification-submission.json'), report);
+    console.log(`Redacted qualification evidence: ${hostRoot}/config/qualification-submission.json`);
   }
   else if (action === 'rollback') await rollback();
   else if (action === 'reset-password') {
@@ -717,7 +751,7 @@ try {
     console.log(await maintenance(['reset-password', ...args]));
   } else
     throw new Error(
-      'Commands: setup, adopt, start, stop, status, diagnostics, backup, verify, restore, upgrade, rollback, reset-password.',
+      'Commands: setup, adopt, start, stop, status, diagnostics, backup, verify, restore, upgrade, rollback, reset-password, qualify, soak, qualification-report.',
     );
 } catch (error) {
   console.error(error.message);

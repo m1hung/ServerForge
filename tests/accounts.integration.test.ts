@@ -94,6 +94,16 @@ it('assigns invitation server permissions and enforces API-key scope ceilings', 
   expect((await app.inject({ url: '/api/account/api-keys', headers })).statusCode).toBe(403);
   expect((await prisma.apiKey.findFirstOrThrow()).expiresAt!.getTime() - Date.now()).toBeGreaterThan(89 * 86400000);
 });
+it('keeps ordinary users outside the Docker administration and host maintenance boundary', async () => {
+  const link = await invite();
+  const accepted = await request('/auth/invites/accept', { token: link.token, username: 'ordinary', password }, 'POST', '');
+  const auth = accepted.cookies[0].name + '=' + accepted.cookies[0].value;
+  for (const url of ['/api/nodes', '/api/system/status', '/api/network', '/api/admin/users', '/api/admin/invites'])
+    expect((await app.inject({ url, headers: { cookie: auth } })).statusCode, url).toBe(403);
+  for (const url of ['/servers', '/network/tailscale/connect', '/network/tailscale/serve'])
+    expect((await request(url, { enabled: true, startupOverride: '/bin/sh' }, 'POST', auth)).statusCode, url).toBe(403);
+  expect((await request('/internal/maintenance/begin', { kind: 'full' }, 'POST', auth)).statusCode).toBe(401);
+});
 it('protects the last owner and revokes access immediately on suspension', async () => {
   expect((await request(`/admin/users/${ownerUid}`, { ...proof, suspended: true }, 'PATCH')).statusCode).toBe(400);
   const link = await invite();

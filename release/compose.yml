@@ -114,7 +114,7 @@ services:
     depends_on:
       api: { condition: service_healthy }
   tailscale:
-    image: ${TAILSCALE_IMAGE:-serverforge-tailscale:0.1.0-rc.1}
+    image: ${TAILSCALE_IMAGE:-serverforge-tailscale:0.1.0-rc.2}
     profiles: [tailscale]
     restart: unless-stopped
     entrypoint: ['/bin/sh', '/config/start.sh']

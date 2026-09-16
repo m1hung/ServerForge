@@ -211,9 +211,9 @@ preserves the installed database and Tailscale image IDs. To apply their reviewe
 updates after loading the complete candidate archive, select them explicitly:
 
 ```bash
-./serverforge upgrade 0.1.0-rc.1 \
-  --postgres-image serverforge-postgres:0.1.0-rc.1 \
-  --tailscale-image serverforge-tailscale:0.1.0-rc.1
+./serverforge upgrade 0.1.0-rc.2 \
+  --postgres-image serverforge-postgres:0.1.0-rc.2 \
+  --tailscale-image serverforge-tailscale:0.1.0-rc.2
 ```
 
 The database image must remain PostgreSQL major version 17. This command is not

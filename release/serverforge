@@ -8,7 +8,7 @@ docker info >/dev/null 2>&1 || { echo 'Docker is unavailable. Start Docker and c
 endpoint="${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}"
 case "$endpoint" in unix://*) socket="${endpoint#unix://}";; *) echo 'Use a local Linux-container Docker context (Windows: run this launcher inside WSL2).' >&2; exit 1;; esac
 case "$(docker info --format '{{.OperatingSystem}}')" in *Docker\ Desktop*) socket=/var/run/docker.sock;; esac
-image="${SERVERFORGE_MAINTENANCE_IMAGE:-serverforge-maintenance:0.1.0-rc.1}"
+image="${SERVERFORGE_MAINTENANCE_IMAGE:-serverforge-maintenance:0.1.0-rc.2}"
 docker image inspect "$image" >/dev/null 2>&1 || { echo "Load the candidate image archive first: docker load -i serverforge-images.tar" >&2; exit 1; }
 terminal=()
 if [ -t 0 ] && [ -t 1 ]; then terminal=(-it); fi

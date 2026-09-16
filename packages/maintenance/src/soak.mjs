@@ -15,6 +15,7 @@ export async function soak(uid, minutes = 240) {
   const root = path.join(config, 'qualification-results', `soak-${new Date().toISOString().replaceAll(':', '-')}-${randomBytes(3).toString('hex')}`);
   await fs.mkdir(root, { recursive: true, mode: 0o700 });
   const report = { format: 'serverforge-mixed-operation-soak', version: 1, uid, requestedMinutes: minutes, startedAt: new Date(started).toISOString(), status: 'running', ok: false, cycles: [], samples: [], limitations: ['Only the selected isolated Minecraft server is exercised. Game compatibility, external-client connectivity and host installation/recovery require their own qualification evidence.'] };
+  report.candidate = JSON.parse(await fs.readFile(path.join(config, 'qualification-host.json'), 'utf8')).candidate;
   const save = () => fs.writeFile(path.join(root, 'result.json'), redactText(JSON.stringify(report, null, 2), [credentials.password, credentials.setupToken || '']) + '\n', { mode: 0o600 });
   let cookie, stopped = false;
   const interrupt = () => { stopped = true; };
@@ -40,7 +41,7 @@ export async function soak(uid, minutes = 240) {
       while (!controller.signal.aborted) {
         const response = await fetch(`${base}/api/servers/${uid}/console/stream`, { headers: { cookie }, signal: controller.signal });
         if (!response.ok) throw new Error('Console stream unavailable.');
-        for await (const bytes of response.body) {
+        for await (const bytes of response.body.values({ preventCancel: true })) {
           text = (text + Buffer.from(bytes).toString()).slice(-256000);
           if (text.includes(expected)) return;
         }
@@ -95,7 +96,7 @@ export async function soak(uid, minutes = 240) {
       const until = Math.min(deadline, Date.now() + 10 * 60000);
       while (Date.now() < until && !stopped) {
         const [status, usage, current] = await Promise.all([request('/system/status'), request(`/servers/${uid}/resources`), game()]);
-        if (!status.ok || current.state !== 'running' || !usage.usage || usage.usage.memoryBytes <= 0)
+        if (!status.ok || status.activeOperations.length !== 0 || current.state !== 'running' || !usage.usage || usage.usage.memoryBytes <= 0)
           throw new Error('Readiness, game state or real telemetry became unavailable.');
         report.samples.push({ at: new Date().toISOString(), panel: status.processMetrics, game: usage.usage, activeOperations: status.activeOperations.length });
         await save();

@@ -6,19 +6,20 @@ import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as tar from 'tar';
+import { snapshotSource } from './lib/candidate-source.mjs';
+import { verifyCandidate } from './lib/verify-candidate.mjs';
 
 const repo = path.resolve(import.meta.dirname, '..');
 const release = JSON.parse(await fs.readFile(path.join(repo, 'release.json'), 'utf8'));
 const output = path.resolve(process.env.SF_CANDIDATE_OUTPUT || path.join(repo, 'data/candidates', `${release.version}-${new Date().toISOString().replaceAll(':', '-')}`));
-await fs.mkdir(output, { recursive: true, mode: 0o700 });
 const source = path.join(output, 'source');
-await fs.mkdir(source, { mode: 0o700 });
 const endpoint = process.env.DOCKER_HOST || (process.env.DOCKER_SOCKET ? `unix://${process.env.DOCKER_SOCKET}` : execFileSync('docker', ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], { encoding: 'utf8' }).trim());
 const env = { ...process.env, DOCKER_HOST: endpoint };
 const minutes = Number(process.env.SF_CANDIDATE_MINUTES || 330);
 if (!Number.isFinite(minutes) || minutes < 1 || minutes > 330) throw new Error('Packaging must be bounded to 1–330 minutes.');
 const deadline = Date.now() + minutes * 60000;
 const report = { format: 'serverforge-candidate-artifacts', version: 1, release: release.version, startedAt: new Date().toISOString(), status: 'building', qualified: false, architectures: [], limitations: ['Artifact creation is not platform qualification. Consult the release report and actual tester/soak evidence.'] };
+let created = false;
 const save = () => fs.writeFile(path.join(output, 'result.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
 async function command(program, args, options = {}) {
   if (Date.now() >= deadline) throw new Error('The packaging time checkpoint was reached.');
@@ -45,21 +46,11 @@ async function filesUnder(directory) {
   return files;
 }
 try {
-  const listed = [...new Set(execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: repo }).toString().split('\0').filter(Boolean))].sort();
-  const sourceFiles = [];
-  for (const name of listed) {
-    const original = path.join(repo, name);
-    const stat = await fs.lstat(original).catch(() => null);
-    if (!stat) continue; // Removed tracked files do not belong in this source tree.
-    if (!stat.isFile() || /(^|\/)\.env($|\.(?!example$))/.test(name)) throw new Error(`Refusing non-source or secret input: ${name}`);
-    const destination = path.join(source, name);
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.copyFile(original, destination);
-    await fs.chmod(destination, stat.mode & 0o777);
-    sourceFiles.push({ path: name, sha256: await hash(destination) });
-  }
-  report.sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
-  report.sourceDigest = createHash('sha256').update(JSON.stringify(sourceFiles)).digest('hex');
+  const snapshot = await snapshotSource(repo, output);
+  created = true;
+  const { sourceFiles } = snapshot;
+  report.sourceRevision = snapshot.sourceRevision;
+  report.sourceDigest = snapshot.sourceDigest;
   await fs.writeFile(path.join(output, 'source-files.json'), JSON.stringify(sourceFiles, null, 2) + '\n');
   await tar.c({ cwd: source, file: path.join(output, 'source.tar.gz'), gzip: true, portable: true }, ['.']);
   for (const architecture of ['amd64', 'arm64']) {
@@ -71,9 +62,10 @@ try {
     for (const component of ['api', 'web', 'maintenance', 'postgres', 'tailscale']) {
       const reference = `serverforge-${component}:${release.version}-${architecture}`;
       const standardReference = `serverforge-${component}:${release.version}`;
-      await command('docker', ['build', '--platform', `linux/${architecture}`, '--provenance=false', '-f', component === 'web' ? 'docker/Dockerfile.web' : ['postgres', 'tailscale'].includes(component) ? 'docker/Dockerfile.services' : 'docker/Dockerfile.api', '--target', ['maintenance', 'postgres', 'tailscale'].includes(component) ? component : 'runner', '--build-arg', `VERSION=${release.version}`, '--build-arg', `REVISION=${report.sourceDigest}`, '-t', reference, '.']);
+      await command('docker', ['build', '--platform', `linux/${architecture}`, '--provenance=false', '-f', component === 'web' ? 'docker/Dockerfile.web' : ['postgres', 'tailscale'].includes(component) ? 'docker/Dockerfile.services' : 'docker/Dockerfile.api', '--target', ['maintenance', 'postgres', 'tailscale'].includes(component) ? component : 'runner', '--build-arg', `VERSION=${release.version}`, '--build-arg', `REVISION=${report.sourceRevision}`, '-t', reference, '.']);
       const [details] = JSON.parse(execFileSync('docker', ['image', 'inspect', reference], { env, encoding: 'utf8' }));
       if (details.Architecture !== architecture) throw new Error('Build produced the wrong architecture.');
+      if (details.Config.Labels?.['org.opencontainers.image.version'] !== release.version || details.Config.Labels?.['org.opencontainers.image.revision'] !== report.sourceRevision) throw new Error('Build produced the wrong release metadata.');
       await command('docker', ['tag', reference, standardReference]);
       entry.images.push({ component, reference: standardReference, localReference: reference, digest: details.Id, architecture, sourceDigest: report.sourceDigest });
     }
@@ -96,6 +88,7 @@ try {
     const sums = [];
     for (const file of (await filesUnder(directory)).sort()) sums.push(`${await hash(file)}  ${path.relative(directory, file)}`);
     await fs.writeFile(path.join(directory, 'SHA256SUMS'), sums.join('\n') + '\n');
+    entry.verification = await verifyCandidate(directory);
     await save();
   }
   const hostArchitecture = execFileSync('docker', ['info', '--format', '{{.Architecture}}'], { env, encoding: 'utf8' }).trim();
@@ -103,4 +96,4 @@ try {
   for (const image of native?.images || []) await command('docker', ['tag', image.localReference, image.reference]);
   report.status = 'artifacts-built-awaiting-qualification';
 } catch (error) { report.status = 'incomplete'; report.error = error.message; process.exitCode = 1; }
-finally { report.finishedAt = new Date().toISOString(); await save(); console.log(`Artifact checkpoint: ${output}`); }
+finally { report.finishedAt = new Date().toISOString(); if (created) await save(); console.log(`Artifact checkpoint: ${output}`); }

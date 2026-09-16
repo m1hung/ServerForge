@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
   callback: undefined as any,
   upsert: vi.fn(),
   stdin: vi.fn(),
+  findServer: vi.fn(),
+  runtimeStatus: vi.fn(),
 }));
 vi.mock('@serverforge/db', () => ({
   uid: () => Math.random().toString(36).slice(2),
@@ -29,7 +31,7 @@ vi.mock('@serverforge/db', () => ({
     JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? Number(x) : x))),
   prisma: {
     server: {
-      findUnique: async () => state.server,
+      findUnique: state.findServer,
       findUniqueOrThrow: async () => state.server,
       update: async ({ data }: any) => {
         state.update(data);
@@ -93,7 +95,7 @@ vi.mock('../apps/api/src/runtime/docker.js', () => ({
     remove = async () => undefined;
     create = async () => 'new-container';
     ensureImage = async () => undefined;
-    status = async () => ({ exists: false, running: false });
+    status = state.runtimeStatus;
     writeStdin = state.stdin;
     streamLogs = async (_id: string, callbacks: any) => {
       state.callback = callbacks;
@@ -150,6 +152,8 @@ import { withServerLock } from '../apps/api/src/services/server-lock.js';
 let root: string, app: FastifyInstance;
 beforeEach(async () => {
   vi.clearAllMocks();
+  state.findServer.mockReset().mockImplementation(async () => state.server);
+  state.runtimeStatus.mockReset().mockResolvedValue({ exists: false, running: false });
   state.backups = [];
   state.activities = [];
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'sf-management-'));
@@ -401,6 +405,16 @@ describe('management authorization and conflicts', () => {
       expect((await call('/files/content', 'PUT', body)).statusCode).toBe(409);
     });
     expect(await fs.readFile(path.join(state.server.dataPath, 'file.txt'), 'utf8')).toBe('old');
+  });
+  it('rechecks file mutation state after acquiring the lock and refuses a still-running container', async () => {
+    const initial = { ...state.server };
+    state.findServer.mockResolvedValueOnce(initial).mockResolvedValue({ ...initial, state: 'running' });
+    expect((await call('/files/folder', 'POST', { path: 'blocked' })).statusCode).toBe(409);
+    expect(await fs.stat(path.join(initial.dataPath, 'blocked')).catch(() => null)).toBeNull();
+    state.findServer.mockResolvedValue({ ...initial, state: 'crashed', containerId: 'still-running' });
+    state.runtimeStatus.mockResolvedValue({ exists: true, running: true });
+    expect((await call('/files/folder', 'POST', { path: 'blocked' })).statusCode).toBe(409);
+    expect(await fs.stat(path.join(initial.dataPath, 'blocked')).catch(() => null)).toBeNull();
   });
   it('does not let scheduling access grant power or backup capabilities', async () => {
     const response = await call(

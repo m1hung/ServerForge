@@ -28,7 +28,7 @@ part of a diagnostic submission.
 ## Game checks
 
 ```bash
-./serverforge qualify --cases vanilla,paper,purpur,fabric,forge,neoforge --minutes 150
+./serverforge qualify --cases bedrock,vanilla,paper,purpur,fabric,forge,neoforge --minutes 150
 ./serverforge qualify --cases valheim,valheim-bepinex,palworld,palworld-pak --minutes 150
 ```
 
@@ -110,11 +110,24 @@ Document any host permission or file-sharing steps required by Docker Desktop.
 
 ## Submit evidence
 
-Results are under `config/qualification-results/`; host samples are
-`config/soak-host-*.jsonl`. `serverforge diagnostics` produces a separate redacted
-host report. Submit those reports and relevant redacted logs, plus your completed
-check table. Do not submit `.env`, setup/owner credentials, session cookies,
-TOTP/recovery codes, raw backup bundles or the qualification credential marker.
+Run the host-only exporter on the original marked fixture while its panel is running:
+
+```bash
+./serverforge qualification-report
+```
+
+Submit `config/qualification-submission.json` and your separately completed
+manual checklist. The export contains allowlisted structured game/soak results,
+resource samples, host versions and exact candidate identifiers; raw console logs,
+credentials, `.env` and backups are excluded. It refuses evidence belonging to
+another candidate and leaves manual checks as `not-tested`. Keep raw local evidence
+private for investigation. Never submit `config/qualification.json`, browser
+credentials, sessions, TOTP/recovery codes or raw recovery bundles.
+
+See [platform handoffs](platform-handoffs.md) for separate Linux Engine,
+Windows/WSL2, Intel Mac and Apple Silicon instructions, independent installation/
+recovery exercises and manual accessibility checks. See
+[security review](security-review-rc2.md) for the independent security handoff.
 
 The release maintainer combines automated, browser, game, recovery and soak
 results. Linux Engine, Linux Desktop, Windows/WSL2, Intel Mac and Apple Silicon
