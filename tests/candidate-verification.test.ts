@@ -44,6 +44,17 @@ it('verifies archive contents and rejects corruption and mismatched image eviden
       await fs.writeFile(path.join(directory, 'SHA256SUMS'), lines.join('\n') + '\n');
     };
     await checksums(); expect((await verifyCandidate(directory)).ok).toBe(true);
+    // Docker Desktop's containerd store uses the OCI manifest ID, whereas
+    // the classic Docker store uses the config ID verified above.
+    const oci = JSON.stringify({ schemaVersion: 2, config: { digest: images[0].digest }, layers: [] });
+    const ociDigest = hash(oci);
+    await fs.mkdir(path.join(imageRoot, 'blobs/sha256'), { recursive: true });
+    await fs.writeFile(path.join(imageRoot, 'blobs/sha256', ociDigest), oci);
+    images[0].digest = `sha256:${ociDigest}`; scans[0].digest = images[0].digest;
+    await tar.c({ cwd: imageRoot, file: path.join(directory, 'serverforge-images.tar'), portable: true }, ['.']);
+    await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify(manifest));
+    await fs.writeFile(path.join(directory, 'security/result.json'), JSON.stringify({ format: 'serverforge-image-security', ok: true, images: scans }));
+    await checksums(); expect((await verifyCandidate(directory)).ok).toBe(true);
     await fs.writeFile(path.join(directory, 'serverforge'), 'tampered');
     await expect(verifyCandidate(directory)).rejects.toThrow(/Checksum mismatch/);
     await fs.writeFile(path.join(directory, 'serverforge'), 'launcher');

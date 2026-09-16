@@ -60,14 +60,22 @@ export async function verifyCandidate(directory) {
   const header = await archive(imageArchive, (name) => name === 'manifest.json');
   const saved = JSON.parse(header.get('manifest.json')?.toString() || 'null');
   if (!Array.isArray(saved) || saved.length !== 5 || manifest.images?.length !== 5) throw new Error('Expected exactly five candidate images.');
-  const configs = await archive(imageArchive, (name) => saved.some((image) => image.Config === name));
+  const configs = await archive(imageArchive, (name) => saved.some((image) => image.Config === name) || manifest.images.some((image) => name === `blobs/sha256/${image.digest.slice(7)}`));
   const security = await json('security/result.json');
   if (security.format !== 'serverforge-image-security' || security.ok !== true || security.images?.length !== 5) throw new Error('Candidate image security evidence is incomplete.');
   for (const component of ['api', 'web', 'maintenance', 'postgres', 'tailscale']) {
     const image = manifest.images.find((entry) => entry.component === component);
     const savedImage = image && saved.find((entry) => entry.RepoTags?.includes(image.reference));
     const bytes = savedImage && configs.get(savedImage.Config);
-    if (!bytes || `sha256:${digest(bytes)}` !== image.digest) throw new Error(`Packaged image mismatch: ${component}`);
+    if (!bytes) throw new Error(`Packaged image mismatch: ${component}`);
+    const configDigest = `sha256:${digest(bytes)}`;
+    // Classic Docker identifies an image by its config; the containerd store
+    // identifies the OCI manifest. Validate the latter's config link as well.
+    if (configDigest !== image.digest) {
+      const oci = configs.get(`blobs/sha256/${image.digest.slice(7)}`);
+      if (!oci || `sha256:${digest(oci)}` !== image.digest || JSON.parse(oci.toString()).config?.digest !== configDigest)
+        throw new Error(`Packaged image mismatch: ${component}`);
+    }
     const config = JSON.parse(bytes.toString());
     if (config.architecture !== manifest.architecture || config.os !== 'linux' || config.config.Labels?.['org.opencontainers.image.version'] !== manifest.release || config.config.Labels?.['org.opencontainers.image.revision'] !== manifest.sourceRevision)
       throw new Error(`Packaged image architecture/version mismatch: ${component}`);
