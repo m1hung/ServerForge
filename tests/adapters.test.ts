@@ -58,7 +58,7 @@ function contextFor(adapter: typeof minecraftAdapter, variantId: string): Server
 
 describe('registry', () => {
   it('exposes every registered game', () => {
-    expect(listAdapters().map((a) => a.id)).toEqual(['minecraft-java', 'palworld', 'valheim']);
+    expect(listAdapters().map((a) => a.id)).toEqual(['minecraft-java', 'minecraft-bedrock', 'palworld', 'valheim']);
   });
 
   it('throws a 404-shaped error for an unknown game', () => {
@@ -108,6 +108,7 @@ describe('registry', () => {
    */
   it('only claims to report players when inspectLog actually does', () => {
     const samples: Record<string, string[]> = {
+      'minecraft-bedrock': ['[2026-09-15 12:00:00:000 INFO] Player connected: Alex Bedrock, xuid: 123456789, pfid: abc'],
       'minecraft-java': [
         '[12:00:00] [Server thread/INFO]: Notch joined the game',
         '[12:00:00] [Server thread/INFO]: Notch left the game',

@@ -5,6 +5,7 @@ import { permissionLabels } from '@/lib/permission-labels';
 import { PageTitle } from '@/components/PageTitle';
 import { CopyButton } from '@/components/CopyButton';
 import { SecurityDialog, type SecurityProof } from '@/components/SecurityDialog';
+import { PreferencesSettings } from '@/components/Preferences';
 
 type Account = {
   username: string;
@@ -112,7 +113,9 @@ export default function AccountPage() {
         <div>
           <div className="eyebrow">YOUR PROFILE & SECURITY</div>
           <PageTitle>Account</PageTitle>
-          <p className="muted">Manage your sign-in security, devices, and connected tools.</p>
+          <p className="muted">
+            Personalize your dashboard and manage sign-in security, devices, and connected tools.
+          </p>
         </div>
         {user && (
           <span className="status-pill neutral">
@@ -142,6 +145,7 @@ export default function AccountPage() {
       )}
       <div className="settings-page">
         <nav className="section-links" aria-label="Account sections">
+          <a href="#preferences">Appearance & preferences</a>
           <a href="#security">Sign-in security</a>
           <a href="#devices">Signed-in devices</a>
           <a href="#api-keys">API keys</a>
@@ -172,6 +176,7 @@ export default function AccountPage() {
             </div>
           </section>
         )}
+        <PreferencesSettings />
         <section className="card stack" id="security">
           <div className="section-heading">
             <h2>Sign-in security</h2>

@@ -1,3 +1,5 @@
+import type { Preferences } from './preferences';
+
 export type Server = {
   uid: string;
   name: string;
@@ -54,7 +56,7 @@ export function filterServers(servers: Server[], query: string, status: string, 
   return servers.filter(
     (server) =>
       (!search ||
-        `${server.name} ${server.gameId} ${server.variantId} ${joinAddress(server) ?? ''}`
+        `${server.name} ${server.description ?? ''} ${displayName(server.gameId)} ${server.gameId} ${server.variantId} ${joinAddress(server) ?? ''}`
           .toLowerCase()
           .includes(search)) &&
       (status === 'all' ||
@@ -62,5 +64,27 @@ export function filterServers(servers: Server[], query: string, status: string, 
           ? statusTone(server.state) === 'danger'
           : server.state === status)) &&
       (game === 'all' || server.gameId === game),
+  );
+}
+
+export function sortServers(
+  servers: Server[],
+  sort: Preferences['serverSort'],
+  favorites: string[],
+) {
+  const starred = new Set(favorites);
+  const rank = (server: Server) =>
+    sort === 'favorites'
+      ? Number(starred.has(server.uid))
+      : sort === 'running'
+        ? Number(server.state === 'running')
+        : sort === 'attention'
+          ? Number(statusTone(server.state) === 'danger')
+          : 0;
+  return [...servers].sort(
+    (a, b) =>
+      rank(b) - rank(a) ||
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) ||
+      a.uid.localeCompare(b.uid),
   );
 }

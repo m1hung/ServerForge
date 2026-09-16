@@ -9,6 +9,9 @@ it('keeps native ARM game support distinct from emulation and refuses unsupporte
   expect(gameCompatibility('valheim', capabilities('arm64'))).toMatchObject({ platform: 'linux/amd64', status: 'experimental' });
   expect(gameCompatibility('palworld', capabilities('arm64'), 'linux/arm64').status).toBe('unsupported');
   expect(gameCompatibility('minecraft-java', capabilities('amd64')).status).toBe('supported');
+  expect(gameCompatibility('minecraft-bedrock', capabilities('amd64')).status).toBe('supported');
+  expect(gameCompatibility('minecraft-bedrock', capabilities('arm64'))).toMatchObject({ platform: 'linux/amd64', status: 'experimental' });
+  expect(gameCompatibility('minecraft-bedrock', capabilities('arm64'), 'linux/arm64').status).toBe('unsupported');
 });
 it('requires explicit experimental consent and rejects invalid saved platforms', async () => {
   await expect(selectGamePlatform('valheim')).rejects.toThrow(/emulation/);

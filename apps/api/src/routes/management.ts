@@ -278,7 +278,7 @@ export async function managementRoutes(app: FastifyInstance) {
   });
   app.post('/servers/:uid/updates/prepare', async (request, reply) => {
     const server = await permissions(request, ['server.settings', 'server.mods']);
-    if (!['minecraft-java', 'valheim', 'palworld'].includes(server.gameId))
+    if (!['minecraft-java', 'minecraft-bedrock', 'valheim', 'palworld'].includes(server.gameId))
       throw badRequest('Staged updates are supported for Minecraft, Valheim, and Palworld.');
     if (request.isMultipart()) {
       return withServerLock(server.uid, async () => {
@@ -382,7 +382,9 @@ export async function managementRoutes(app: FastifyInstance) {
     const server = await permissions(request, ['server.console']);
     const body = z
       .object({
-        player: z.string().regex(/^[a-zA-Z0-9_]{1,16}$/),
+        player: server.gameId === 'minecraft-bedrock'
+          ? z.string().trim().regex(/^[\p{L}\p{N}_ -]{1,32}$/u, 'Enter a gamertag using letters, numbers, spaces, underscores or hyphens.')
+          : z.string().regex(/^[a-zA-Z0-9_]{1,16}$/),
         action: z.enum([
           'whitelist-add',
           'whitelist-remove',
@@ -394,18 +396,21 @@ export async function managementRoutes(app: FastifyInstance) {
         ]),
       })
       .parse(request.body);
-    if (server.gameId !== 'minecraft-java')
+    if (!['minecraft-java', 'minecraft-bedrock'].includes(server.gameId))
       throw badRequest('Use this game’s supported admin commands in the console.');
+    const bedrock = server.gameId === 'minecraft-bedrock';
+    if (bedrock && ['ban', 'pardon'].includes(body.action))
+      throw badRequest('Bedrock uses an allowlist instead of Java ban commands. Enable Invite-only game and remove the player from the allowlist.');
     const prefix = {
-      'whitelist-add': 'whitelist add',
-      'whitelist-remove': 'whitelist remove',
+      'whitelist-add': bedrock ? 'allowlist add' : 'whitelist add',
+      'whitelist-remove': bedrock ? 'allowlist remove' : 'whitelist remove',
       kick: 'kick',
       ban: 'ban',
       pardon: 'pardon',
       op: 'op',
       deop: 'deop',
     }[body.action];
-    const output = await sendServerCommand(server, `${prefix} ${body.player}`);
+    const output = await sendServerCommand(server, `${prefix} ${bedrock ? `"${body.player}"` : body.player}`);
     await activity(
       server.id,
       'player.action',

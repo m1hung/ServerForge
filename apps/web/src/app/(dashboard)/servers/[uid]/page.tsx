@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import { useParams } from 'next/navigation';
 import { ServerConsole } from '@/components/ServerConsole';
 import { ServerResources } from '@/components/ServerResources';
@@ -10,7 +10,8 @@ import { ServerConfiguration } from '@/components/ServerConfiguration';
 import { ModsPanel } from '@/components/ModsPanel';
 import { Icon } from '@/components/Icon';
 import { PageTitle } from '@/components/PageTitle';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { useNavigationGuard } from '@/components/UnsavedChanges';
 import { ServerShare } from '@/components/ServerShare';
 import { InstallationStatus } from '@/components/InstallationStatus';
 import { copyText } from '@/lib/clipboard';
@@ -18,14 +19,30 @@ import { displayName, joinAddress, memoryLabel, statusTone, type Server } from '
 
 export default function ServerPage() {
   const { uid } = useParams<{ uid: string }>();
+  return <ServerDetail key={uid} uid={uid} />;
+}
+
+function ServerDetail({ uid }: { uid: string }) {
+  const navigation = useNavigationGuard();
+  const [loadStatus, setLoadStatus] = useState<number | null>(null);
   const [server, setServer] = useState<Server | null>(null);
   const [command, setCommand] = useState('');
   const commandInput = useRef<HTMLInputElement>(null);
+  const history = useRef<string[]>([]);
+  const historyPosition = useRef(0);
+  const commandDraft = useRef('');
   const [output, setOutput] = useState('');
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState('');
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    history.current = [];
+    historyPosition.current = 0;
+    commandDraft.current = '';
+    setCommand('');
+    setOutput('');
+  }, [uid]);
   type View = 'overview' | 'mods' | 'configuration' | ServerTool;
   const [view, setView] = useState<View>('overview');
   useEffect(() => {
@@ -44,8 +61,10 @@ export default function ServerPage() {
     return () => window.removeEventListener('hashchange', readView);
   }, [uid]);
   function selectView(next: View) {
-    setView(next);
-    window.location.hash = next;
+    navigation.request(new URL(`#${next}`, location.href), () => {
+      setView(next);
+      window.location.hash = next;
+    });
   }
   const canPower = server?.permissions?.includes('server.power') ?? true;
   const selectedTool = serverTools.find((tool) => tool.id === view);
@@ -61,7 +80,9 @@ export default function ServerPage() {
       const data = await api<{ server: Server }>(`/api/servers/${uid}`);
       setServer(data.server);
       setLoadError('');
+      setLoadStatus(null);
     } catch (err) {
+      setLoadStatus(err instanceof ApiError ? err.status : null);
       setLoadError(err instanceof Error ? err.message : 'Could not refresh server.');
     }
   }, [uid]);
@@ -105,6 +126,10 @@ export default function ServerPage() {
         body: JSON.stringify({ command }),
       });
       setOutput(`> ${command}\n${result.output || 'Command sent.'}`);
+      if (history.current.at(-1) !== command)
+        history.current = [...history.current, command].slice(-30);
+      historyPosition.current = history.current.length;
+      commandDraft.current = '';
       setCommand('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send command.');
@@ -114,6 +139,7 @@ export default function ServerPage() {
   }
 
   function insertCommand(template: string) {
+    historyPosition.current = history.current.length;
     setCommand(template);
     requestAnimationFrame(() => {
       commandInput.current?.focus();
@@ -148,11 +174,32 @@ export default function ServerPage() {
             </span>
           )}
         </div>
+        {!server && (
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">YOUR SERVERS</div>
+              <PageTitle>
+                {loadStatus === 404
+                  ? 'Server not found'
+                  : loadError
+                    ? 'Server unavailable'
+                    : 'Loading server'}
+              </PageTitle>
+              <p className="muted">
+                {loadStatus === 404
+                  ? 'This link may be out of date, or you may no longer have access.'
+                  : loadError
+                    ? 'Your server details could not be loaded. Try again or return to your servers.'
+                    : 'Getting the latest status and available tools.'}
+              </p>
+            </div>
+          </div>
+        )}
         {(error || loadError) && (
           <div className="error-banner" role="alert">
             <Icon name="alert" size={18} />
             <div>{error || loadError}</div>
-            {loadError && (
+            {loadError && loadStatus !== 404 && (
               <button className="text-button" onClick={() => void refresh()}>
                 Retry
               </button>
@@ -162,9 +209,13 @@ export default function ServerPage() {
         {!server ? (
           <div className="card empty-state" role="status">
             <Icon name="server" size={30} />
-            <p className="muted">
-              {loadError ? 'Server details are unavailable.' : 'Loading your server…'}
-            </p>
+            {loadError ? (
+              <Link className="btn secondary" href="/#servers">
+                Back to your servers
+              </Link>
+            ) : (
+              <p className="muted">Loading your server…</p>
+            )}
           </div>
         ) : (
           <>
@@ -263,14 +314,14 @@ export default function ServerPage() {
                 Overview
               </button>
               <button aria-pressed={view === 'mods'} onClick={() => selectView('mods')}>
-                Mods & plugins
+                {server.gameId === 'minecraft-bedrock' ? 'Add-ons' : 'Mods & plugins'}
               </button>
               {server.canConfigure !== false && (
                 <button
                   aria-pressed={view === 'configuration'}
                   onClick={() => selectView('configuration')}
                 >
-                  Configuration
+                  Settings
                 </button>
               )}
               {serverTools
@@ -347,8 +398,37 @@ export default function ServerPage() {
                       <input
                         ref={commandInput}
                         aria-label="Console command"
+                        aria-describedby="command-history-help"
                         value={command}
-                        onChange={(event) => setCommand(event.target.value)}
+                        onChange={(event) => {
+                          setCommand(event.target.value);
+                          historyPosition.current = history.current.length;
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            !['ArrowUp', 'ArrowDown'].includes(event.key) ||
+                            event.nativeEvent.isComposing ||
+                            event.shiftKey ||
+                            event.altKey ||
+                            event.ctrlKey ||
+                            event.metaKey ||
+                            !history.current.length
+                          )
+                            return;
+                          event.preventDefault();
+                          if (historyPosition.current === history.current.length)
+                            commandDraft.current = command;
+                          historyPosition.current = Math.max(
+                            0,
+                            Math.min(
+                              history.current.length,
+                              historyPosition.current + (event.key === 'ArrowUp' ? -1 : 1),
+                            ),
+                          );
+                          setCommand(
+                            history.current[historyPosition.current] ?? commandDraft.current,
+                          );
+                        }}
                         placeholder="Enter a command…"
                         disabled={
                           server.state !== 'running' ||
@@ -358,6 +438,16 @@ export default function ServerPage() {
                         }
                         autoComplete="off"
                       />
+                      <span
+                        className="console-history-hint"
+                        title="Up and down arrows recall the last 30 commands from this visit. Commands are never sent automatically."
+                      >
+                        ↑ ↓ history
+                      </span>
+                      <span className="sr-only" id="command-history-help">
+                        Use up and down arrows to recall recent commands. History stays only in
+                        memory for this server visit. Press Send to run a recalled command.
+                      </span>
                       <button
                         className="btn secondary"
                         disabled={

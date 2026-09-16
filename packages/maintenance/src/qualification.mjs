@@ -5,6 +5,7 @@ import { PrismaClient } from '@serverforge/db';
 import { redactText } from '@serverforge/core';
 
 export const gameCases = {
+  bedrock: ['minecraft-bedrock', 'bedrock-vanilla', 'latest', 4096],
   vanilla: ['minecraft-java', 'vanilla', '1.20.1', 2048],
   paper: ['minecraft-java', 'paper', '1.20.1', 2048],
   purpur: ['minecraft-java', 'purpur', '1.20.1', 2048],
@@ -54,7 +55,9 @@ export async function qualify(cases, minutes = 180) {
       const response = await fetch(`${base}/api/servers/${uid}/console/stream`, { headers: { cookie }, signal: controller.signal });
       if (!response.ok) throw new Error(`Console stream failed (${response.status}).`);
       let carry = '';
-      for await (const chunk of response.body) {
+      // Abort in finally instead of awaiting cancellation of an endless SSE
+      // body when returning from the iterator (which can wait for the deadline).
+      for await (const chunk of response.body.values({ preventCancel: true })) {
         carry += Buffer.from(chunk).toString();
         const events = carry.split('\n\n'); carry = events.pop() || '';
         for (const event of events) {
@@ -116,7 +119,7 @@ export async function qualify(cases, minutes = 180) {
         entry.version = installed.version; entry.build = installed.build; entry.javaMajor = installed.javaMajor; entry.checks.push('installation-completed');
         await request(`/servers/${uid}/power`, { action: 'start' });
         entry.runtime = (await request(`/servers/${uid}/settings`)).appliedAllocation;
-        const pattern = gameId === 'minecraft-java' ? /Done \(/ : gameId === 'valheim' ? /Game server connected|Session "[^"]+" with join code/ : /Running Palworld dedicated server/i;
+        const pattern = gameId === 'minecraft-java' ? /Done \(/ : gameId === 'minecraft-bedrock' ? /Server started\./ : gameId === 'valheim' ? /Game server connected|Session "[^"]+" with join code/ : /Running Palworld dedicated server/i;
         await consoleUntil(uid, (text) => pattern.test(text), output);
         entry.checks.push('game-ready-console');
         if (gameId === 'palworld') {
@@ -136,9 +139,12 @@ export async function qualify(cases, minutes = 180) {
         if (name === 'valheim-bepinex') { if (!/BepInEx.*5\.4|Chainloader startup complete/i.test(output.join('\n'))) throw new Error('Valheim started, but BepInEx initialization was not observed.'); entry.checks.push('bepinex-loaded'); }
         const usage = await request(`/servers/${uid}/resources`); if (!usage.usage || !(usage.usage.memoryBytes > 0)) throw new Error('Live resource measurements are unavailable.');
         entry.telemetry = usage.usage; entry.containerId = usage.containerId; entry.checks.push('live-telemetry');
-        if (gameId === 'minecraft-java') {
-          await request(`/servers/${uid}/console`, { command: 'say ServerForge qualification command received' });
-          await consoleUntil(uid, (text) => text.includes('ServerForge qualification command received'), output);
+        if (['minecraft-java', 'minecraft-bedrock'].includes(gameId)) {
+          const bedrock = gameId === 'minecraft-bedrock';
+          // Bedrock sends say to players without echoing it to an empty server's
+          // console. list provides a native response even when nobody is online.
+          await request(`/servers/${uid}/console`, { command: bedrock ? 'list' : 'say ServerForge qualification command received' });
+          await consoleUntil(uid, (text) => bedrock ? /There are \d+\/\d+ players online:/.test(text) : text.includes('ServerForge qualification command received'), output);
           entry.checks.push('console-command');
         }
         const stopRequestedAt = Date.now();

@@ -1,12 +1,14 @@
 'use client';
 
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import { usePathname } from 'next/navigation';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { PageTitle } from './PageTitle';
 import { api } from '@/lib/api';
+import { usePreferences } from './Preferences';
 import { useBrand } from './BrandProvider';
+import { useNavigationGuard } from './UnsavedChanges';
 
 type User = { username: string; displayName: string; role: string };
 const UserContext = createContext<User | null>(null);
@@ -17,12 +19,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const { dark: darkMode, update: updatePreferences } = usePreferences();
   const guide = useRef<HTMLDialogElement>(null);
   const firstNavLink = useRef<HTMLAnchorElement>(null);
   const menuToggle = useRef<HTMLButtonElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
   const pathname = usePathname();
   const brand = useBrand().name;
+  const navigation = useNavigationGuard();
   const administrator = !!user && ['owner', 'admin'].includes(user.role);
   const restricted = ['/deploy', '/network', '/accounts', '/system'].includes(pathname);
   const page =
@@ -41,7 +45,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 : 'Overview';
 
   useEffect(() => {
-    setDarkMode(document.documentElement.dataset.theme === 'dark');
     api<{ user: User | null }>('/api/me')
       .then((data) => {
         setUser(data.user);
@@ -51,28 +54,47 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   function toggleDarkMode() {
-    const next = !darkMode;
-    setDarkMode(next);
-    document.documentElement.dataset.theme = next ? 'dark' : 'light';
-    try {
-      localStorage.setItem('serverforge-theme', next ? 'dark' : 'light');
-    } catch {
-      // The toggle still works when the browser blocks persistent storage.
-    }
+    updatePreferences({ theme: darkMode ? 'light' : 'dark' });
+  }
+
+  function closeMenu() {
+    setMenuOpen(false);
+    requestAnimationFrame(() => menuToggle.current?.focus());
   }
 
   useEffect(() => {
     if (!menuOpen) return;
     const frame = requestAnimationFrame(() => firstNavLink.current?.focus());
+    const desktop = window.matchMedia('(min-width: 701px)');
+    const closeOnDesktop = () => {
+      if (desktop.matches) setMenuOpen(false);
+    };
+    desktop.addEventListener('change', closeOnDesktop);
+    closeOnDesktop();
     const closeOnEscape = (event: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       if (event.key === 'Escape') {
-        setMenuOpen(false);
-        menuToggle.current?.focus();
+        closeMenu();
+      } else if (event.key === 'Tab') {
+        const controls = [
+          ...(sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)') ??
+            []),
+        ].filter((element) => element.getClientRects().length > 0);
+        const first = controls[0],
+          last = controls.at(-1);
+        if (
+          (event.shiftKey && document.activeElement === first) ||
+          (!event.shiftKey && document.activeElement === last)
+        ) {
+          event.preventDefault();
+          (event.shiftKey ? last : first)?.focus();
+        }
       }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => {
       cancelAnimationFrame(frame);
+      desktop.removeEventListener('change', closeOnDesktop);
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [menuOpen]);
@@ -90,17 +112,40 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={`app-shell${pathname.startsWith('/servers/') ? ' server-shell' : ''}`}>
-      <a className="skip-link" href="#main">
+      <a
+        className="skip-link"
+        href="#main"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById('main')?.focus();
+        }}
+      >
         Skip to content
       </a>
       {menuOpen && (
         <button
           className="nav-backdrop"
           aria-label="Close navigation"
-          onClick={() => setMenuOpen(false)}
+          aria-hidden="true"
+          tabIndex={-1}
+          onClick={closeMenu}
         />
       )}
-      <aside id="sidebar" className={`sidebar ${menuOpen ? 'is-open' : ''}`}>
+      <aside
+        ref={sidebar}
+        id="sidebar"
+        className={`sidebar ${menuOpen ? 'is-open' : ''}`}
+        role={menuOpen ? 'dialog' : undefined}
+        aria-modal={menuOpen || undefined}
+        aria-label={menuOpen ? 'Workspace navigation' : undefined}
+      >
+        <button
+          className="icon-button mobile-nav-close"
+          aria-label="Close navigation"
+          onClick={closeMenu}
+        >
+          <Icon name="close" size={18} />
+        </button>
         <Link href="/" className="brand" onClick={() => setMenuOpen(false)}>
           <span className="brand-mark">
             <Icon name="server" size={21} />
@@ -233,14 +278,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
               title="Sign out"
               aria-label="Sign out"
               disabled={signingOut}
-              onClick={() => void logout()}
+              onClick={() => navigation.request(null, () => void logout())}
             >
               <Icon name="logout" size={18} />
             </button>
           </div>
         </div>
       </aside>
-      <div className="workspace">
+      <div className="workspace" inert={menuOpen}>
         <header className="topbar">
           <div className="breadcrumb">
             <button
@@ -263,7 +308,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="hosting-dot" />
           </span>
         </header>
-        <main id="main" className="page">
+        <main id="main" className="page" tabIndex={-1}>
           {error && (
             <div className="error-banner" role="alert">
               <Icon name="alert" />
@@ -339,7 +384,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <summary>Explore the server tools</summary>
           <ul className="guide-features">
             <li>
-              <strong>Configuration:</strong> change game rules and hardware. Save, then restart to
+              <strong>Settings:</strong> change game rules and hardware. Save, then restart to
               apply.
             </li>
             <li>

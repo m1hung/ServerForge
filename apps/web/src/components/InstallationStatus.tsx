@@ -14,8 +14,9 @@ type Attempt = {
   hasUploadedPack: boolean;
 };
 export function InstallationStatus({ server, onChange }: { server: Server; onChange: () => void }) {
-  const [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [attempt, setAttempt] = useState<Attempt | null | undefined>(undefined);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [canRemove, setCanRemove] = useState(false);
@@ -23,13 +24,20 @@ export function InstallationStatus({ server, onChange }: { server: Server; onCha
     let disposed = false;
     const refresh = async () => {
       try {
-        const data = await api<{ installation: Attempt | null; canManage: boolean; canRemove: boolean }>(
-          `/api/servers/${server.uid}/installation`,
-        );
-        if (!disposed) { setAttempt(data.installation); setCanEdit(data.canManage); setCanRemove(data.canRemove); }
+        const data = await api<{
+          installation: Attempt | null;
+          canManage: boolean;
+          canRemove: boolean;
+        }>(`/api/servers/${server.uid}/installation`);
+        if (!disposed) {
+          setAttempt(data.installation);
+          setCanEdit(data.canManage);
+          setCanRemove(data.canRemove);
+          setLoadError('');
+        }
       } catch (err) {
         if (!disposed)
-          setError(err instanceof Error ? err.message : 'Installation status unavailable.');
+          setLoadError(err instanceof Error ? err.message : 'Installation status unavailable.');
       }
     };
     void refresh();
@@ -44,9 +52,23 @@ export function InstallationStatus({ server, onChange }: { server: Server; onCha
     setPending(true);
     setError('');
     try {
-      await api(`/api/servers/${server.uid}/installation${kind === 'remove' ? '' : `/${kind}`}`, { method: kind === 'remove' ? 'DELETE' : 'POST' });
+      await api(`/api/servers/${server.uid}/installation${kind === 'remove' ? '' : `/${kind}`}`, {
+        method: kind === 'remove' ? 'DELETE' : 'POST',
+      });
       if (kind === 'remove') setAttempt(null);
-      if (kind === 'retry') setAttempt((current) => current ? { ...current, state: 'queued', progress: 0, error: null, message: 'Preparing a fresh installation…', cancelRequestedAt: null } : current);
+      if (kind === 'retry')
+        setAttempt((current) =>
+          current
+            ? {
+                ...current,
+                state: 'queued',
+                progress: 0,
+                error: null,
+                message: 'Preparing a fresh installation…',
+                cancelRequestedAt: null,
+              }
+            : current,
+        );
       onChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update the installation.');
@@ -63,16 +85,24 @@ export function InstallationStatus({ server, onChange }: { server: Server; onCha
       <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div role="status" style={{ flex: '1 1 240px' }}>
           <strong>
-            {running
-              ? attempt.cancelRequestedAt
-                ? 'Cancelling installation…'
-                : 'Installing server'
-              : 'Installation needs attention'}
+            {loadError
+              ? 'Installation status unavailable'
+              : attempt === undefined
+                ? 'Loading installation status…'
+                : running
+                  ? attempt.cancelRequestedAt
+                    ? 'Cancelling installation…'
+                    : 'Installing server'
+                  : 'Installation needs attention'}
           </strong>
           <p className="muted" style={{ margin: '4px 0', fontSize: 13 }}>
-            {attempt?.error ||
-              attempt?.message ||
-              'Review the console transcript, then retry the installation.'}
+            {loadError
+              ? 'Status will refresh automatically. Your installation may still be running.'
+              : attempt === undefined
+                ? 'Fetching the latest progress.'
+                : attempt?.error ||
+                  attempt?.message ||
+                  'Review the console transcript, then retry the installation.'}
           </p>
           {attempt?.hasUploadedPack && !running && (
             <small className="muted">Your uploaded server pack is kept for retry.</small>
@@ -106,14 +136,20 @@ export function InstallationStatus({ server, onChange }: { server: Server; onCha
               </button>
             )}
             {!running && canRemove && attempt?.hasUploadedPack && (
-              <button className="btn secondary" disabled={pending || server.busy} onClick={() => void action('remove')}>Remove uploaded pack</button>
+              <button
+                className="btn secondary"
+                disabled={pending || server.busy}
+                onClick={() => void action('remove')}
+              >
+                Remove uploaded pack
+              </button>
             )}
           </div>
         )}
       </div>
-      {error && (
+      {(error || loadError) && (
         <p className="error-banner" role="alert">
-          {error}
+          {error || loadError}
         </p>
       )}
     </section>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   SettingsSchema,
   SettingValues,
@@ -8,6 +8,7 @@ import type {
   AppliedAllocation,
 } from '@serverforge/core';
 import { api } from '@/lib/api';
+import { revealField } from '@/lib/forms';
 import type { Server } from '@/lib/servers';
 import { GameSettingsFields } from './GameSettingsFields';
 import {
@@ -17,6 +18,7 @@ import {
   type HardwareDraft,
 } from './HardwareFields';
 import { Icon } from './Icon';
+import { useUnsavedChanges } from './UnsavedChanges';
 
 type Configuration = {
   appliedAllocation: AppliedAllocation | null;
@@ -39,7 +41,6 @@ export function ServerConfiguration({
   const [description, setDescription] = useState('');
   const [limits, setLimits] = useState<HardwareDraft>({ memory: '', cpu: '', disk: '' });
   const [values, setValues] = useState<SettingValues>({});
-  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -47,6 +48,27 @@ export function ServerConfiguration({
   const [reload, setReload] = useState(0);
   const allowed = server.canConfigure !== false;
   const busy = !['running', 'offline', 'crashed', 'install_failed'].includes(server.state);
+  const form = useRef<HTMLFormElement>(null);
+  const dirty =
+    !!data &&
+    !loading &&
+    (name !== data.server.name ||
+      description !== (data.server.description ?? '') ||
+      JSON.stringify(limits) !== JSON.stringify(hardwareDraft(data.server)) ||
+      Object.keys({ ...data.values, ...values }).some((key) => values[key] !== data.values[key]));
+  function discard() {
+    setLoading(true);
+    setReload((value) => value + 1);
+    setNotice('');
+  }
+  useUnsavedChanges({
+    label: 'Server settings',
+    dirty,
+    busy: saving || loading,
+    scope: `/servers/${server.uid}`,
+    save,
+    discard,
+  });
 
   useEffect(() => {
     if (!allowed) return;
@@ -61,7 +83,6 @@ export function ServerConfiguration({
         setName(result.server.name);
         setDescription(result.server.description ?? '');
         setLimits(hardwareDraft(result.server));
-        setDirty(false);
       })
       .catch((err: Error) => {
         if (!controller.signal.aborted) setError(err.message);
@@ -72,16 +93,8 @@ export function ServerConfiguration({
     return () => controller.abort();
   }, [server.uid, allowed, reload]);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (saving || loading || busy) return;
+  async function save() {
+    if (saving || loading || busy || !allowed || !form.current?.checkValidity()) return false;
     setSaving(true);
     setError('');
     setNotice('');
@@ -98,17 +111,18 @@ export function ServerConfiguration({
           settings: changed,
         }),
       });
-      setDirty(false);
       setNotice(
         result.restartRequired
-          ? 'Saved. Restart the server to apply the new configuration and allocation.'
-          : 'Saved. Your configuration and allocation will apply on the next start.',
+          ? 'Saved. Restart the server to use your new settings.'
+          : 'Saved. Your new settings will apply on the next start.',
       );
       setLoading(true);
       setReload((value) => value + 1);
       await onSaved();
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save configuration.');
+      setError(err instanceof Error ? err.message : 'Could not save server settings.');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -124,11 +138,15 @@ export function ServerConfiguration({
     );
   return (
     <form
+      ref={form}
       className="card configuration-panel"
-      onSubmit={(event) => void save(event)}
+      onInvalidCapture={(event) => revealField(event.target as HTMLElement)}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
       onChange={(event) => {
         if ((event.target as HTMLInputElement).name !== 'settings-visibility') {
-          setDirty(true);
           setNotice('');
         }
       }}
@@ -136,67 +154,18 @@ export function ServerConfiguration({
       <div className="section-heading">
         <div>
           <div className="eyebrow">YOUR SERVER, YOUR SETTINGS</div>
-          <h2>Configuration & hardware</h2>
+          <h2>Server settings</h2>
         </div>
         <Icon name="settings" />
       </div>
       <p className="muted">
         Changes apply on the next start or restart. Saving keeps the current game session running.
       </p>
-      {data && (
-        <div className="card" style={{ marginBottom: 16, padding: 14 }}>
-          <table style={{ width: '100%', fontSize: 13 }}>
-            <caption style={{ textAlign: 'left', marginBottom: 8 }}>
-              Saved allocation and running container
-            </caption>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left' }}>Resource</th>
-                <th>Saved</th>
-                <th>Applied now</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th style={{ textAlign: 'left' }}>Memory</th>
-                <td style={{ textAlign: 'center' }}>{data.server.memoryMib || 'Unlimited'} MiB</td>
-                <td style={{ textAlign: 'center' }}>
-                  {data.appliedAllocation
-                    ? `${data.appliedAllocation.memoryMib || 'Unlimited'} MiB`
-                    : 'Unavailable / offline'}
-                </td>
-              </tr>
-              <tr>
-                <th style={{ textAlign: 'left' }}>CPU</th>
-                <td style={{ textAlign: 'center' }}>{data.server.cpuCores || 'Unlimited'}</td>
-                <td style={{ textAlign: 'center' }}>
-                  {data.appliedAllocation ? data.appliedAllocation.cpuCores || 'Unlimited' : '—'}
-                </td>
-              </tr>
-              <tr>
-                <th style={{ textAlign: 'left' }}>Additional swap</th>
-                <td style={{ textAlign: 'center' }}>
-                  {data.server.swapMib == null ? 'Docker default' : `${data.server.swapMib} MiB`}
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  {data.appliedAllocation
-                    ? data.appliedAllocation.swapMib === -1
-                      ? 'Unlimited'
-                      : data.appliedAllocation.swapMib == null
-                        ? 'Docker default'
-                        : `${data.appliedAllocation.swapMib} MiB`
-                    : '—'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          {data.appliedAllocation?.warnings.map((warning) => (
-            <p className="muted" key={warning} style={{ fontSize: 12 }}>
-              {warning}
-            </p>
-          ))}
-        </div>
-      )}
+      {data?.appliedAllocation?.warnings.map((warning) => (
+        <p className="summary-notice warning" role="status" key={warning}>
+          {warning}
+        </p>
+      ))}
       {busy && (
         <p className="summary-notice" role="status">
           Wait for the current server operation to finish before saving.
@@ -219,7 +188,7 @@ export function ServerConfiguration({
         </div>
       )}
       {!data ? (
-        <p className="muted">{error ? 'Configuration unavailable.' : 'Loading configuration…'}</p>
+        <p className="muted">{error ? 'Settings unavailable.' : 'Loading settings…'}</p>
       ) : (
         <>
           <fieldset disabled={saving || loading} className="configuration-inputs">
@@ -251,13 +220,73 @@ export function ServerConfiguration({
             </section>
             <section className="form-section">
               <div className="form-section-heading">
-                <h3>Hardware allocation</h3>
+                <h3>Resources</h3>
               </div>
               <HardwareFields value={limits} onChange={setLimits} capacity={data.capacity} />
+              <details className="settings-details settings-disclosure">
+                <summary>Compare saved and running limits</summary>
+                <div className="table-scroll">
+                  <table className="allocation-table">
+                    <caption style={{ textAlign: 'left', marginBottom: 8 }}>
+                      Saved limits and active limits
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Resource</th>
+                        <th>Saved</th>
+                        <th>Applied now</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Memory</th>
+                        <td style={{ textAlign: 'center' }}>
+                          {data.server.memoryMib ? `${data.server.memoryMib} MiB` : 'Unlimited'}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {data.appliedAllocation
+                            ? data.appliedAllocation.memoryMib
+                              ? `${data.appliedAllocation.memoryMib} MiB`
+                              : 'Unlimited'
+                            : 'Unavailable / offline'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>CPU</th>
+                        <td style={{ textAlign: 'center' }}>
+                          {data.server.cpuCores || 'Unlimited'}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {data.appliedAllocation
+                            ? data.appliedAllocation.cpuCores || 'Unlimited'
+                            : '—'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Additional swap</th>
+                        <td style={{ textAlign: 'center' }}>
+                          {data.server.swapMib == null
+                            ? 'Docker default'
+                            : `${data.server.swapMib} MiB`}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {data.appliedAllocation
+                            ? data.appliedAllocation.swapMib === -1
+                              ? 'Unlimited'
+                              : data.appliedAllocation.swapMib == null
+                                ? 'Docker default'
+                                : `${data.appliedAllocation.swapMib} MiB`
+                            : '—'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </section>
             <section className="form-section">
               <div className="form-section-heading">
-                <h3>Game configuration</h3>
+                <h3>Game options</h3>
               </div>
               <GameSettingsFields
                 schema={data.schema}
@@ -265,7 +294,6 @@ export function ServerConfiguration({
                 configuredSecrets={data.configuredSecrets}
                 onChange={(next) => {
                   setValues(next);
-                  setDirty(true);
                   setNotice('');
                 }}
               />
@@ -275,18 +303,14 @@ export function ServerConfiguration({
             <span>
               {dirty
                 ? 'You have unsaved changes.'
-                : 'Game version, modpack, and Steam branch are chosen during installation.'}
+                : 'Changes are saved. Game rules and resources apply on the next start.'}
             </span>
             <div className="row">
               <button
                 className="btn secondary"
                 type="button"
                 disabled={!dirty || saving || loading}
-                onClick={() => {
-                  setLoading(true);
-                  setReload(reload + 1);
-                  setNotice('');
-                }}
+                onClick={discard}
               >
                 Discard changes
               </button>

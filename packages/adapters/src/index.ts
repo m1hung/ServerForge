@@ -16,7 +16,14 @@ export type {
   ManifestVariant,
 } from './manifest/types.js';
 export { minecraftAdapter } from './minecraft/index.js';
-export { buildJavaFlags, heapForMemoryLimit, javaImageFor, javaMajorFor, tokenizeFlags } from './minecraft/java.js';
+export { bedrockAdapter } from './bedrock/index.js';
+export {
+  buildJavaFlags,
+  heapForMemoryLimit,
+  javaImageFor,
+  javaMajorFor,
+  tokenizeFlags,
+} from './minecraft/java.js';
 export { compareMinecraftVersions, clearVersionCache } from './minecraft/versions.js';
 export {
   listModrinthPackVersions,

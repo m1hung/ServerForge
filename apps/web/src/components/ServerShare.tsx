@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import type { ServerConnections } from '@serverforge/core/connectivity';
 import { api, apiBase } from '@/lib/api';
 import { displayName, type Server } from '@/lib/servers';
@@ -112,7 +112,7 @@ function ShareDialog({
       </div>
       <h2 id="share-title">Share {server.name}</h2>
       <p className="share-subtitle">Choose how your players will connect.</p>
-      <div className="share-tabs" aria-label="Connection type">
+      <div className="share-tabs" role="group" aria-label="Connection type">
         {(['local', 'public', 'tailscale'] as const).map((value) => (
           <button
             key={value}

@@ -1,3 +1,12 @@
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 export function apiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL ?? 'auto';
   // Keep cookies, uploads and live streams on the same HTTPS origin on LAN and Tailscale.
@@ -17,7 +26,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     error?: { message?: string };
   };
   if (!response.ok) {
-    throw new Error(data.error?.message ?? `Request failed (${response.status})`);
+    throw new ApiError(
+      data.error?.message ?? `Request failed (${response.status})`,
+      response.status,
+    );
   }
   return data;
 }

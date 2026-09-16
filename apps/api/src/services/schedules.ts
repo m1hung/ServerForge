@@ -84,11 +84,11 @@ export async function runSchedule(
           if (
             current.state === 'running' &&
             action.warningSeconds &&
-            ['minecraft-java', 'palworld'].includes(current.gameId)
+            ['minecraft-java', 'minecraft-bedrock', 'palworld'].includes(current.gameId)
           ) {
             await sendServerCommand(
               current,
-              current.gameId === 'minecraft-java'
+              ['minecraft-java', 'minecraft-bedrock'].includes(current.gameId)
                 ? `say Server restarting in ${action.warningSeconds} seconds.`
                 : current.gameId === 'palworld'
                   ? `Broadcast Server_restart_in_${action.warningSeconds}_seconds`

@@ -1,9 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import { Icon } from '@/components/Icon';
 import { PageTitle } from '@/components/PageTitle';
+import { CopyButton } from '@/components/CopyButton';
+import { usePreferences } from '@/components/Preferences';
+import type { Preferences } from '@/lib/preferences';
 import { api } from '@/lib/api';
 import { useCurrentUser } from '@/components/Shell';
 import {
@@ -12,6 +15,7 @@ import {
   joinAddress,
   memoryLabel,
   statusTone,
+  sortServers,
   type Server,
 } from '@/lib/servers';
 
@@ -25,7 +29,11 @@ export default function HomePage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [game, setGame] = useState('all');
-  const [view, setView] = useState<'list' | 'grid'>('list');
+  const { preferences, update: updatePreferences } = usePreferences();
+  const [mobile, setMobile] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const view =
+    preferences.serverView === 'auto' ? (mobile ? 'grid' : 'list') : preferences.serverView;
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setRefreshing(true);
@@ -43,7 +51,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (window.matchMedia('(max-width: 700px)').matches) setView('grid');
+    const media = window.matchMedia('(max-width: 700px)');
+    const resize = () => setMobile(media.matches);
+    resize();
+    media.addEventListener('change', resize);
     const controller = new AbortController();
     void refresh(controller.signal);
     const timer = setInterval(() => {
@@ -52,6 +63,7 @@ export default function HomePage() {
     return () => {
       controller.abort();
       clearInterval(timer);
+      media.removeEventListener('change', resize);
     };
   }, [refresh]);
 
@@ -62,7 +74,33 @@ export default function HomePage() {
   const cpu = items.reduce((total, server) => total + server.cpuCores, 0);
   const unlimitedMemory = items.some((server) => server.memoryMib === 0);
   const unlimitedCpu = items.some((server) => server.cpuCores === 0);
-  const filtered = filterServers(items, query, status, game);
+  const filtered = sortServers(
+    filterServers(items, query, status, game).filter(
+      (server) => !favoritesOnly || preferences.favorites.includes(server.uid),
+    ),
+    preferences.serverSort,
+    preferences.favorites,
+  );
+  function favoriteButton(server: Server) {
+    const favorite = preferences.favorites.includes(server.uid);
+    return (
+      <button
+        className="icon-button favorite-button"
+        aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${server.name}`}
+        title={`${favorite ? 'Remove from' : 'Add to'} favorites`}
+        aria-pressed={favorite}
+        onClick={() =>
+          updatePreferences({
+            favorites: favorite
+              ? preferences.favorites.filter((id) => id !== server.uid)
+              : [server.uid, ...preferences.favorites],
+          })
+        }
+      >
+        <Icon name="star" size={18} />
+      </button>
+    );
+  }
   const games = [...new Set(items.map((server) => server.gameId))].sort();
   const tabs = [
     { id: 'all', label: 'All servers', count: items.length },
@@ -117,35 +155,43 @@ export default function HomePage() {
           <PageTitle>Overview</PageTitle>
           <p className="muted">Good games start with great servers. Let’s keep yours running.</p>
         </div>
-        {canCreate && (
-          <Link className="btn" href="/deploy">
-            <Icon name="plus" size={18} />
-            Deploy a server
+        <div className="form-actions">
+          <Link className="btn secondary" href="/account#preferences">
+            <Icon name="settings" size={17} />
+            Customize
           </Link>
-        )}
+          {canCreate && (
+            <Link className="btn" href="/deploy">
+              <Icon name="plus" size={18} />
+              Deploy a server
+            </Link>
+          )}
+        </div>
       </div>
-      <div className="stats-grid">
-        {stats.map((stat) => (
-          <div className="stat-card" key={stat.label}>
-            <div className="stat-label">
-              {stat.label}
-              <span className={`stat-icon ${stat.tone}`}>
-                <Icon name={stat.icon} size={18} />
-              </span>
+      {preferences.showOverviewSummary && (
+        <div className="stats-grid">
+          {stats.map((stat) => (
+            <div className="stat-card" key={stat.label}>
+              <div className="stat-label">
+                {stat.label}
+                <span className={`stat-icon ${stat.tone}`}>
+                  <Icon name={stat.icon} size={18} />
+                </span>
+              </div>
+              <div className="stat-value">
+                {servers ? stat.value : '—'}
+                {stat.unit && <span>{stat.unit}</span>}
+              </div>
+              <div className="stat-detail">
+                {stat.label === 'Running now' && (
+                  <span className={`status-dot ${running ? 'success' : 'neutral'}`} />
+                )}
+                {servers ? stat.detail : 'Waiting for server data'}
+              </div>
             </div>
-            <div className="stat-value">
-              {servers ? stat.value : '—'}
-              {stat.unit && <span>{stat.unit}</span>}
-            </div>
-            <div className="stat-detail">
-              {stat.label === 'Running now' && (
-                <span className={`status-dot ${running ? 'success' : 'neutral'}`} />
-              )}
-              {servers ? stat.detail : 'Waiting for server data'}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       <section className="server-section" id="servers" aria-labelledby="servers-title">
         <div className="section-heading">
           <div className="row">
@@ -200,7 +246,7 @@ export default function HomePage() {
               </button>
             ))}
           </div>
-          <div className="table-toolbar">
+          <div className="table-toolbar overview-toolbar">
             <label className="search-input">
               <Icon name="search" size={18} />
               <input
@@ -232,12 +278,32 @@ export default function HomePage() {
                   </option>
                 ))}
               </select>
+              <select
+                aria-label="Sort servers"
+                value={preferences.serverSort}
+                onChange={(event) =>
+                  updatePreferences({ serverSort: event.target.value as Preferences['serverSort'] })
+                }
+              >
+                <option value="name">Name A–Z</option>
+                <option value="favorites">Favorites first</option>
+                <option value="running">Running first</option>
+                <option value="attention">Needs attention first</option>
+              </select>
+              <button
+                className="btn secondary small favorites-filter"
+                aria-pressed={favoritesOnly}
+                onClick={() => setFavoritesOnly(!favoritesOnly)}
+              >
+                <Icon name="star" size={15} />
+                Favorites
+              </button>
               <div className="view-toggle" role="group" aria-label="Server view">
                 <button
                   className={view === 'list' ? 'selected' : ''}
                   aria-label="List view"
                   aria-pressed={view === 'list'}
-                  onClick={() => setView('list')}
+                  onClick={() => updatePreferences({ serverView: 'list' })}
                 >
                   <Icon name="list" size={18} />
                 </button>
@@ -245,7 +311,7 @@ export default function HomePage() {
                   className={view === 'grid' ? 'selected' : ''}
                   aria-label="Grid view"
                   aria-pressed={view === 'grid'}
-                  onClick={() => setView('grid')}
+                  onClick={() => updatePreferences({ serverView: 'grid' })}
                 >
                   <Icon name="grid" size={16} />
                 </button>
@@ -281,7 +347,9 @@ export default function HomePage() {
               </h3>
               <p>
                 {items.length
-                  ? 'Try another name, game, or server status.'
+                  ? favoritesOnly
+                    ? 'Star a server to add it to your favorites, or clear filters to see all servers.'
+                    : 'Try another name, game, or server status.'
                   : canCreate
                     ? 'Deploy your first game server and bring your people together.'
                     : 'Ask your workspace owner to add shared server access to your account. You don’t need a dashboard account just to join a game.'}
@@ -293,6 +361,7 @@ export default function HomePage() {
                     setQuery('');
                     setStatus('all');
                     setGame('all');
+                    setFavoritesOnly(false);
                   }}
                 >
                   Clear filters
@@ -322,19 +391,22 @@ export default function HomePage() {
                   {filtered.map((server) => (
                     <tr key={server.uid}>
                       <td>
-                        <Link className="server-name" href={`/servers/${server.uid}`}>
-                          <span className={`game-icon game-${server.gameId}`}>
-                            <Icon name="cube" size={23} />
-                          </span>
-                          <span>
-                            <strong>{server.name}</strong>
-                            <small>
-                              {displayName(server.gameId)}
-                              <span> · </span>
-                              {displayName(server.variantId)}
-                            </small>
-                          </span>
-                        </Link>
+                        <div className="server-name-cell">
+                          {favoriteButton(server)}
+                          <Link className="server-name" href={`/servers/${server.uid}`}>
+                            <span className={`game-icon game-${server.gameId}`}>
+                              <Icon name="cube" size={23} />
+                            </span>
+                            <span>
+                              <strong>{server.name}</strong>
+                              <small>
+                                {displayName(server.gameId)}
+                                <span> · </span>
+                                {displayName(server.variantId)}
+                              </small>
+                            </span>
+                          </Link>
+                        </div>
                       </td>
                       <td>
                         <span className={`status-pill ${statusTone(server.state)}`}>
@@ -355,7 +427,17 @@ export default function HomePage() {
                       </td>
                       <td>
                         <div className="connection-cell">
-                          <code>{joinAddress(server) ?? 'Not assigned'}</code>
+                          <div className="row">
+                            <code>{joinAddress(server) ?? 'Not assigned'}</code>
+                            {joinAddress(server) && (
+                              <CopyButton
+                                value={joinAddress(server)!}
+                                label={`Copy ${server.name} address`}
+                                text=""
+                                className="icon-button"
+                              />
+                            )}
+                          </div>
                           <small>{server.node?.name || 'Local machine'}</small>
                         </div>
                       </td>
@@ -376,7 +458,7 @@ export default function HomePage() {
           ) : (
             <div className="server-card-grid">
               {filtered.map((server) => (
-                <Link className="server-grid-card" key={server.uid} href={`/servers/${server.uid}`}>
+                <article className="server-grid-card" key={server.uid}>
                   <div className="section-heading">
                     <span className={`game-icon game-${server.gameId}`}>
                       <Icon name="cube" size={23} />
@@ -385,8 +467,11 @@ export default function HomePage() {
                       <span className="status-dot" />
                       {displayName(server.state)}
                     </span>
+                    {favoriteButton(server)}
                   </div>
-                  <h3>{server.name}</h3>
+                  <h3>
+                    <Link href={`/servers/${server.uid}`}>{server.name}</Link>
+                  </h3>
                   <p className="muted">
                     {displayName(server.gameId)} · {displayName(server.variantId)}
                   </p>
@@ -402,9 +487,23 @@ export default function HomePage() {
                   </div>
                   <div className="grid-card-footer">
                     <code>{joinAddress(server) ?? 'Not assigned'}</code>
-                    <Icon name="arrow" size={16} />
+                    {joinAddress(server) && (
+                      <CopyButton
+                        value={joinAddress(server)!}
+                        label={`Copy ${server.name} address`}
+                        text=""
+                        className="icon-button"
+                      />
+                    )}
+                    <Link
+                      className="icon-button"
+                      href={`/servers/${server.uid}`}
+                      aria-label={`Manage ${server.name}`}
+                    >
+                      <Icon name="arrow" size={16} />
+                    </Link>
                   </div>
-                </Link>
+                </article>
               ))}
             </div>
           )}
@@ -421,93 +520,96 @@ export default function HomePage() {
           )}
         </div>
       </section>
-      <div className="overview-bottom">
-        <section className="resource-summary">
-          <div className="section-heading">
-            <h2>Workspace snapshot</h2>
-            <Icon name="activity" size={18} />
-          </div>
-          <p className="muted">A little perspective on what you’re running.</p>
-          <div className="snapshot-bar" aria-hidden="true">
-            {items.length ? (
-              items.map((server) => (
-                <span
-                  key={server.uid}
-                  className={
-                    server.state === 'running'
-                      ? 'success'
-                      : server.state === 'offline'
-                        ? 'neutral'
-                        : 'warning'
-                  }
-                  style={{ flex: 1 }}
-                />
-              ))
-            ) : (
-              <span className="segment-empty" />
-            )}
-          </div>
-          <div className="snapshot-legend">
-            <span>
-              <i className="legend-dot success" />
-              {servers ? running : '—'} running
-            </span>
-            <span>
-              <i className="legend-dot neutral" />
-              {servers ? items.filter((server) => server.state === 'offline').length : '—'} offline
-            </span>
-            <span>
-              <i className="legend-dot warning" />
-              {servers
-                ? items.length -
-                  running -
-                  items.filter((server) => server.state === 'offline').length
-                : '—'}{' '}
-              other states
-            </span>
-          </div>
-          <div className="snapshot-note">
-            <Icon name="memory" size={15} />
-            Resource totals reflect configured limits, not live usage.
-          </div>
-        </section>
-        {canCreate && (
-          <section className="deploy-promo">
-            <div className="promo-copy">
-              <span className="eyebrow">BUILD SOMETHING WORTH JOINING</span>
-              <h2>
-                New game. New world.
-                <br />
-                Same crew.
-              </h2>
-              <p>Your next server is a few clicks away.</p>
-              <Link href="/deploy" className="promo-link">
-                Deploy a server
-                <Icon name="arrow" size={17} />
-              </Link>
+      {preferences.showOverviewSummary && (
+        <div className="overview-bottom">
+          <section className="resource-summary">
+            <div className="section-heading">
+              <h2>Workspace snapshot</h2>
+              <Icon name="activity" size={18} />
             </div>
-            <div className="server-art" aria-hidden="true">
-              <div className="art-orbit" />
-              <div className="art-server">
-                <span />
-                <i />
-                <i />
-              </div>
-              <div className="art-server">
-                <span />
-                <i />
-                <i />
-              </div>
-              <div className="art-server">
-                <span />
-                <i />
-                <i />
-              </div>
-              <span className="art-spark">+</span>
+            <p className="muted">A little perspective on what you’re running.</p>
+            <div className="snapshot-bar" aria-hidden="true">
+              {items.length ? (
+                items.map((server) => (
+                  <span
+                    key={server.uid}
+                    className={
+                      server.state === 'running'
+                        ? 'success'
+                        : server.state === 'offline'
+                          ? 'neutral'
+                          : 'warning'
+                    }
+                    style={{ flex: 1 }}
+                  />
+                ))
+              ) : (
+                <span className="segment-empty" />
+              )}
+            </div>
+            <div className="snapshot-legend">
+              <span>
+                <i className="legend-dot success" />
+                {servers ? running : '—'} running
+              </span>
+              <span>
+                <i className="legend-dot neutral" />
+                {servers ? items.filter((server) => server.state === 'offline').length : '—'}{' '}
+                offline
+              </span>
+              <span>
+                <i className="legend-dot warning" />
+                {servers
+                  ? items.length -
+                    running -
+                    items.filter((server) => server.state === 'offline').length
+                  : '—'}{' '}
+                other states
+              </span>
+            </div>
+            <div className="snapshot-note">
+              <Icon name="memory" size={15} />
+              Resource totals reflect configured limits, not live usage.
             </div>
           </section>
-        )}
-      </div>
+          {canCreate && (
+            <section className="deploy-promo">
+              <div className="promo-copy">
+                <span className="eyebrow">BUILD SOMETHING WORTH JOINING</span>
+                <h2>
+                  New game. New world.
+                  <br />
+                  Same crew.
+                </h2>
+                <p>Your next server is a few clicks away.</p>
+                <Link href="/deploy" className="promo-link">
+                  Deploy a server
+                  <Icon name="arrow" size={17} />
+                </Link>
+              </div>
+              <div className="server-art" aria-hidden="true">
+                <div className="art-orbit" />
+                <div className="art-server">
+                  <span />
+                  <i />
+                  <i />
+                </div>
+                <div className="art-server">
+                  <span />
+                  <i />
+                  <i />
+                </div>
+                <div className="art-server">
+                  <span />
+                  <i />
+                  <i />
+                </div>
+                <span className="art-spark">+</span>
+              </div>
+            </section>
+          )}
+        </div>
+      )}
     </>
   );
 }

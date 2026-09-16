@@ -9,15 +9,21 @@ import {
   hardwareLimits,
   type HardwareDraft,
 } from '@/components/HardwareFields';
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { PageTitle } from '@/components/PageTitle';
 import { api } from '@/lib/api';
+import { revealField } from '@/lib/forms';
 import { memoryLabel } from '@/lib/servers';
+import { useUnsavedChanges } from '@/components/UnsavedChanges';
 
 type Game = { id: string; name: string; summary: string };
-type Compatibility = { platform: 'linux/amd64' | 'linux/arm64'; status: 'supported' | 'experimental' | 'unsupported'; reason: string };
+type Compatibility = {
+  platform: 'linux/amd64' | 'linux/arm64';
+  status: 'supported' | 'experimental' | 'unsupported';
+  reason: string;
+};
 type Variant = {
   id: string;
   name: string;
@@ -49,6 +55,14 @@ export default function DeployPage() {
   const [capacity, setCapacity] = useState<NodeCapacity | null>(null);
   const [compatibility, setCompatibility] = useState<Compatibility | null>(null);
   const [allowExperimental, setAllowExperimental] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const changes = useUnsavedChanges({
+    label: 'New server setup',
+    dirty,
+    busy: pending,
+    scope: '/deploy',
+    discard: () => setDirty(false),
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -83,10 +97,13 @@ export default function DeployPage() {
     if (!gameId) return;
     const controller = new AbortController();
     setVariants([]);
-    setCompatibility(null); setAllowExperimental(false);
+    setCompatibility(null);
+    setAllowExperimental(false);
     setVariantId('');
     setError('');
-    api<{ variants: Variant[]; compatibility: Compatibility }>(`/api/games/${gameId}`, { signal: controller.signal })
+    api<{ variants: Variant[]; compatibility: Compatibility }>(`/api/games/${gameId}`, {
+      signal: controller.signal,
+    })
       .then((data) => {
         setVariants(data.variants);
         setCompatibility(data.compatibility);
@@ -154,6 +171,8 @@ export default function DeployPage() {
         method: 'POST',
         body,
       });
+      changes.clear();
+      setDirty(false);
       router.push(`/servers/${created.server.uid}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not deploy.');
@@ -175,7 +194,15 @@ export default function DeployPage() {
         </div>
       </div>
       <div className="deploy-layout">
-        <form className="card" onSubmit={(event) => void onSubmit(event)} aria-busy={pending}>
+        <form
+          className="card"
+          onInvalidCapture={(event) => revealField(event.target as HTMLElement)}
+          onSubmit={(event) => void onSubmit(event)}
+          aria-busy={pending}
+          onChange={(event) => {
+            if ((event.target as HTMLInputElement).name !== 'settings-visibility') setDirty(true);
+          }}
+        >
           <section className="form-section">
             <div className="form-section-heading">
               <span className="step-number">1</span>
@@ -199,6 +226,7 @@ export default function DeployPage() {
                   disabled={pending}
                   onClick={() => {
                     if (item.id === gameId) return;
+                    setDirty(true);
                     setVariants([]);
                     setVariantId('');
                     setGameId(item.id);
@@ -351,20 +379,23 @@ export default function DeployPage() {
                   )}
                 </div>
               )}
-              {gameId === 'minecraft-java' && !isPack && (
+              {['minecraft-java', 'minecraft-bedrock'].includes(gameId) && !isPack && (
                 <label>
-                  Minecraft version
+                  {gameId === 'minecraft-bedrock' ? 'Bedrock server version' : 'Minecraft version'}
                   <input
                     value={version}
                     onChange={(event) => setVersion(event.target.value)}
                     required
                     maxLength={64}
                     disabled={pending}
-                    placeholder="latest or 1.20.1"
+                    placeholder={
+                      gameId === 'minecraft-bedrock' ? 'latest or 1.26.45.1' : 'latest or 1.20.1'
+                    }
                   />
                   <span className="field-hint">
-                    Use “latest” or the exact version required by your mods. Match the loader and
-                    game version on every mod.
+                    {gameId === 'minecraft-bedrock'
+                      ? 'Use “latest” for the current official Bedrock build. Players need a compatible Bedrock client; Java versions and Preview builds cannot be used here.'
+                      : 'Use “latest” or the exact version required by your mods. Match the loader and game version on every mod.'}
                   </span>
                 </label>
               )}
@@ -401,10 +432,30 @@ export default function DeployPage() {
               <section className="form-section">
                 <div className="form-section-heading">
                   <span className="step-number">3</span>
-                  <h2>Allocate hardware</h2>
+                  <h2>Resources</h2>
                 </div>
+                <p className="field-hint">
+                  We’ve filled in a starting allocation for this game. You can adjust it now or
+                  later.
+                </p>
                 <HardwareFields value={limits} onChange={setLimits} capacity={capacity} />
-                {compatibility && <div className="stack" style={{ marginTop: 12 }}><p className="muted">{compatibility.platform} · {compatibility.status}. {compatibility.reason}</p>{compatibility.status === 'experimental' && <label className="row"><input type="checkbox" checked={allowExperimental} onChange={(event) => setAllowExperimental(event.target.checked)} />I understand this game/platform combination is experimental.</label>}</div>}
+                {compatibility && (
+                  <div className="stack" style={{ marginTop: 12 }}>
+                    <p className="muted">
+                      {compatibility.platform} · {compatibility.status}. {compatibility.reason}
+                    </p>
+                    {compatibility.status === 'experimental' && (
+                      <label className="row">
+                        <input
+                          type="checkbox"
+                          checked={allowExperimental}
+                          onChange={(event) => setAllowExperimental(event.target.checked)}
+                        />
+                        I understand this game/platform combination is experimental.
+                      </label>
+                    )}
+                  </div>
+                )}
                 <button
                   className="text-button reset-hardware"
                   type="button"
@@ -413,18 +464,28 @@ export default function DeployPage() {
                   Use recommended allocation
                 </button>
               </section>
-              <section className="form-section">
-                <div className="form-section-heading">
-                  <span className="step-number">4</span>
-                  <h2>Configure your game</h2>
-                </div>
+              <details
+                key={`options-${variantId}`}
+                className="form-section settings-details settings-disclosure"
+                open={variant.schema.some(
+                  (field) =>
+                    field.type === 'string' && field.minLength && !variant.settings[field.key],
+                )}
+              >
+                <summary>
+                  Game options <span className="field-hint">Rules, players and world settings</span>
+                </summary>
+                <p className="field-hint">
+                  Keep the starting settings or make the game your own. You can change these later
+                  from your server’s Settings tab.
+                </p>
                 <GameSettingsFields
                   key={variantId}
                   schema={variant.schema.filter((field) => field.group !== 'Modpack')}
                   values={settings}
                   onChange={setSettings}
                 />
-              </section>
+              </details>
             </fieldset>
           )}
           {error && (
@@ -447,7 +508,14 @@ export default function DeployPage() {
             <button
               className="btn"
               type="submit"
-              disabled={!variant || !compatibility || compatibility.status === 'unsupported' || (compatibility.status === 'experimental' && !allowExperimental) || name.trim().length < 2 || pending}
+              disabled={
+                !variant ||
+                !compatibility ||
+                compatibility.status === 'unsupported' ||
+                (compatibility.status === 'experimental' && !allowExperimental) ||
+                name.trim().length < 2 ||
+                pending
+              }
             >
               <Icon
                 name={pending ? 'refresh' : 'plus'}

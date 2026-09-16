@@ -28,11 +28,18 @@ export function CopyButton({
   }
   return (
     <>
-      <button type="button" className={className} onClick={() => void copy()} aria-label={label}>
-        <Icon name={message === 'Copied' ? 'check' : 'copy'} size={15} />
-        {message === 'Copied' ? 'Copied' : text}
+      <button
+        type="button"
+        className={className}
+        onClick={() => void copy()}
+        aria-label={label}
+        title={message || label}
+        data-copied={message === 'Copied' || undefined}
+      >
+        <Icon name={message === 'Copied' ? 'check' : message ? 'alert' : 'copy'} size={15} />
+        {text && (message === 'Copied' ? 'Copied' : text)}
       </button>
-      <span className="sr-only" role="status">
+      <span className={message && message !== 'Copied' ? 'copy-error' : 'sr-only'} role="status">
         {message}
       </span>
     </>

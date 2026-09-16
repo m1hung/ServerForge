@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import { api } from '@/lib/api';
 import { PageTitle } from '@/components/PageTitle';
 import { CopyButton } from '@/components/CopyButton';
@@ -114,7 +114,15 @@ export default function SystemPage() {
         </nav>
         <section className="card stack" id="host-health">
           <div className="section-heading">
-            <h2>{status ? (status.ok ? 'Panel ready' : 'Needs attention') : 'Checking system…'}</h2>
+            <h2>
+              {status
+                ? status.ok
+                  ? 'Panel ready'
+                  : 'Needs attention'
+                : error
+                  ? 'System status unavailable'
+                  : 'Checking system…'}
+            </h2>
             {status && (
               <span
                 className={`status-pill ${error ? 'warning' : status.ok ? 'success' : 'danger'}`}
@@ -144,15 +152,15 @@ export default function SystemPage() {
             ))}
           </div>
           {status?.checks.collation === false && (
-            <p className="summary-notice">
+            <p className="summary-notice warning">
               Database sorting needs maintenance. Run a backed-up upgrade with the supplied host
               launcher to rebuild its indexes before normal operation resumes.
             </p>
           )}
           {status?.capabilities &&
             (!status.capabilities.ioWeight || !status.capabilities.swapLimit) && (
-              <p className="summary-notice">
-                Some hardware controls are unavailable on this host. Open a server’s Configuration
+              <p className="summary-notice warning">
+                Some hardware controls are unavailable on this host. Open a server’s Settings
                 section to see which limits can be applied.
               </p>
             )}
@@ -268,7 +276,7 @@ export default function SystemPage() {
             Backups & restore section.
           </p>
           {status && !status.recovery.some((row) => row.key === 'recovery.lastSuccess') && (
-            <p className="summary-notice">
+            <p className="summary-notice warning">
               No successful panel backup has been recorded yet. Create one before upgrading or
               changing this host.
             </p>

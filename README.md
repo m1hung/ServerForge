@@ -13,6 +13,7 @@ Linux tests. Candidate images are local/private; public publication is separate.
 | Game           | Implemented editions                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Minecraft Java | Vanilla, Paper, Purpur, Fabric, Forge, NeoForge, Modrinth packs, uploaded CurseForge server-pack ZIPs |
+| Minecraft Bedrock | Official Bedrock Dedicated Server, native worlds and manually managed behavior/resource packs |
 | Valheim        | Dedicated server and BepInEx                                                                          |
 | Palworld       | Dedicated server and compatible Linux PAK mods                                                        |
 
@@ -20,6 +21,8 @@ Edition availability is distinct from platform qualification. The deployment
 wizard reports supported, experimental or unsupported runtime combinations.
 See [mod compatibility](docs/modded-servers.md) and the exact test evidence in
 the release report before relying on a game/loader/platform combination.
+See [Bedrock setup and compatibility](docs/minecraft-bedrock.md) for UDP access,
+allowlists, add-ons and platform limitations.
 
 See [using the dashboard](docs/dashboard.md) for everyday game management,
 sharing, account security, schedules, and recovery.

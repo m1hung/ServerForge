@@ -57,6 +57,27 @@ export async function copyDirectory(source: string, destination: string) {
   });
 }
 export async function preservedPaths(server: Server) {
+  if (server.gameId === 'minecraft-bedrock') {
+    const root = localDataPath(server.dataPath);
+    const inventory = await serverFile(root, '.serverforge/bedrock-distribution.json');
+    const bundled: unknown = JSON.parse(await fs.readFile(inventory, 'utf8'));
+    if (!Array.isArray(bundled) || !bundled.every((name) => typeof name === 'string'))
+      throw badRequest('The Bedrock installation inventory is invalid. Restore it from a backup before updating.');
+    const preserved = ['worlds', 'server.properties', 'allowlist.json', 'permissions.json', 'config', 'packetlimitconfig.json'];
+    // Built-in packs must advance with the server binary. Preserve separately
+    // named user packs, including ones added after the update was prepared.
+    for (const directory of ['behavior_packs', 'resource_packs']) {
+      const folder = await serverFile(root, directory);
+      for (const name of await fs.readdir(folder).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      })) {
+        const relative = `${directory}/${name}`;
+        if (!bundled.includes(relative)) preserved.push(relative);
+      }
+    }
+    return preserved;
+  }
   if (server.gameId === 'palworld') return ['Pal/Saved'];
   if (server.gameId === 'valheim')
     return [
@@ -145,7 +166,7 @@ export async function prepareUpdate(
     await fs.rm(staged, { recursive: true, force: true });
     await fs.mkdir(staged, { recursive: true });
     // Unknown adapters may keep saves anywhere: install over an isolated full copy.
-    if (!['minecraft-java', 'palworld', 'valheim'].includes(server.gameId))
+    if (!['minecraft-java', 'minecraft-bedrock', 'palworld', 'valheim'].includes(server.gameId))
       await copyDirectory(localDataPath(server.dataPath), staged);
     if (upload) await saveServerPack(staged, upload);
     const adapter = getAdapter(server.gameId),

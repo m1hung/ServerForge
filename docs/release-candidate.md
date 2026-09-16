@@ -5,6 +5,236 @@ production or public publication.** The application release checks pass. Native
 AMD64 and ARM64 artifacts are built, scanned and checksummed; successful image
 builds do not qualify a platform or its games.
 
+## Color picker simplification — 2026-09-16 UTC
+
+`serverforge-web:color-picker-rc1-20260916` removes the accent preset buttons and
+keeps the native color picker, hex input and a **Use workspace default** reset.
+Existing saved accents and other preferences are preserved. Unused preset data
+and CSS have been removed, and the dashboard guide reflects the simpler controls.
+Build, lint, web/test type checks, **630 unit tests**, and both focused theme workflows
+in Chromium and Firefox pass without skips or retries. Browser checks cover light/dark
+contrast, keyboard reset, invalid input, tab synchronization, persistence, blocked
+storage, pre-hydration appearance and 320-pixel layout. This UI-only change uses
+focused checks; the full game/recovery evidence remains in the vibrancy checkpoint.
+The scan retains 47 reviewed high/critical findings with zero unreviewed findings.
+Installed after verified backup `panel-20260916T073857679Z-cc5a1a10`; readiness,
+unchanged server records and the existing Tailscale address pass.
+Evidence: `data/panel-checkpoints/20260916-color-picker/`. Image digest:
+`sha256:92ef222d320202532ddc40868ca6bab35ee665e47c3b25029bbe9210dc8a1874`.
+
+## Preset alignment correction — 2026-09-16 UTC
+
+`serverforge-web:themes-layout-rc1-20260916` gives the accent presets equal grid
+cells and reserves a fixed column for the selection checkmark. Labels, swatches
+and checkmarks remain within the button borders as the grid wraps on smaller screens.
+Build, lint, web/test type checks and both focused theme workflows pass in Chromium
+and Firefox, including every selection at 320, 390, 768, 1024 and 1440 pixels.
+This validation covers the preset layout and existing theme behavior; the preceding
+full game/recovery release evidence is recorded in the vibrancy checkpoint below.
+Evidence: `data/panel-checkpoints/20260915-theme-layout/`.
+The image scan has zero unreviewed high/critical findings (47 existing reviewed
+findings). Installed through the normal upgrade after verified backup
+`panel-20260916T064801163Z-2961d676`; readiness, unchanged server records and the
+existing Tailscale address pass. Image digest:
+`sha256:402acf4b51d4a23cb036203ba1ae022ecc0c8d68c7d42364e6ecdd14f1d6c2c1`.
+
+## Accent vibrancy correction — 2026-09-16 UTC
+
+`serverforge-web:themes-vivid-rc1-20260916` corrects overly pale theme colors.
+Text variants now target contrast against the actual neutral and selected-control
+surfaces instead of a fixed luminance threshold. Logo and title marks use separate
+variants, retaining the original accent when it meets 3:1 contrast; small text and
+focus indicators retain at least 4.5:1 on their applicable surfaces. Primary fills,
+neutral backgrounds, saved preferences, and semantic colors are unchanged.
+
+The build, lint, web/test type checks, **630 unit tests**, and both focused theme
+workflows in Chromium and Firefox pass. Six loaded overview screenshots cover
+orange, Ocean and Violet in both modes. The final image scan retains the same
+47 reviewed high/critical findings with zero unreviewed findings and no new exception.
+The final packaged run passes **25 release checks** and all **16 browser workflows**
+without skips or retries.
+An earlier run stopped after a Minecraft server-file download timed out; its
+dependent checks were skipped and are not counted as passing evidence. Its fixture
+was cleaned before the fresh rerun, with no test or timeout changes.
+Evidence: `data/panel-checkpoints/20260915-theme-vibrancy/` and
+`data/release-tests/serverforge-packaged-g08fHX/`.
+Installed locally through the normal upgrade after verified backup
+`panel-20260916T063531716Z-46715072`. The web image digest is
+`sha256:79590d7170ac8ea060a6af4fd233e7363a86bbd4a356fde678603b9584d8c0c9`.
+
+## Browser theme customization checkpoint — 2026-09-16 UTC
+
+The local AMD64 image `serverforge-web:themes-rc3-20260916` adds six browser-local
+accent presets and a native custom color picker with hex validation under
+**Account → Appearance & preferences**. Buttons, links, navigation, selected
+controls, focus indicators, logo accents and title periods share contrast-adjusted
+colors. Light/dark/device mode remains independent, and semantic status/game colors
+are retained. Saved appearance applies before hydration on dashboard and public
+pages. Resetting display preferences preserves favorites. No dependency, API,
+migration or game configuration change was introduced.
+
+Production compilation, lint, repository/web type checking, **629 unit tests** and
+**16 browser workflows**, plus **25 packaged release checks**, passed without skips
+or retries. Both new theme workflows
+also pass in Firefox 155. Coverage includes all presets in both modes, black/white
+and saturated colors, keyboard selection, tab synchronization, malformed/blocked
+storage, reset behavior, 320-pixel reflow and initial appearance with client bundles
+blocked. A separate runtime-branding check and 48 page/theme combinations pass.
+The final web image scan reports **zero unreviewed high/critical findings**, with
+the same 47 reviewed findings and no new exception.
+
+Evidence is in `data/release-tests/serverforge-packaged-fuvgUT/` and
+`data/panel-checkpoints/20260915-themes/`. Image digest:
+`sha256:b33a02c6a1bd4dad97c41e97c09664180bdb09586bf822ee940f92c8f2e97d87`.
+The normal upgrade process installed it after verified panel backup
+`panel-20260916T060716224Z-fb088436`. Readiness, localhost and the existing portful
+Tailscale address pass. Both existing offline server records are identical;
+database/Tailscale/Redis services, secrets and API/maintenance images are preserved.
+Only the configured web image changed. Isolated Compose projects ran sequentially.
+This local UI checkpoint does not qualify another platform or replace the frozen
+candidate archive. No commit, push or public publication was performed.
+
+## Settings simplification checkpoint — 2026-09-16 UTC
+
+The local AMD64 follow-up `serverforge-web:settings-rc5-20260916` puts common
+settings first, makes advanced game controls searchable, reveals hidden invalid
+fields, and preserves edits when groups close. Optional deployment options,
+allocation details, custom network addresses and display preferences are grouped
+on demand. Required game passwords and enforcement warnings remain visible.
+Search cannot submit a form. Existing server settings, defaults, permissions,
+API/maintenance images and schema are retained.
+
+Production compilation, lint, web type checking, **627 unit tests**, **14 browser
+workflows** and **25 packaged checks** passed. The final browser run has no skips
+or retries. Focused settings tests also pass in Firefox 155, including Enter-key
+safety, advanced edit retention, hidden-field validation, all four game setup
+screens, network discard and narrow-screen search. Eight visual checkpoints cover
+server settings, deployment, preferences and networking. The final scan reports
+**zero unreviewed high/critical findings**, with the same 47 reviewed findings and
+no new exception.
+
+Final-image evidence is in `data/release-tests/serverforge-packaged-GkDWd6/` and
+`data/panel-checkpoints/20260915-settings-simplicity/`. An earlier overlapping test
+attempt exhausted Docker's address pools before running checks; after its own
+cleanup, the sequential run passed. No unrelated networks were removed. This local
+UI follow-up adds no platform qualification and does not replace the frozen
+candidate archive. It was installed locally after verified backup
+`panel-20260916T041221653Z-62bb1f3d`; readiness, localhost and the existing
+portful Tailscale URL pass. Existing server records, secrets, API/maintenance images
+and database/network services are preserved. No commit or public publication was
+performed.
+
+## Navigation and recovery checkpoint — 2026-09-15
+
+The local AMD64 image `serverforge-web:navigation-rc4-20260915` protects unsaved
+configuration, files, schedules, server access, network settings and deployment
+drafts. Shared Save/Discard/Stay decisions cover client navigation, Back/Forward and
+server-section jumps; failed saves retain the outstanding drafts. Branded missing
+pages and server lookup failures have consistent titles and recovery actions.
+Keyboard Skip to content preserves the selected server section.
+
+Production compilation, lint, **627 unit tests**, **13 browser workflows** and
+**25 packaged checks** passed without skips or retries. Browser coverage includes
+the existing 128 dashboard and 12 public authentication combinations, plus eight
+missing-page cases and the new navigation scenarios. The focused navigation workflow
+also passed in Firefox 155. The final web scan has **zero unreviewed high/critical
+findings** and the same 47 reviewed findings; no exception was added.
+
+Evidence: `data/release-tests/serverforge-packaged-eKjjK8/` and
+`data/panel-checkpoints/20260915-navigation-recovery/`. See the
+[design audit](design-audit.md) for scope and limitations. This local UI checkpoint
+does not qualify another host platform or replace the frozen candidate archive.
+No commit, push or public publication was performed.
+
+## Dashboard design audit checkpoint — 2026-09-15
+
+The local AMD64 image `serverforge-web:design-audit-rc3-20260915` shares the
+authentication layout, repairs invitation and sign-in recovery, improves contrast,
+contains mobile navigation focus, removes narrow-screen overflow, clarifies loading,
+error and empty states, and makes restricted actions and allocation warnings clearer.
+No new dependency, API, migration or game configuration change was introduced.
+
+Lint, production web compilation/type checking, **626 unit tests**, **12 browser
+workflows**, **25 packaged checks**, **128 dashboard accessibility/reflow combinations**
+and **12 public authentication combinations** passed. The final browser run had no
+skips or retries. A supplemental 39-case audit and long-name/address checks passed;
+inconclusive automated contrast flags and manual review limits remain recorded.
+The web image scan has **zero unreviewed high/critical findings**, with the existing
+47 reviewed findings and expiring exceptions unchanged.
+
+See the [design audit](design-audit.md) for findings. The navigation/recovery
+checkpoint above resolves the draft-loss and missing-page follow-ups. Evidence is in
+`data/release-tests/serverforge-packaged-6nMsMW/` and
+`data/panel-checkpoints/20260915-design-audit/`. This local follow-up is outside
+the frozen candidate archive, was not published, and adds no platform qualification.
+
+## Dashboard motion checkpoint — 2026-09-15
+
+The local web image `serverforge-web:motion-20260915` adds short page/card entrances,
+dialog transitions, spring feedback on controls, and small favorite/copy animations.
+Theme surfaces blend between colors. It uses native CSS, preserves the persistent
+sidebar and drafts when switching server tools, and avoids animating incoming console lines or telemetry.
+Both device reduced motion and the dashboard preference disable the effects.
+
+Lint, production web build/type checking, **626 unit tests**, **10 browser workflows**,
+**25 packaged checks** and **96 accessibility/reflow combinations** passed. Browser
+tests include motion opt-outs, refresh stability and dialog keyboard focus, with no
+skips or retries. Supplemental appearance checks inspect native animation timing,
+hover/press behavior and mobile navigation. The web image scan has no unreviewed
+high/critical findings; the existing expiring exceptions remain in effect.
+
+Evidence: `data/release-tests/serverforge-packaged-Wv9vh7/` and
+`data/panel-checkpoints/20260915-motion/`. The latter includes the local deployment
+and recovery record. This AMD64 follow-up is outside the frozen candidate archive
+and does not qualify additional platforms.
+
+## Quality-of-life development checkpoint — 2026-09-15
+
+The local web follow-up `serverforge-web:qol-rc-20260915` adds browser-scoped
+appearance and layout preferences, overview favorites and sorting, address copying,
+console filtering/downloads, adjustable log text and wrapping, and in-memory command
+recall. Existing Bedrock API/maintenance images, permissions, database schema and
+server configuration are retained. See the [dashboard guide](dashboard.md).
+
+Validation passed **626 unit tests**, lint, type checking and a production web image
+build. The final image passed **10 browser workflows**, **25 packaged checks** and
+**96 accessibility/reflow combinations**, without skipped or retried browser tests.
+A supplemental four-case visual check covers compact preferences with reduced
+motion on light/dark desktop/mobile screens. The final web image scan reports zero
+unreviewed high/critical findings; existing expiring security exceptions still apply.
+
+Evidence: `data/release-tests/serverforge-packaged-fePlG7/` and
+`data/panel-checkpoints/20260915-qol/`. These local AMD64 changes are outside the
+frozen candidate archive and do not qualify additional host platforms. Preferences
+are stored for each dashboard origin and browser profile; they do not sync between
+devices or between localhost and Tailscale addresses.
+
+## Bedrock development checkpoint — 2026-09-15
+
+Minecraft Bedrock is implemented as a separate adapter and deployment option.
+This follow-up has local AMD64 API/web/maintenance images tagged
+`bedrock-20260915`; it is **not included in the frozen candidate archive below**.
+See [Bedrock setup](minecraft-bedrock.md) for configuration, UDP access, native
+add-ons, update preservation and platform limitations.
+
+On Linux x86-64 Docker Desktop, official Bedrock **1.26.45.1** (build 49559497)
+passed installation, protected non-root startup, actual UDP discovery on an
+allocated port, console/allowlist commands, live resource measurements, graceful
+shutdown, staged distribution replacement and backup restore. The updated and
+restored server both read a persistent scoreboard marker from the saved world.
+Browser checks covered creation, the Bedrock command reference, gamertags with
+spaces, add-on file navigation, settings, dark/light contrast and mobile reflow.
+
+Evidence is in `data/release-tests/bedrock-20260915/` (`result.json`,
+`recovery-result.json`, `browser-result.json`, game logs and qualification output).
+Build, unit, integration, packaging and security records are in
+`data/panel-checkpoints/20260915-bedrock/`. The security review records a new,
+expiring Debian glibc finding; reviewed exceptions do not mean patched packages.
+
+Authenticated external Bedrock client joins, third-party add-on effects,
+Windows/macOS, ARM emulation and a Bedrock four-hour soak remain unqualified.
+No native ARM64 Bedrock support or public image publication is claimed.
+
 ## Candidate and evidence
 
 The frozen application source is `d410b04e1b08b1574cd0ce90106f98eaafa9b4f1`, with

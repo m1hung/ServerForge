@@ -4,6 +4,7 @@ import { compileManifest } from './manifest/compile.js';
 import { palworldManifest } from './manifest/games/palworld.js';
 import { valheimManifest } from './manifest/games/valheim.js';
 import { minecraftAdapter } from './minecraft/index.js';
+import { bedrockAdapter } from './bedrock/index.js';
 
 /**
  * The adapter registry.
@@ -27,6 +28,7 @@ import { minecraftAdapter } from './minecraft/index.js';
  */
 const BUILT_IN: GameAdapter[] = [
   minecraftAdapter,
+  bedrockAdapter,
   compileManifest(palworldManifest),
   compileManifest(valheimManifest),
 ];

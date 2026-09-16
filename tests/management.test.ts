@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   update: vi.fn(),
   callback: undefined as any,
   upsert: vi.fn(),
+  stdin: vi.fn(),
 }));
 vi.mock('@serverforge/db', () => ({
   uid: () => Math.random().toString(36).slice(2),
@@ -93,6 +94,7 @@ vi.mock('../apps/api/src/runtime/docker.js', () => ({
     create = async () => 'new-container';
     ensureImage = async () => undefined;
     status = async () => ({ exists: false, running: false });
+    writeStdin = state.stdin;
     streamLogs = async (_id: string, callbacks: any) => {
       state.callback = callbacks;
       return { close: vi.fn() };
@@ -416,6 +418,59 @@ describe('management authorization and conflicts', () => {
   });
 });
 describe('operational decisions and measurements', () => {
+  it('quotes Bedrock gamertags, keeps console permissions and refuses injected or Java-only commands', async () => {
+    Object.assign(state.server, { gameId: 'minecraft-bedrock', variantId: 'bedrock-vanilla', state: 'running', containerId: 'bedrock-test' });
+    expect((await call('/players/action', 'POST', { player: 'Alex Bedrock', action: 'whitelist-add' })).statusCode).toBe(200);
+    expect(state.stdin).toHaveBeenLastCalledWith('bedrock-test', 'allowlist add "Alex Bedrock"\n');
+    const count = state.stdin.mock.calls.length;
+    for (const player of ['Alex"\nstop', '@a', 'Alex\nstop'])
+      expect((await call('/players/action', 'POST', { player, action: 'kick' })).statusCode).toBe(400);
+    expect((await call('/players/action', 'POST', { player: 'Alex Bedrock', action: 'ban' })).statusCode).toBe(400);
+    expect((await call('/players/action', 'POST', { player: 'Alex Bedrock', action: 'op' }, 'viewer')).statusCode).toBe(404);
+    expect(state.stdin).toHaveBeenCalledTimes(count);
+  });
+  it('updates Bedrock built-in packs while preserving current worlds, access lists and custom add-ons, then restores the backup', async () => {
+    const adapter = getAdapter('minecraft-bedrock');
+    Object.assign(state.server, { gameId: adapter.id, variantId: 'bedrock-vanilla', version: '1.26.40.1', javaMajor: null, settings: defaultsFor(adapter.settingsSchema('bedrock-vanilla')) });
+    const put = async (base: string, name: string, contents: string) => {
+      await fs.mkdir(path.dirname(path.join(base, name)), { recursive: true });
+      await fs.writeFile(path.join(base, name), contents);
+    };
+    const inventory = JSON.stringify(['behavior_packs/vanilla', 'resource_packs/vanilla']);
+    const install = vi.spyOn(adapter, 'install').mockImplementation(async (ctx) => {
+      for (const [name, content] of Object.entries({
+        bedrock_server: 'new-binary', 'behavior_packs/vanilla/manifest.json': 'new-vanilla',
+        'behavior_packs/new_builtin/manifest.json': 'new-built-in',
+        '.serverforge/bedrock-distribution.json': JSON.stringify([...JSON.parse(inventory), 'behavior_packs/new_builtin']),
+        'allowlist.json': '[]',
+      })) await put(ctx.dataPath, name, content);
+    });
+    try {
+      for (const [name, content] of Object.entries({
+        bedrock_server: 'old-binary', 'worlds/Bedrock level/db/world': 'before',
+        'behavior_packs/vanilla/manifest.json': 'old-vanilla',
+        'behavior_packs/my-addon/manifest.json': 'custom',
+        'allowlist.json': '[{"name":"Alex Bedrock"}]',
+        '.serverforge/bedrock-distribution.json': inventory,
+      })) await put(state.server.dataPath, name, content);
+      await prepareUpdate(state.server, '1.26.45.1');
+      await put(state.server.dataPath, 'worlds/Bedrock level/db/world', 'latest-world');
+      await put(state.server.dataPath, 'resource_packs/late-addon/manifest.json', 'added-after-prepare');
+      await applyUpdate(state.server, false);
+      const read = (name: string) => fs.readFile(path.join(state.server.dataPath, name), 'utf8');
+      expect(await read('worlds/Bedrock level/db/world')).toBe('latest-world');
+      expect(await read('behavior_packs/vanilla/manifest.json')).toBe('new-vanilla');
+      expect(await read('behavior_packs/my-addon/manifest.json')).toBe('custom');
+      expect(await read('resource_packs/late-addon/manifest.json')).toBe('added-after-prepare');
+      expect(await read('allowlist.json')).toContain('Alex Bedrock');
+      expect(await preservedPaths(state.server)).not.toContain('behavior_packs/new_builtin');
+      expect(state.server.version).toBe('1.26.45.1');
+      await restoreBackup(state.server, state.backups[0]);
+      expect(await read('bedrock_server')).toBe('old-binary');
+      expect(await read('worlds/Bedrock level/db/world')).toBe('latest-world');
+      expect(state.server.version).toBe('1.26.40.1');
+    } finally { install.mockRestore(); }
+  });
   it('backs off three times, stops crash loops, and resets after a stable interval', () => {
     const now = Date.now();
     expect(crashDecision(true, 0, null, now)).toMatchObject({

@@ -1,10 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import axe from 'axe-core';
 import { getAdapter } from '@serverforge/adapters';
+import { accentVariables } from '../../apps/web/src/lib/theme';
 
 test.describe.configure({ mode: 'serial' });
+let auditOwnerCookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 
 test('protected owner setup, invitations, account controls, networking and accessible layout', async ({
   page,
@@ -16,7 +18,9 @@ test('protected owner setup, invitations, account controls, networking and acces
     throw new Error('The isolated test launcher must supply fresh owner credentials.');
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/login');
+  await expect(page.locator('.login-form')).toHaveCSS('animation-name', 'sf-arrive');
   await page.getByLabel('One-time setup token').fill('incorrect-setup-token');
   await page.getByLabel('Display name', { exact: true }).fill('Release tester');
   await page.getByLabel('Username', { exact: true }).fill('release-owner');
@@ -40,6 +44,19 @@ test('protected owner setup, invitations, account controls, networking and acces
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(dark).toHaveAttribute('aria-checked', 'true');
   const sidebar = await page.locator('#sidebar').elementHandle();
+  await expect(page.locator('.page-heading')).toHaveCSS('animation-name', 'sf-arrive');
+  await page.locator('.page-heading').evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    element.addEventListener('animationstart', () => element.setAttribute('data-replayed', 'true'));
+  });
+  await page.getByRole('button', { name: 'Refresh servers' }).click();
+  await expect(page.getByRole('button', { name: 'Refresh servers' })).toBeEnabled();
+  await expect(page.locator('.page-heading')).not.toHaveAttribute('data-replayed');
+  const guide = page.getByRole('button', { name: 'Quick start guide' });
+  await guide.click();
+  await expect(page.getByRole('dialog')).toHaveCSS('animation-name', 'sf-dialog');
+  await page.keyboard.press('Escape');
+  await expect(guide).toBeFocused();
   const navigationRequests: string[] = [];
   page.on('request', (request) => {
     if (request.isNavigationRequest()) navigationRequests.push(request.url());
@@ -162,6 +179,31 @@ test('real Minecraft installation, console, hardware, consistent backup and worl
   await page.keyboard.insertText('Hello from the command cheat sheet');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(logs).toContainText('Hello from the command cheat sheet');
+  // Recalled commands are editable and never sent just by using the history keys.
+  const sendsBeforeHistory = sent.length;
+  await consoleInput.fill('say draft to keep');
+  await consoleInput.press('ArrowUp');
+  await expect(consoleInput).toHaveValue('say Hello from the command cheat sheet');
+  await consoleInput.press('ArrowDown');
+  await expect(consoleInput).toHaveValue('say draft to keep');
+  expect(sent).toHaveLength(sendsBeforeHistory);
+  await consoleInput.fill('');
+  await page.getByLabel('Filter console logs').fill('Hello from the command cheat sheet');
+  await expect(logs).not.toContainText('Done (');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download visible logs', exact: true }).click();
+  const download = await downloadPromise;
+  const downloaded = await fs.readFile((await download.path())!, 'utf8');
+  expect(downloaded).toContain('Hello from the command cheat sheet');
+  expect(downloaded).not.toContain('Done (');
+  await page.getByLabel('Filter console logs').fill('no-line-matches-this-value');
+  await expect(logs).toContainText('No matching lines');
+  await expect(page.getByRole('button', { name: 'Download visible logs' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Clear log filter' }).click();
+  await page.getByLabel('Console text size').selectOption('17');
+  await page.getByRole('checkbox', { name: 'Wrap lines', exact: true }).uncheck();
+  await expect(logs).toHaveCSS('font-size', '17px');
+  await expect(logs).toHaveCSS('white-space', 'pre');
   await cheatSheet.click();
   await page.keyboard.press('Escape');
   await expect(cheatSheet).toBeFocused();
@@ -177,12 +219,13 @@ test('real Minecraft installation, console, hardware, consistent backup and worl
   await expect
     .poll(async () => Number(await memory.getAttribute('aria-valuenow')))
     .toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Configuration', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByLabel('CPU cores', { exact: true }).fill('1.5');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(
     page.getByRole('status').filter({ hasText: 'Saved. Restart the server' }),
   ).toBeVisible();
+  await page.getByText('Compare saved and running limits', { exact: true }).click();
   const cpuRow = page
     .getByRole('row')
     .filter({ has: page.getByRole('rowheader', { name: 'CPU', exact: true }) });
@@ -248,21 +291,37 @@ test('real Minecraft installation, console, hardware, consistent backup and worl
   await commands.getByRole('button', { name: 'Close command cheat sheet' }).click();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(start).toBeEnabled({ timeout: 90000 });
-  const backupsPath = new URL(page.url()).pathname.replace('/servers/', '/api/servers/') + '/backups';
+  const backupsPath =
+    new URL(page.url()).pathname.replace('/servers/', '/api/servers/') + '/backups';
   let failedOperation = true;
   await page.route(`**${backupsPath}`, async (route) => {
     const response = await route.fetch();
-    await route.fulfill({ response, json: { ...await response.json(), busy: false, lastOperation: {
-      action: failedOperation ? 'backup.failed' : 'backup.completed',
-      message: failedOperation ? 'Not enough free storage. Free space before retrying.' : 'Backup ready: Recovered checkpoint',
-      at: new Date().toISOString(),
-    } } });
+    await route.fulfill({
+      response,
+      json: {
+        ...(await response.json()),
+        busy: false,
+        lastOperation: {
+          action: failedOperation ? 'backup.failed' : 'backup.completed',
+          message: failedOperation
+            ? 'Not enough free storage. Free space before retrying.'
+            : 'Backup ready: Recovered checkpoint',
+          at: new Date().toISOString(),
+        },
+      },
+    });
   });
   await page.getByRole('button', { name: 'Backups & restore', exact: true }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Not enough free storage' })).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Not enough free storage' }),
+  ).toBeVisible();
   failedOperation = false;
-  await expect(page.getByRole('status').filter({ hasText: 'Backup ready: Recovered checkpoint' })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: 'Not enough free storage' })).toHaveCount(0);
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Backup ready: Recovered checkpoint' }),
+  ).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Not enough free storage' })).toHaveCount(
+    0,
+  );
   await page.unroute(`**${backupsPath}`);
   expect(errors).toEqual([]);
 });
@@ -385,6 +444,7 @@ test('accessible contrast, labels and responsive reflow across workspace pages',
     { width: 1440, height: 900 },
     { width: 720, height: 450 },
     { width: 390, height: 844 },
+    { width: 320, height: 720 },
   ]) {
     await page.setViewportSize(viewport);
     for (const theme of ['light', 'dark']) {
@@ -422,6 +482,7 @@ test('accessible contrast, labels and responsive reflow across workspace pages',
         await page.evaluate((theme) => {
           document.documentElement.dataset.theme = theme;
           localStorage.setItem('serverforge-theme', theme);
+          window.dispatchEvent(new StorageEvent('storage', { key: 'serverforge-theme' }));
         }, theme);
         await page.addScriptTag({ content: axe.source });
         if (process.env.SF_TEST_BROWSER_OUTPUT && viewport.width === 1440) {
@@ -537,7 +598,7 @@ test('simple scheduling, shared server access, and member-facing controls', asyn
   await expect(member.getByRole('link', { name: /Deploy|Create a server/ })).toHaveCount(0);
   await member.goto(url);
   await expect(member.getByRole('button', { name: 'Start server', exact: true })).toBeDisabled();
-  await expect(member.getByRole('button', { name: 'Configuration', exact: true })).toHaveCount(0);
+  await expect(member.getByRole('button', { name: 'Settings', exact: true })).toHaveCount(0);
   await expect(member.getByRole('button', { name: 'Files', exact: true })).toHaveCount(0);
   await expect(member.getByRole('log')).toContainText('You need console permission');
   await member.goto(`${url}#files`);
@@ -577,6 +638,7 @@ test('sharing explains unavailable connections and lets a failed lookup be retri
   );
   const share = page.getByRole('button', { name: 'Share', exact: true });
   await share.click();
+  await expect(page.getByRole('group', { name: 'Connection type' })).toBeVisible();
   const dialog = page.getByRole('dialog', { name: 'Share Browser qualification', exact: true });
   await expect(dialog.getByRole('alert')).toContainText('Temporary connection lookup failure.');
   await expect(dialog.getByRole('status')).toHaveText('Connection details are unavailable.');
@@ -641,7 +703,7 @@ test('invitation presets grant the selected server tools without administrator a
     .first()
     .click();
   await expect(operator.getByRole('button', { name: 'Start server', exact: true })).toBeEnabled();
-  await expect(operator.getByRole('button', { name: 'Configuration', exact: true })).toHaveCount(0);
+  await expect(operator.getByRole('button', { name: 'Settings', exact: true })).toHaveCount(0);
   await expect(operator.getByRole('link', { name: 'Workspace accounts', exact: true })).toHaveCount(
     0,
   );
@@ -729,4 +791,1041 @@ test('account security prompts, authenticator recovery, scoped keys and password
   await page.getByLabel('Verification code', { exact: true }).fill(codes[3]!);
   await page.getByRole('button', { name: 'Verify and sign in', exact: true }).click();
   await expect(page).toHaveURL('/');
+});
+
+test('saved personal preferences, favorites, automatic appearance and storage recovery', async ({
+  page,
+  context,
+  browser,
+}) => {
+  const password = process.env.SF_TEST_OWNER_PASSWORD;
+  if (!password) throw new Error('The isolated test launcher must supply owner credentials.');
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/login');
+  await page.getByLabel('Username', { exact: true }).fill('release-owner');
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  const servers = (await (await page.request.get('/api/servers')).json()).servers as {
+    uid: string;
+    name: string;
+  }[];
+  expect(servers.length).toBeGreaterThan(0);
+  const server = servers[0]!;
+  const copyAddress = page.getByRole('button', {
+    name: `Copy ${server.name} address`,
+    exact: true,
+  });
+  await copyAddress.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toBeAttached();
+  await expect(copyAddress).toHaveText('');
+  await expect(copyAddress).toHaveAttribute('data-copied', 'true');
+  await page.getByRole('button', { name: `Favorite ${server.name}`, exact: true }).click();
+  await page.getByLabel('Sort servers').selectOption('favorites');
+  await page.getByRole('button', { name: 'Grid view', exact: true }).click();
+  await expect(page.locator('.server-grid-card').first()).toContainText(server.name);
+  await page.getByRole('button', { name: 'Favorites', exact: true }).click();
+  await expect(page.locator('.server-grid-card')).toHaveCount(1);
+  await page.getByRole('link', { name: 'Customize', exact: true }).click();
+  await expect(page).toHaveURL('/account#preferences');
+  await page.getByRole('combobox', { name: 'Spacing', exact: true }).selectOption('compact');
+  await page.getByText('Overview display', { exact: true }).click();
+  await page.getByRole('checkbox', { name: /Show overview statistics/ }).uncheck();
+  await page.getByRole('checkbox', { name: /Reduce animation/ }).check();
+  await expect(page.locator('.page-heading')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('body')).toHaveCSS('transition-duration', '0s');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('checkbox', { name: /Reduce animation/ }).uncheck();
+  await expect(page.locator('.page-heading')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('body')).toHaveCSS('transition-duration', '0s');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(page.locator('.page-heading')).toHaveCSS('animation-name', 'sf-arrive');
+  await page.getByRole('checkbox', { name: /Reduce animation/ }).check();
+  await page.getByText('Console display', { exact: true }).click();
+  await page.getByLabel('Console text size').selectOption('15');
+  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('system');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('switch', { name: 'Dark mode' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('switch', { name: 'Dark mode' }).click();
+  await expect(page.getByRole('combobox', { name: 'Theme', exact: true })).toHaveValue('dark');
+  if (process.env.SF_TEST_BROWSER_OUTPUT) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: path.join(process.env.SF_TEST_BROWSER_OUTPUT, 'preferences-compact-dark.png'),
+    });
+  }
+  const otherTab = await context.newPage();
+  await otherTab.goto('/account');
+  await expect(otherTab.getByRole('combobox', { name: 'Spacing', exact: true })).toHaveValue(
+    'compact',
+  );
+  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
+  await expect(otherTab.locator('html')).toHaveAttribute('data-theme', 'light');
+  await otherTab.close();
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: 'Spacing', exact: true })).toHaveValue('compact');
+  await expect(page.getByLabel('Console text size')).toHaveValue('15');
+  await expect(page.locator('html')).toHaveAttribute('data-motion', 'reduce');
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
+  await expect(page.locator('.stats-grid')).toHaveCount(0);
+  await expect(page.getByLabel('Sort servers')).toHaveValue('favorites');
+  await expect(
+    page.getByRole('button', { name: `Unfavorite ${server.name}`, exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Grid view' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  if (process.env.SF_TEST_BROWSER_OUTPUT)
+    await page.screenshot({
+      path: path.join(process.env.SF_TEST_BROWSER_OUTPUT, 'favorites-cards-light.png'),
+      fullPage: true,
+    });
+  await page.getByRole('link', { name: `Manage ${server.name}`, exact: true }).click();
+  await expect(page.getByRole('log', { name: 'Server console logs' })).toHaveCSS(
+    'font-size',
+    '15px',
+  );
+  await page.getByRole('link', { name: 'Account', exact: true }).click();
+  await page.getByRole('button', { name: 'Reset display preferences' }).click();
+  await expect(page.getByLabel('Default server view')).toHaveValue('auto');
+  await expect(page.getByRole('combobox', { name: 'Spacing', exact: true })).toHaveValue(
+    'comfortable',
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Grid view' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(
+    page.getByRole('button', { name: `Unfavorite ${server.name}`, exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  // A malformed old value cannot break login or prevent changing preferences.
+  await page.evaluate(() => {
+    localStorage.setItem('serverforge-preferences-v1', '{broken');
+    localStorage.setItem('serverforge-theme', 'dark');
+  });
+  await page.goto('/account');
+  await expect(page.getByRole('combobox', { name: 'Spacing', exact: true })).toHaveValue(
+    'comfortable',
+  );
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('Blocked', 'SecurityError');
+    };
+  });
+  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(
+    page.getByRole('alert').filter({ hasText: /couldn’t save these preferences/ }),
+  ).toBeVisible();
+  // Appearance must be applied before hydration, including when JavaScript bundles are blocked.
+  const noHydration = await browser.newContext({
+    baseURL: process.env.SF_TEST_BROWSER_URL,
+    colorScheme: 'dark',
+  });
+  await noHydration.route('**/_next/static/**', (route) => route.abort());
+  const initial = await noHydration.newPage();
+  await initial.goto('/login');
+  await expect(initial.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await noHydration.close();
+  auditOwnerCookies = await context.cookies();
+  expect(errors).toEqual([]);
+});
+
+test('design audit: recoverable sign-in, mobile focus, empty states and visible copy failures', async ({
+  page,
+  context,
+}) => {
+  const password = process.env.SF_TEST_OWNER_PASSWORD;
+  if (!password) throw new Error('The isolated test launcher must supply owner credentials.');
+  await page.setViewportSize({ width: 320, height: 720 });
+  let setupUnavailable = true;
+  await page.route('**/api/setup', (route) =>
+    setupUnavailable
+      ? route.fulfill({
+          status: 503,
+          json: { error: { message: 'Setup service temporarily unavailable.' } },
+        })
+      : route.continue(),
+  );
+  await page.goto('/login');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Setup service temporarily unavailable.' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
+  setupUnavailable = false;
+  await page.getByRole('button', { name: 'Retry connection' }).click();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+  // Reuse the preceding workflow's session rather than exceeding production sign-in throttling.
+  if (auditOwnerCookies.length) {
+    await context.addCookies(auditOwnerCookies);
+    await page.goto('/');
+  } else {
+    await page.getByLabel('Username', { exact: true }).fill('release-owner');
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  }
+  await expect(page).toHaveURL('/');
+  const servers = (await (await page.request.get('/api/servers')).json()).servers as {
+    uid: string;
+    name: string;
+  }[];
+  const server = servers.find((server) => server.name === 'Browser qualification')!;
+  expect(server).toBeTruthy();
+  const url = `/servers/${server.uid}`;
+  await page.getByRole('button', { name: 'Toggle navigation' }).click();
+  await expect(page.getByRole('dialog', { name: 'Workspace navigation' })).toBeVisible();
+  for (let i = 0; i < 24; i++) {
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('#sidebar'))).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toBeFocused();
+  await page.getByRole('button', { name: 'Toggle navigation' }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('.workspace')).not.toHaveAttribute('inert');
+  await expect(page.locator('#sidebar')).not.toHaveAttribute('aria-modal');
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error('Clipboard denied');
+        },
+      },
+    });
+    document.execCommand = () => {
+      throw new Error('Selection copying denied');
+    };
+  });
+  const copy = page.getByRole('button', { name: `Copy ${server.name} address`, exact: true });
+  await copy.click();
+  await expect(page.locator('.copy-error')).toHaveText('Select the text to copy it.');
+  await expect(copy).toBeFocused();
+  await expect(page.getByLabel('Text to copy', { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  await page.goto(url + '#files');
+  await page.getByRole('textbox', { name: 'Filter files' }).fill('no-such-file-for-design-audit');
+  await expect(page.getByRole('status').filter({ hasText: /No files match/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filter', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Filter files' })).toHaveValue('');
+  let finishPlayers!: () => void;
+  const delayedPlayers = new Promise<void>((resolve) => {
+    finishPlayers = resolve;
+  });
+  await page.route(`**/api/servers/${server.uid}/players`, async (route) => {
+    await delayedPlayers;
+    await route.fulfill({
+      status: 503,
+      json: { error: { message: 'Player service unavailable.' } },
+    });
+  });
+  await page.getByRole('button', { name: 'Players', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Loading players…' })).toBeVisible();
+  await expect(
+    page.getByText('This game does not expose player join and leave events to the panel.'),
+  ).toHaveCount(0);
+  finishPlayers();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Player service unavailable.' }),
+  ).toBeVisible();
+  await page.unroute(`**/api/servers/${server.uid}/players`);
+  await page.getByRole('button', { name: 'Retry loading' }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Player service unavailable.' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText('This game does not expose player join and leave events to the panel.'),
+  ).toHaveCount(0);
+  const failed = servers.find((server) => server.name === 'Browser ZIP validation')!;
+  // Restore intentionally leaves games offline; present an interrupted installation without mutating it.
+  await page.route(`**/api/servers/${failed.uid}`, async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.server.state = 'install_failed';
+    await route.fulfill({ response, json: data });
+  });
+  let installationUnavailable = true;
+  await page.route(`**/api/servers/${failed.uid}/installation`, (route) => {
+    if (!installationUnavailable) return route.continue();
+    return route.fulfill({
+      status: 503,
+      json: { error: { message: 'Installation check unavailable.' } },
+    });
+  });
+  await page.goto(`/servers/${failed.uid}`);
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Installation check unavailable.' }),
+  ).toBeVisible();
+  installationUnavailable = false;
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Installation check unavailable.' }),
+  ).toHaveCount(0);
+  // Read-only presentation fixture: a member with mod access must not be offered inaccessible tools.
+  await page.route('**/api/me', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.user.role = 'user';
+    await route.fulfill({ response, json: data });
+  });
+  let edition = 'minecraft-java';
+  await page.route(`**/api/servers/${server.uid}`, async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.server.gameId = edition;
+    data.server.permissions = ['server.view', 'server.mods'];
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(url + '#mods');
+  await expect(
+    page.getByText('Ask your workspace owner to deploy a mod-enabled edition.'),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Deploy a server', exact: true })).toHaveCount(0);
+  edition = 'minecraft-bedrock';
+  await page.reload();
+  await expect(
+    page.getByText('Ask the server owner for file access to install add-ons.'),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open files', exact: true })).toHaveCount(0);
+});
+
+test('public authentication layouts have consistent titles, contrast and narrow-screen reflow', async ({
+  page,
+}) => {
+  for (const width of [1440, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ['light', 'dark']) {
+      for (const route of ['/login', '/invite', '/invite#unverified-design-fixture']) {
+        await page.goto(route);
+        await expect(page.locator('.login-brand-panel .brand')).toBeVisible();
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await expect(page.locator('h1 .heading-dot')).toHaveText('.');
+        if (route === '/invite')
+          await expect(
+            page.getByRole('alert').filter({ hasText: 'Open the complete invitation link' }),
+          ).toBeVisible();
+        if (route.includes('#'))
+          await expect(page.getByRole('button', { name: 'Accept invitation' })).toBeEnabled();
+        await page.evaluate((theme) => {
+          document.documentElement.dataset.theme = theme;
+          localStorage.setItem('serverforge-theme', theme);
+          window.dispatchEvent(new StorageEvent('storage', { key: 'serverforge-theme' }));
+        }, theme);
+        await page.addStyleTag({
+          content: '*,*::before,*::after{transition:none!important;animation:none!important}',
+        });
+        await page.addScriptTag({ content: axe.source });
+        const violations = await page.evaluate(
+          async () =>
+            (
+              await (window as unknown as { axe: typeof axe }).axe.run(document, {
+                runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] },
+              })
+            ).violations,
+        );
+        expect(violations, `${route} ${theme} ${width}`).toEqual([]);
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+        ).toBe(true);
+      }
+    }
+  }
+});
+
+test('unsaved edits survive navigation, failed saves and history traversal; missing pages recover', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(180000);
+  page.setDefaultTimeout(15000);
+  if (auditOwnerCookies.length) {
+    await context.addCookies(auditOwnerCookies);
+    await page.goto('/');
+  } else {
+    await page.goto('/login');
+    await page.getByLabel('Username', { exact: true }).fill('release-owner');
+    await page.getByLabel('Password', { exact: true }).fill(process.env.SF_TEST_OWNER_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  }
+  await expect(page).toHaveURL('/');
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const servers = (await (await page.request.get('/api/servers')).json()).servers as {
+    uid: string;
+    name: string;
+  }[];
+  const server = servers.find((server) => server.name === 'Browser qualification')!;
+  expect(server).toBeTruthy();
+  const url = `/servers/${server.uid}`;
+  const apiURL = `/api${url}`;
+  const fileURL = `${apiURL}/files/content?path=%2Feula.txt`;
+  const originalFile = (await (await page.request.get(fileURL)).json()) as {
+    content: string;
+    revision: string;
+  };
+  const modal = page.getByRole('dialog', { name: 'You have unsaved changes' });
+  const account = () => page.getByRole('link', { name: 'Account', exact: true });
+  try {
+    await account().click();
+    await expect(page).toHaveURL('/account');
+    await page.getByRole('link', { name: 'Overview', exact: true }).click();
+    await page.getByRole('link', { name: `Manage ${server.name}`, exact: true }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByLabel('Panel name', { exact: true }).fill('Unsaved navigation draft');
+    await account().click();
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Stay here' })).toBeFocused();
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.addScriptTag({ content: axe.source });
+    expect(
+      await page.evaluate(
+        async () =>
+          (await (window as unknown as { axe: typeof axe }).axe.run('.unsaved-dialog')).violations,
+      ),
+    ).toEqual([]);
+    expect(await modal.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+    await expect(page.getByLabel('Panel name', { exact: true })).toHaveValue(
+      'Unsaved navigation draft',
+    );
+    const historyLength = await page.evaluate(() => history.length);
+    await page.evaluate(() => history.go(-2));
+    await expect(modal).toBeVisible();
+    await expect(page).toHaveURL(url + '#configuration');
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+    await modal.getByRole('button', { name: 'Stay here' }).click();
+    // Browser reload/close retains the browser's native leave warning.
+    let unloadWarning = false;
+    page.once('dialog', async (dialog) => {
+      unloadWarning = dialog.type() === 'beforeunload';
+      await dialog.dismiss();
+    });
+    await page.reload({ timeout: 10000 }).catch(() => {});
+    expect(unloadWarning).toBe(true);
+    await expect(page.getByLabel('Panel name', { exact: true })).toHaveValue(
+      'Unsaved navigation draft',
+    );
+    await page.route(`**${apiURL}`, (route) =>
+      route.request().method() === 'PATCH'
+        ? route.fulfill({
+            status: 503,
+            json: { error: { message: 'Simulated save unavailable.' } },
+          })
+        : route.continue(),
+    );
+    await account().click();
+    await modal.getByRole('button', { name: 'Save and leave' }).click();
+    await expect(modal.getByRole('alert')).toContainText('Could not save');
+    await expect(page).toHaveURL(url + '#configuration');
+    await modal.getByRole('button', { name: 'Stay here' }).click();
+    await page.unroute(`**${apiURL}`);
+    await page.getByRole('button', { name: 'Files', exact: true }).click();
+    await expect(modal).toHaveCount(0);
+    await page.getByRole('button', { name: 'eula.txt', exact: true }).click();
+    await page
+      .getByLabel('File contents')
+      .fill(originalFile.content + '\n# navigation save check\n');
+    await account().click();
+    await expect(modal).toContainText('Server settings');
+    await expect(modal).toContainText('File: /eula.txt');
+    await modal.getByRole('button', { name: 'Save and leave' }).click();
+    await expect(page).toHaveURL('/account');
+    expect((await (await page.request.get(apiURL)).json()).server.name).toBe(
+      'Unsaved navigation draft',
+    );
+    expect((await (await page.request.get(fileURL)).json()).content).toContain(
+      '# navigation save check',
+    );
+    // Back into the server, then Forward must also protect a fresh draft.
+    await page.goBack();
+    await expect(page).toHaveURL(url + '#files');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await account().click();
+    await expect(page).toHaveURL('/account');
+    await page.goBack();
+    await expect(page).toHaveURL(url + '#configuration');
+    await page.getByLabel('Panel name', { exact: true }).fill('Discarded forward draft');
+    const beforeForward = await page.evaluate(() => history.length);
+    await page.evaluate(() => history.forward());
+    await expect(modal).toBeVisible();
+    await expect(page).toHaveURL(url + '#configuration');
+    await modal.getByRole('button', { name: 'Discard and leave' }).click();
+    await expect(page).toHaveURL('/account');
+    expect(await page.evaluate(() => history.length)).toBe(beforeForward);
+    expect((await (await page.request.get(apiURL)).json()).server.name).toBe(
+      'Unsaved navigation draft',
+    );
+    await page.goBack();
+    await page.getByRole('button', { name: 'Schedules & alerts', exact: true }).click();
+    await page.getByRole('button', { name: 'New schedule', exact: true }).click();
+    await page.getByLabel('Name', { exact: true }).fill('Unsaved schedule');
+    await page.evaluate(() => history.back());
+    await expect(modal).toBeVisible();
+    await expect(page).toHaveURL(url + '#schedules');
+    await modal.getByRole('button', { name: 'Stay here' }).click();
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Unsaved schedule');
+    const skip = page.getByRole('link', { name: 'Skip to content' });
+    await skip.focus();
+    await skip.press('Enter');
+    await expect(page.locator('#main')).toBeFocused();
+    await expect(page).toHaveURL(url + '#schedules');
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Unsaved schedule');
+    await page.evaluate(() => {
+      location.hash = 'players';
+    });
+    await expect(modal).toBeVisible();
+    await expect(page).toHaveURL(url + '#schedules');
+    await modal.getByRole('button', { name: 'Discard and leave' }).click();
+    await expect(page).toHaveURL(url + '#players');
+    await page.getByRole('button', { name: 'Shared access', exact: true }).click();
+    await page.getByLabel('Panel username', { exact: true }).fill('unfinished-access');
+    await page.getByRole('button', { name: 'Overview', exact: true }).click();
+    await expect(modal).toContainText('Shared access');
+    await modal.getByRole('button', { name: 'Discard and leave' }).click();
+    await page.getByRole('link', { name: 'Deploy a server', exact: true }).click();
+    await page.getByLabel(/^Panel name/).fill('Unfinished new server');
+    await account().click();
+    await expect(modal).toContainText('New server setup');
+    await expect(modal.getByRole('button', { name: 'Save and leave' })).toHaveCount(0);
+    await modal.getByRole('button', { name: 'Discard and leave' }).click();
+    await expect(page).toHaveURL('/account');
+    for (const width of [1440, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ['light', 'dark']) {
+        for (const route of ['/this-page-does-not-exist', '/servers/zzzzzzzzzz']) {
+          const response = await page.goto(route);
+          if (route.startsWith('/this-')) expect(response?.status()).toBe(404);
+          await expect(
+            page.getByRole('heading', {
+              name: route.startsWith('/this-') ? 'Page not found' : 'Server not found',
+              level: 1,
+            }),
+          ).toBeVisible();
+          await expect(page.locator('h1 .heading-dot')).toHaveText('.');
+          await page.evaluate((theme) => {
+            localStorage.setItem('serverforge-theme', theme);
+            window.dispatchEvent(new StorageEvent('storage', { key: 'serverforge-theme' }));
+          }, theme);
+          await page.addStyleTag({
+            content: '*,*::before,*::after{animation:none!important;transition:none!important}',
+          });
+          await page.addScriptTag({ content: axe.source });
+          const violations = await page.evaluate(
+            async () =>
+              (
+                await (window as unknown as { axe: typeof axe }).axe.run(document, {
+                  runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] },
+                })
+              ).violations,
+          );
+          expect(violations).toEqual([]);
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+          ).toBe(true);
+        }
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.route(`**${apiURL}`, (route) =>
+      route.fulfill({
+        status: 503,
+        json: { error: { message: 'Temporary server lookup failure.' } },
+      }),
+    );
+    await page.goto(url);
+    await expect(
+      page.getByRole('heading', { name: 'Server unavailable', exact: true }),
+    ).toBeVisible();
+    await page.unroute(`**${apiURL}`);
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Unsaved navigation draft', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByLabel('Panel name', { exact: true }).fill('Reverted draft');
+    await page.getByLabel('Panel name', { exact: true }).fill('Unsaved navigation draft');
+    await page.getByRole('link', { name: 'Network & access', exact: true }).click();
+    await expect(page).toHaveURL('/network');
+    await expect(modal).toHaveCount(0);
+    await page.locator('summary').filter({ hasText: 'Custom addresses' }).click();
+    const publicHost = page.getByLabel(/^Public IP or hostname/);
+    const savedHost = await publicHost.inputValue();
+    await publicHost.fill('unsaved.example.test');
+    await account().click();
+    await expect(modal).toContainText('Network settings');
+    await modal.getByRole('button', { name: 'Stay here' }).click();
+    await publicHost.fill(savedHost);
+    await expect(publicHost).toHaveValue(savedHost);
+    await account().click();
+    await expect(page).toHaveURL('/account');
+    await expect(modal).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    const current = await (await page.request.get(fileURL)).json();
+    expect(
+      (
+        await page.request.put(`${apiURL}/files/content`, {
+          data: { path: '/eula.txt', content: originalFile.content, revision: current.revision },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect((await page.request.patch(apiURL, { data: { name: server.name } })).ok()).toBe(true);
+  }
+});
+
+test('simple settings retain advanced edits, reveal invalid fields and keep optional setup optional', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(180000);
+  page.setDefaultTimeout(15000);
+  if (auditOwnerCookies.length) {
+    await context.addCookies(auditOwnerCookies);
+    await page.goto('/');
+  } else {
+    await page.goto('/login');
+    await page.getByLabel('Username', { exact: true }).fill('release-owner');
+    await page.getByLabel('Password', { exact: true }).fill(process.env.SF_TEST_OWNER_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  }
+  await expect(page).toHaveURL('/');
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const servers = (await (await page.request.get('/api/servers')).json()).servers as {
+    uid: string;
+    name: string;
+  }[];
+  const server = servers.find((entry) => entry.name === 'Browser qualification')!;
+  expect(server).toBeTruthy();
+  const apiURL = `/api/servers/${server.uid}`;
+  const saved = (await (await page.request.get(`${apiURL}/settings`)).json()).values;
+  const patches: { settings: Record<string, unknown> }[] = [];
+  await page.route(`**${apiURL}`, (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    patches.push(route.request().postDataJSON());
+    return route.fulfill({ json: { restartRequired: false } });
+  });
+  await page.goto(`/servers/${server.uid}#configuration`);
+  const save = page.getByRole('button', { name: 'Save changes', exact: true });
+  const search = page.getByLabel('Find a game setting');
+  const advanced = page
+    .locator('details')
+    .filter({ has: page.locator('summary', { hasText: /^Advanced game settings/ }) });
+  const expert = page
+    .locator('details')
+    .filter({ has: page.locator('summary', { hasText: /^Expert game settings/ }) });
+  await expect(save).toBeDisabled();
+  await expect(advanced).not.toHaveAttribute('open');
+  await expect(expert).not.toHaveAttribute('open');
+  await search.fill('simulation-distance');
+  await page.getByRole('button', { name: /^Simulation distance Performance/ }).click();
+  const simulation = page.getByLabel('Simulation distance', { exact: false });
+  await expect(simulation).toBeFocused();
+  await expect(save).toBeDisabled();
+  const distance = saved['simulation-distance'] === 6 ? 7 : 6;
+  await simulation.fill(String(distance));
+  await advanced.locator('summary').click();
+  await search.fill('watchdog');
+  await search.press('Enter');
+  await expect(save).toBeEnabled();
+  expect(patches).toEqual([]);
+  await page.getByRole('button', { name: /^Watchdog timeout Performance/ }).click();
+  const watchdog = page.getByLabel('Watchdog timeout', { exact: false });
+  await expect(watchdog).toBeFocused();
+  const timeout = saved['max-tick-time'] === -1 ? 60000 : -1;
+  await watchdog.fill(String(timeout));
+  await expect(simulation).toHaveValue(String(distance));
+  await search.fill('enable-rcon');
+  await page.getByRole('button', { name: /^Enable remote console/ }).click();
+  const rcon = page.getByRole('checkbox', { name: 'Enable remote console (RCON)', exact: true });
+  await rcon.uncheck();
+  await search.fill('rcon.password');
+  const dependent = page.getByRole('button', { name: /^RCON password Set Enable remote console/ });
+  await expect(dependent).toContainText('to On first');
+  await dependent.click();
+  await expect(rcon).toBeFocused();
+  await expect(rcon).not.toBeChecked();
+  await search.fill('no-such-setting');
+  await expect(page.getByRole('status').filter({ hasText: 'No matching settings' })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search' }).click();
+  await expect(search).toBeFocused();
+  await advanced.locator('summary').click();
+  await simulation.fill('');
+  await advanced.locator('summary').click();
+  await save.click();
+  await expect(advanced).toHaveAttribute('open');
+  await expect(simulation).toBeFocused();
+  expect(patches).toEqual([]);
+  await simulation.fill(String(distance));
+  await advanced.locator('summary').click();
+  await expert.locator('summary').click();
+  await save.click();
+  await expect(save).toBeDisabled();
+  expect(patches).toHaveLength(1);
+  expect(patches[0]!.settings).toEqual({
+    'simulation-distance': distance,
+    'max-tick-time': timeout,
+    ...(saved['enable-rcon'] === true ? { 'enable-rcon': false } : {}),
+  });
+  await page.unroute(`**${apiURL}`);
+  // The save is intercepted: this test never changes a game or its networking.
+  expect((await (await page.request.get(`${apiURL}/settings`)).json()).values).toEqual(saved);
+  const screenshots = process.env.SF_TEST_BROWSER_OUTPUT;
+  if (screenshots)
+    await page.screenshot({
+      path: path.join(screenshots, 'settings-simple-desktop.png'),
+      fullPage: true,
+      animations: 'disabled',
+    });
+  await page.getByRole('link', { name: 'Deploy a server', exact: true }).click();
+  const options = page
+    .locator('details')
+    .filter({ has: page.locator('summary', { hasText: /^Game options/ }) });
+  for (const name of [
+    'Minecraft: Java Edition',
+    'Minecraft: Bedrock Edition',
+    'Valheim',
+    'Palworld',
+  ]) {
+    await page.getByRole('button', { name, exact: false }).click();
+    if (name.startsWith('Minecraft')) await expect(options).not.toHaveAttribute('open');
+    else
+      await expect(
+        page.getByLabel(name === 'Valheim' ? 'Join password' : 'Admin password', { exact: true }),
+      ).toBeVisible();
+  }
+  await page.getByRole('button', { name: /Minecraft: Java Edition/ }).click();
+  await page.getByLabel('Game edition').selectOption('vanilla');
+  await page.getByLabel(/^Panel name/).fill('Validation only');
+  await page.getByRole('checkbox', { name: /I accept the/ }).check();
+  await options.locator('summary').first().click();
+  const viewDistance = page.getByLabel('View distance', { exact: false });
+  await viewDistance.fill('1');
+  await options.locator('summary').first().click();
+  let creates = 0;
+  await page.route('**/api/servers', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    creates++;
+    return route.fulfill({
+      status: 503,
+      json: { error: { message: 'This test does not create a server.' } },
+    });
+  });
+  await page.getByRole('button', { name: 'Create server', exact: true }).click();
+  await expect(viewDistance).toBeFocused();
+  await expect(options).toHaveAttribute('open');
+  expect(creates).toBe(0);
+  await viewDistance.fill('10');
+  await page.getByLabel('Find a game setting').fill('simulation-distance');
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => {
+      localStorage.setItem('serverforge-theme', theme);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'serverforge-theme' }));
+    }, theme);
+    await page.setViewportSize({ width: 320, height: 900 });
+    expect((await page.getByLabel('Find a game setting').boundingBox())!.width).toBeGreaterThan(
+      200,
+    );
+    await page.addStyleTag({
+      content: '*,*::before,*::after{animation:none!important;transition:none!important}',
+    });
+    await page.addScriptTag({ content: axe.source });
+    expect(
+      await page.evaluate(
+        async () =>
+          (
+            await (window as unknown as { axe: typeof axe }).axe.run(document, {
+              runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] },
+            })
+          ).violations,
+      ),
+    ).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    if (screenshots)
+      await page.screenshot({
+        path: path.join(screenshots, `settings-search-${theme}-320.png`),
+        fullPage: true,
+        animations: 'disabled',
+      });
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('link', { name: 'Network & access', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard and leave', exact: true }).click();
+  await expect(page).toHaveURL('/network');
+  const addresses = page
+    .locator('details')
+    .filter({ has: page.locator('summary', { hasText: /^Custom addresses/ }) });
+  await expect(addresses).not.toHaveAttribute('open');
+  await expect(page.getByText('Port forwarding is off', { exact: true })).toBeVisible();
+  await addresses.locator('summary').click();
+  const publicHost = page.getByLabel(/^Public IP or hostname/);
+  await publicHost.fill('discard.example.test');
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await expect(publicHost).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+  await page.getByRole('link', { name: 'Account', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Theme', exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Spacing', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Default server view')).toBeHidden();
+  await page.locator('summary', { hasText: 'Overview display' }).click();
+  await expect(page.getByLabel('Default server view')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('browser accents: color picker, keyboard, tab sync and display reset', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  if (auditOwnerCookies.length) await context.addCookies(auditOwnerCookies);
+  else {
+    await page.goto('/login');
+    await page.getByLabel('Username', { exact: true }).fill('release-owner');
+    await page.getByLabel('Password', { exact: true }).fill(process.env.SF_TEST_OWNER_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page).toHaveURL('/');
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/account#preferences');
+  const colors = ['#f97316', '#2563eb', '#16a34a', '#7c3aed', '#db2777', '#64748b'];
+  await expect(page.getByRole('group', { name: 'Accent presets' })).toHaveCount(0);
+  const root = page.locator('html');
+  const hex = page.getByLabel('Hex color', { exact: true });
+  const picker = page.getByLabel('Custom accent', { exact: true });
+  const theme = page.getByRole('combobox', { name: 'Theme', exact: true });
+  await page.addScriptTag({ content: axe.source });
+  for (const mode of ['light', 'dark']) {
+    await theme.selectOption(mode);
+    for (const color of colors) {
+      await picker.fill(color);
+      await hex.focus();
+      await expect(root).toHaveCSS('--accent', color!);
+      await expect(hex).toHaveValue(color!);
+      await expect(picker).toHaveValue(color!);
+      const variables = accentVariables(color!);
+      const rgb = (hex: string) =>
+        `rgb(${[1, 3, 5].map((n) => parseInt(hex.slice(n, n + 2), 16)).join(', ')})`;
+      await expect(page.locator('.heading-dot')).toHaveCSS(
+        'color',
+        rgb(variables[`--accent-mark-${mode}`]!),
+      );
+      await expect(page.locator('.brand-mark').first()).toHaveCSS(
+        'color',
+        rgb(variables['--accent-mark-dark']!),
+      );
+      await expect(hex).toHaveCSS('outline-color', rgb(variables[`--accent-ink-${mode}`]!));
+      expect(
+        await page.evaluate(
+          async () =>
+            (
+              await (window as unknown as { axe: typeof axe }).axe.run('#preferences', {
+                runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] },
+              })
+            ).violations,
+        ),
+      ).toEqual([]);
+    }
+  }
+  await hex.fill('#ABCDEF');
+  await expect(hex).toBeFocused();
+  await expect(hex).toHaveValue('#abcdef');
+  await expect(root).toHaveCSS('--accent', '#abcdef');
+  await hex.fill('#zz');
+  await expect(hex).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#accent-hex-hint')).toContainText(
+    'Your last valid color is still active',
+  );
+  await expect(root).toHaveCSS('--accent', '#abcdef');
+  await picker.fill('#112233');
+  await expect(hex).toHaveValue('#112233');
+  await expect(hex).toHaveAttribute('aria-invalid', 'false');
+  await page.getByRole('switch', { name: 'Dark mode' }).click();
+  await expect(root).toHaveCSS('--accent', '#112233');
+  await expect(theme).toHaveValue('light');
+  await theme.selectOption('system');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(root).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(root).toHaveAttribute('data-theme', 'light');
+  await expect(root).toHaveCSS('--accent', '#112233');
+  const other = await context.newPage();
+  await other.goto('/account');
+  await expect(other.getByLabel('Hex color')).toHaveValue('#112233');
+  await picker.fill('#db2777');
+  await expect(other.getByLabel('Hex color')).toHaveValue('#db2777');
+  await other.getByLabel('Hex color').fill('#010101');
+  await expect(hex).toHaveValue('#010101');
+  await other.close();
+  await page.reload();
+  await expect(hex).toHaveValue('#010101');
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('serverforge-preferences-v1')!);
+    localStorage.setItem(
+      'serverforge-preferences-v1',
+      JSON.stringify({ ...saved, density: 'compact', favorites: ['keptfavorite'] }),
+    );
+    dispatchEvent(new StorageEvent('storage', { key: 'serverforge-preferences-v1' }));
+  });
+  await hex.fill('invalid');
+  const resetAccent = page.getByRole('button', { name: 'Use workspace default', exact: true });
+  await resetAccent.focus();
+  await page.keyboard.press('Space');
+  await expect(resetAccent).toBeFocused();
+  await expect(hex).toHaveValue('#f97316');
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('serverforge-preferences-v1')!)),
+  ).toMatchObject({ accentColor: null, density: 'compact', favorites: ['keptfavorite'] });
+  await expect(root).toHaveCSS('--accent', '#f97316');
+  await expect(root).toHaveAttribute('data-density', 'compact');
+  await hex.fill('invalid');
+  await page.getByRole('button', { name: 'Reset display preferences' }).click();
+  await expect(hex).toHaveValue('#f97316');
+  await expect(root).toHaveAttribute('data-density', 'comfortable');
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('serverforge-preferences-v1')!)),
+  ).toMatchObject({
+    accentColor: null,
+    favorites: ['keptfavorite'],
+    theme: 'system',
+    density: 'comfortable',
+  });
+  // Narrow screens and extreme accents must retain legible controls without horizontal overflow.
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.addScriptTag({ content: axe.source });
+  for (const mode of ['light', 'dark']) {
+    await theme.selectOption(mode);
+    for (const color of ['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff']) {
+      await hex.fill(color);
+      expect(
+        await page.evaluate(
+          async () =>
+            (
+              await (window as unknown as { axe: typeof axe }).axe.run(document, {
+                runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] },
+              })
+            ).violations,
+        ),
+      ).toEqual([]);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+    }
+  }
+  await picker.fill('#7c3aed');
+  const screenshots = process.env.SF_TEST_BROWSER_OUTPUT;
+  if (screenshots)
+    await page.locator('#preferences').screenshot({
+      path: path.join(screenshots, 'color-picker-dark-320.png'),
+      animations: 'disabled',
+    });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await theme.selectOption('light');
+  await picker.fill('#2563eb');
+  if (screenshots)
+    await page.locator('#preferences').screenshot({
+      path: path.join(screenshots, 'color-picker-light.png'),
+      animations: 'disabled',
+    });
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
+  await expect(root).toHaveCSS('--accent', '#2563eb');
+  await page.getByRole('link', { name: 'Deploy a server', exact: true }).click();
+  await expect(root).toHaveCSS('--accent', '#2563eb');
+  await expect(page.getByRole('button', { name: /Minecraft: Java Edition/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await page.getByRole('link', { name: 'Account', exact: true }).click();
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('Blocked', 'SecurityError');
+    };
+  });
+  await picker.fill('#16a34a');
+  await expect(root).toHaveCSS('--accent', '#16a34a');
+  await expect(
+    page.getByRole('alert').filter({ hasText: /couldn’t save these preferences/ }),
+  ).toBeVisible();
+  auditOwnerCookies = await context.cookies();
+  expect(errors).toEqual([]);
+});
+
+test('browser accents apply before hydration on dashboard and public recovery pages', async ({
+  browser,
+}) => {
+  test.setTimeout(180000);
+  const isolated = await browser.newContext({
+    baseURL: process.env.SF_TEST_BROWSER_URL,
+    colorScheme: 'dark',
+  });
+  if (auditOwnerCookies.length) await isolated.addCookies(auditOwnerCookies);
+  // Leave styles enabled while blocking client bundles: only the initial appearance script can run.
+  await isolated.route('**/_next/static/**', (route) =>
+    route.request().url().endsWith('.js') ? route.abort() : route.continue(),
+  );
+  const page = await isolated.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/login');
+  for (const mode of ['light', 'dark']) {
+    for (const stored of [
+      '#2563eb',
+      '#16a34a',
+      '#7c3aed',
+      '#db2777',
+      '#64748b',
+      '#FFFFFF',
+      '#000000',
+      'invalid',
+      null,
+    ]) {
+      await page.evaluate(
+        ({ accentColor, mode }) => {
+          localStorage.setItem('serverforge-preferences-v1', JSON.stringify({ accentColor }));
+          localStorage.setItem('serverforge-theme', mode);
+        },
+        { accentColor: stored, mode },
+      );
+      for (const route of ['/account', '/login', '/invite', '/missing-theme-page']) {
+        await page.goto(route);
+        await expect(page.locator('html')).toHaveAttribute('data-theme', mode);
+        await expect(page.locator('html')).toHaveCSS(
+          '--accent',
+          stored?.startsWith('#') ? stored.toLowerCase() : '#f97316',
+        );
+        expect(
+          await page.locator('body').evaluate((body) => body.style.getPropertyValue('--accent')),
+        ).toBe('');
+      }
+    }
+  }
+  await page.evaluate(() => localStorage.setItem('serverforge-preferences-v1', '{malformed'));
+  await page.goto('/login');
+  await expect(page.locator('html')).toHaveCSS('--accent', '#f97316');
+  expect(errors).toEqual([]);
+  await isolated.close();
 });

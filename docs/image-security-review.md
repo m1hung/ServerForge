@@ -23,6 +23,7 @@ changes. They retain the finding in reports rather than suppressing the scanner.
 | ncurses CVE-2025-69720 | Affected `infocmp` executable removed; retained libraries do not expose that CLI path. |
 | Perl CVE-2026-9538 | Application archive operations use npm tar, not Perl Archive::Tar. |
 | glibc CVE-2026-5435 | Deprecated DNS debug printers are outside the application's DNS/database call paths. |
+| glibc CVE-2026-19499 | Temporary stable-OS risk acceptance: Debian marks the monetary-format padding overflow minor/no-DSA with no known network-facing impact. Shipped Node, Prisma, PostgreSQL and backup client binaries have no direct `strfmon`/`strfmon_l` imports; ServerForge exposes no native monetary-format interface. This does not establish safety of arbitrary extensions or dynamically loaded native code. |
 | zlib CVE-2026-85091 | Trigger uses a nonblocking gz file-printing sequence; application gzip streams and normal PostgreSQL archives do not use it. |
 | util-linux CVE-2026-76642, 78409, 78408, 78410 | Affected mount/nsenter helpers and SUID/SGID privileges are removed; the application does not configure fstab hooks. |
 | libacl CVE-2026-54369, 54370 | No application ACL pathname operations; affected ACL executables are absent. |
@@ -50,3 +51,10 @@ See the exact advisory links in the exception ledger.
 
 A separate application security review and final platform qualification remain
 release gates. Reviewed scanner findings alone do not establish release readiness.
+
+The 2026-09-15 Bedrock checkpoint includes the CVE-2026-19499 symbol inspection
+at `data/panel-checkpoints/20260915-bedrock/cve-review/symbols.json` and the
+unmodified scanner findings. Its exact-version exception expires on 2026-10-14.
+[Debian's advisory](https://security-tracker.debian.org/tracker/CVE-2026-19499)
+lists no fixed trixie package at review time. Upgrade to a stable fix when
+available; do not switch the production image to Debian unstable for this issue.

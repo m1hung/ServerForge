@@ -1,25 +1,32 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import { Icon } from '@/components/Icon';
-import { PageTitle } from '@/components/PageTitle';
-import { useBrand } from '@/components/BrandProvider';
+import { AuthLayout } from '@/components/AuthLayout';
 
 export default function LoginPage() {
-  const [needsSetup, setNeedsSetup] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [setupError, setSetupError] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
   const codeInput = useRef<HTMLInputElement>(null);
-  const brand = useBrand().name;
-
-  useEffect(() => {
-    api<{ needsSetup: boolean }>('/api/setup')
-      .then((data) => setNeedsSetup(data.needsSetup))
-      .catch(() => undefined);
+  const checkSetup = useCallback(async () => {
+    setChecking(true);
+    setSetupError('');
+    try {
+      const data = await api<{ needsSetup: boolean }>('/api/setup');
+      setNeedsSetup(data.needsSetup);
+    } catch (error) {
+      setSetupError(error instanceof Error ? error.message : 'Could not reach your workspace.');
+    } finally {
+      setChecking(false);
+    }
   }, []);
+  useEffect(() => {
+    void checkSetup();
+  }, [checkSetup]);
 
   useEffect(() => {
     if (ticket) codeInput.current?.focus();
@@ -27,7 +34,7 @@ export default function LoginPage() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || checking || needsSetup === null) return;
     const form = new FormData(event.currentTarget);
     setError('');
     setBusy(true);
@@ -63,95 +70,122 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="login-page">
-      <section className="login-brand-panel">
-        <Link href="/" className="brand">
-          <span className="brand-mark">
-            <Icon name="server" size={24} />
-          </span>
-          {brand}
-          <span className="brand-dot">.</span>
-        </Link>
-        <div>
-          <div className="eyebrow">YOUR WORLD. YOUR RULES.</div>
-          <h2>
-            Good times.
-            <br />
-            Great company.
-            <br />
-            Your own server.
-          </h2>
-          <p>A home for your community and a launchpad for your next adventure.</p>
-        </div>
-        <span>Self-hosted. Under your control.</span>
-      </section>
-      <section className="login-form-panel">
-        <div className="login-form">
-          <div className="eyebrow">WELCOME TO YOUR WORKSPACE</div>
-          <PageTitle>
-            {ticket ? 'One last step' : needsSetup ? 'Make yourself at home' : 'Welcome back'}
-          </PageTitle>
-          <p className="muted">
-            {ticket
-              ? 'Enter your authenticator code or a recovery code.'
-              : needsSetup
-                ? 'Create the owner account. The first one owns the panel.'
-                : 'Sign in to manage your servers.'}
+    <AuthLayout
+      eyebrow="WELCOME TO YOUR WORKSPACE"
+      title={
+        ticket
+          ? 'One last step'
+          : needsSetup === null
+            ? 'Connect to your workspace'
+            : needsSetup
+              ? 'Make yourself at home'
+              : 'Welcome back'
+      }
+      description={
+        ticket
+          ? 'Enter your authenticator code or a recovery code.'
+          : needsSetup === null
+            ? 'Connect to the panel to sign in or finish setup.'
+            : needsSetup
+              ? 'Create the owner account using the token from your host installer.'
+              : 'Sign in to manage your servers.'
+      }
+    >
+      <form
+        className="card stack"
+        onSubmit={(event) => void onSubmit(event)}
+        aria-busy={busy || checking}
+      >
+        {checking && (
+          <p className="muted" role="status">
+            Connecting to your workspace…
           </p>
-          <form className="card stack" onSubmit={(event) => void onSubmit(event)}>
-            {ticket ? (
-              <label>
-                Verification code
-                <input
-                  ref={codeInput}
-                  name="code"
-                  autoComplete="one-time-code"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  required
-                  maxLength={32}
-                  placeholder="6-digit or recovery code"
-                />
-              </label>
-            ) : (
-              <>
-                {needsSetup ? (
-                  <label>
-                    One-time setup token
-                    <input name="setupToken" autoComplete="off" required placeholder="Token displayed by the host installer" />
-                  </label>
-                ) : null}
-                {needsSetup ? (
-                  <label>
-                    Display name
-                    <input name="displayName" placeholder="Will" />
-                  </label>
-                ) : null}
+        )}
+        {setupError && (
+          <div className="error-banner" role="alert">
+            <span>{setupError}</span>
+            <button
+              className="text-button"
+              type="button"
+              disabled={checking}
+              onClick={() => void checkSetup()}
+            >
+              Retry connection
+            </button>
+          </div>
+        )}
+        {needsSetup !== null && (
+          <>
+            <fieldset className="configuration-inputs stack" disabled={busy || checking}>
+              {ticket ? (
                 <label>
-                  Username
-                  <input name="username" autoComplete="username" required minLength={3} />
-                </label>
-                <label>
-                  Password
+                  Verification code
                   <input
-                    name="password"
-                    type="password"
-                    autoComplete={needsSetup ? 'new-password' : 'current-password'}
+                    ref={codeInput}
+                    name="code"
+                    autoComplete="one-time-code"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     required
-                    minLength={10}
-                    maxLength={200}
+                    maxLength={32}
+                    placeholder="6-digit or recovery code"
                   />
                 </label>
-              </>
-            )}
-            {error ? (
-              <p className="error" role="alert">
+              ) : (
+                <>
+                  {needsSetup && (
+                    <>
+                      <label>
+                        One-time setup token
+                        <input
+                          name="setupToken"
+                          autoComplete="off"
+                          required
+                          placeholder="Token displayed by the host installer"
+                        />
+                      </label>
+                      <label>
+                        Display name
+                        <input name="displayName" maxLength={80} placeholder="Will" />
+                      </label>
+                    </>
+                  )}
+                  <label>
+                    Username
+                    <input
+                      name="username"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      required
+                      minLength={3}
+                      maxLength={32}
+                    />
+                  </label>
+                  <label>
+                    Password
+                    <input
+                      name="password"
+                      type="password"
+                      autoComplete={needsSetup ? 'new-password' : 'current-password'}
+                      required
+                      minLength={10}
+                      maxLength={200}
+                    />
+                  </label>
+                </>
+              )}
+            </fieldset>
+            {error && (
+              <div className="error-banner" role="alert">
                 {error}
-              </p>
-            ) : null}
-            <button className="btn" type="submit" disabled={busy} aria-busy={busy}>
+              </div>
+            )}
+            <button className="btn" type="submit" disabled={busy || checking}>
               {busy
-                ? 'Signing in…'
+                ? needsSetup
+                  ? 'Creating account…'
+                  : 'Signing in…'
                 : ticket
                   ? 'Verify and sign in'
                   : needsSetup
@@ -171,14 +205,11 @@ export default function LoginPage() {
                 Back to sign in
               </button>
             ) : !needsSetup ? (
-              <p className="muted">
-                Need an account? Ask the owner, or <Link href="/login">refresh</Link> if this is a
-                new install.
-              </p>
+              <p className="muted">Need an account? Ask your workspace owner for an invitation.</p>
             ) : null}
-          </form>
-        </div>
-      </section>
-    </main>
+          </>
+        )}
+      </form>
+    </AuthLayout>
   );
 }

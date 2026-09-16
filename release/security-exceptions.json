@@ -1,12 +1,22 @@
 [
   {
+    "vulnerability": "CVE-2026-19499",
+    "images": ["api", "web", "maintenance", "postgres"],
+    "packages": {
+      "libc-bin": "2.41-12+deb13u4",
+      "libc6": "2.41-12+deb13u4",
+      "libc-l10n": "2.41-12+deb13u4",
+      "locales": "2.41-12+deb13u4"
+    },
+    "reason": "Temporary acceptance for the supported Debian stable runtime, which has no fixed package. Debian rates the strfmon/strfmon_l padding overflow a minor no-DSA issue and reports no known network-facing impact. The application exposes no native monetary-format string interface. Dynamic-symbol inspection of the shipped Node, Prisma engine, PostgreSQL server and pg_dump/pg_restore/psql binaries found no direct imports of either function. This is a bounded risk review, not proof covering arbitrary extensions or dynamically loaded native code; reassess on dependency/workload changes or a stable fix.",
+    "source": "https://security-tracker.debian.org/tracker/CVE-2026-19499",
+    "reviewedAt": "2026-09-15",
+    "expiresAt": "2026-10-14T00:00:00Z",
+    "classification": "temporary-risk-acceptance-stable-os-unfixed"
+  },
+  {
     "vulnerability": "CVE-2025-69720",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "libtinfo6": "6.5+20250216-2",
       "ncurses-base": "6.5+20250216-2",
@@ -21,12 +31,7 @@
   },
   {
     "vulnerability": "CVE-2026-9538",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "perl-base": "5.40.1-6+deb13u1",
       "libperl5.40": "5.40.1-6+deb13u1",
@@ -41,12 +46,7 @@
   },
   {
     "vulnerability": "CVE-2026-5435",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "libc-bin": "2.41-12+deb13u4",
       "libc6": "2.41-12+deb13u4",
@@ -61,12 +61,7 @@
   },
   {
     "vulnerability": "CVE-2026-85091",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "zlib1g": "1:1.3.dfsg+really1.3.1-1+b1"
     },
@@ -78,12 +73,7 @@
   },
   {
     "vulnerability": "CVE-2026-76642",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "bsdutils": "1:2.41.5-0+deb13u1",
       "libblkid1": "2.41.5-0+deb13u1",
@@ -103,12 +93,7 @@
   },
   {
     "vulnerability": "CVE-2026-78409",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "bsdutils": "1:2.41.5-0+deb13u1",
       "libblkid1": "2.41.5-0+deb13u1",
@@ -128,12 +113,7 @@
   },
   {
     "vulnerability": "CVE-2026-78408",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "bsdutils": "1:2.41.5-0+deb13u1",
       "libblkid1": "2.41.5-0+deb13u1",
@@ -153,12 +133,7 @@
   },
   {
     "vulnerability": "CVE-2026-78410",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "bsdutils": "1:2.41.5-0+deb13u1",
       "libblkid1": "2.41.5-0+deb13u1",
@@ -178,12 +153,7 @@
   },
   {
     "vulnerability": "CVE-2026-54369",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "libacl1": "2.3.2-2+b1"
     },
@@ -195,12 +165,7 @@
   },
   {
     "vulnerability": "CVE-2026-54370",
-    "images": [
-      "api",
-      "web",
-      "maintenance",
-      "postgres"
-    ],
+    "images": ["api", "web", "maintenance", "postgres"],
     "packages": {
       "libacl1": "2.3.2-2+b1"
     },
@@ -212,9 +177,7 @@
   },
   {
     "vulnerability": "CVE-2026-6653",
-    "images": [
-      "postgres"
-    ],
+    "images": ["postgres"],
     "packages": {
       "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
     },
@@ -226,9 +189,7 @@
   },
   {
     "vulnerability": "CVE-2026-74860",
-    "images": [
-      "postgres"
-    ],
+    "images": ["postgres"],
     "packages": {
       "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
     },
@@ -240,9 +201,7 @@
   },
   {
     "vulnerability": "CVE-2026-86140",
-    "images": [
-      "postgres"
-    ],
+    "images": ["postgres"],
     "packages": {
       "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
     },
@@ -254,9 +213,7 @@
   },
   {
     "vulnerability": "GO-2026-6355",
-    "images": [
-      "tailscale"
-    ],
+    "images": ["tailscale"],
     "packages": {
       "golang.org/x/crypto": "v0.54.0"
     },
@@ -268,9 +225,7 @@
   },
   {
     "vulnerability": "GO-2026-6303",
-    "images": [
-      "tailscale"
-    ],
+    "images": ["tailscale"],
     "packages": {
       "golang.org/x/crypto": "v0.54.0"
     },
@@ -282,9 +237,7 @@
   },
   {
     "vulnerability": "GO-2026-6354",
-    "images": [
-      "tailscale"
-    ],
+    "images": ["tailscale"],
     "packages": {
       "golang.org/x/crypto": "v0.54.0"
     },

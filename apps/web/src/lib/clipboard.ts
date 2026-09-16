@@ -14,10 +14,14 @@ export async function copyText(text: string) {
   field.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0';
   field.setAttribute('aria-label', 'Text to copy');
   (document.querySelector('dialog[open]') ?? document.body).append(field);
-  field.focus();
-  field.select();
-  const copied = document.execCommand('copy');
-  field.remove();
-  prior?.focus();
+  let copied = false;
+  try {
+    field.focus();
+    field.select();
+    copied = document.execCommand('copy');
+  } finally {
+    field.remove();
+    prior?.focus();
+  }
   if (!copied) throw new Error('Select the address and copy it manually.');
 }

@@ -51,8 +51,8 @@ export function HardwareFields({
     <div>
       {capacity && (
         <p className="field-hint">
-          {(capacity.memory.availableMib / 1024).toFixed(2)} GiB available to allocate after host
-          headroom and other servers · {capacity.cpu.totalCores} CPU cores.
+          {(capacity.memory.availableMib / 1024).toFixed(1)} GiB of memory available for this
+          server. Space for the host and your other servers is already reserved.
         </p>
       )}
       <div className="hardware-fields">
@@ -62,19 +62,19 @@ export function HardwareFields({
               key: 'memory',
               label: 'Memory (GiB)',
               max: 1024,
-              hint: 'RAM available to the game server. 0 removes the memory cap.',
+              hint: 'Memory for the game. Larger worlds and modpacks may need more. 0 means unlimited.',
             },
             {
               key: 'cpu',
               label: 'CPU cores',
               max: capacity?.cpu.totalCores ?? 256,
-              hint: 'Fractional cores are supported. 0 removes the CPU cap.',
+              hint: `Processing power. Half cores are allowed${capacity ? `; this host has ${capacity.cpu.totalCores} cores` : ''}. 0 means unlimited.`,
             },
             {
               key: 'disk',
               label: 'Storage budget (GiB)',
               max: 4096,
-              hint: 'A monitored budget; disk writes are not capped. 0 means no budget.',
+              hint: 'A space budget for your files, not a hard limit. 0 means no budget.',
             },
           ] as const
         ).map((field) => (
@@ -99,7 +99,7 @@ export function HardwareFields({
         ))}
       </div>
       {capacity && Number(value.memory) * 1024 > capacity.memory.availableMib && (
-        <p className="summary-notice" role="status">
+        <p className="summary-notice warning" role="status">
           This memory allocation exceeds the remaining budget. Reduce another allocation before
           increasing this one.
         </p>
@@ -107,12 +107,16 @@ export function HardwareFields({
       {capacity &&
         capacity.cpu.reservedCores + (Number(value.cpu) || capacity.cpu.totalCores) >
           capacity.cpu.totalCores && (
-          <p className="summary-notice" role="status">
+          <p className="summary-notice warning" role="status">
             CPU will be shared beyond the host’s capacity. Busy servers may slow each other down.
           </p>
         )}
-      <details className="form-section">
-        <summary>Advanced resource controls</summary>
+      <details className="settings-details settings-disclosure">
+        <summary>Advanced resources</summary>
+        <p className="field-hint">
+          Optional memory and disk controls. Leave these at the host defaults unless you need to
+          tune them.
+        </p>
         <div className="settings-field-grid">
           <label>
             Additional swap (GiB)
@@ -127,7 +131,9 @@ export function HardwareFields({
               onChange={(event) => onChange({ ...value, swap: event.target.value })}
             />
             <span className="field-hint">
-              Zero disables swap. Leave blank to keep the host default. Requires a memory cap.
+              {capacity?.capabilities.swapLimit === false
+                ? 'Swap control is unavailable on this host; saved limits are not enforced.'
+                : 'Zero disables swap. Leave blank to keep the host default. Requires a memory cap.'}
             </span>
           </label>
           <label>
@@ -139,7 +145,10 @@ export function HardwareFields({
               step={1}
               placeholder="Host default"
               value={value.ioWeight ?? ''}
-              disabled={capacity?.capabilities.ioWeight === false && !(Number(value.ioWeight) > 0 && Number(value.ioWeight) < 10)}
+              disabled={
+                capacity?.capabilities.ioWeight === false &&
+                !(Number(value.ioWeight) > 0 && Number(value.ioWeight) < 10)
+              }
               onChange={(event) => onChange({ ...value, ioWeight: event.target.value })}
             />
             <span className="field-hint">

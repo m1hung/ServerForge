@@ -1,11 +1,13 @@
 'use client';
-import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NetworkConfiguration, NetworkReport } from '@serverforge/core/connectivity';
 import { api } from '@/lib/api';
+import { revealField } from '@/lib/forms';
 import { Icon } from '@/components/Icon';
 import { PageTitle } from '@/components/PageTitle';
 import { CopyButton } from '@/components/CopyButton';
+import { useUnsavedChanges } from '@/components/UnsavedChanges';
 
 export default function NetworkPage() {
   const [report, setReport] = useState<NetworkReport | null>(null);
@@ -37,8 +39,10 @@ export default function NetworkPage() {
     try {
       await work();
       setNotice(success);
+      return true;
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not complete this action.');
+      return false;
     } finally {
       setPending('');
     }
@@ -48,6 +52,30 @@ export default function NetworkPage() {
   }
   const dirty =
     !!draft && !!report && JSON.stringify(draft) !== JSON.stringify(report.configuration);
+  const form = useRef<HTMLFormElement>(null);
+  async function saveSettings() {
+    if (pending || !draft || !form.current?.checkValidity()) return false;
+    return action(
+      'save',
+      async () => {
+        const data = await api<NetworkReport>('/api/network', {
+          method: 'PUT',
+          body: JSON.stringify(draft),
+        });
+        setReport(data);
+        setDraft(data.configuration);
+      },
+      'Network settings saved. Router rules are being reconciled.',
+    );
+  }
+  useUnsavedChanges({
+    label: 'Network settings',
+    dirty,
+    busy: !!pending,
+    scope: '/network',
+    save: saveSettings,
+    discard: () => setDraft(report?.configuration ?? null),
+  });
   const tail = report?.tailscale;
   const dashboardLink = tail?.serving ? tail.dashboardUrl : tail?.directUrl;
   const activeRules = report?.forwards.filter((row) => row.state === 'active').length ?? 0;
@@ -170,23 +198,14 @@ export default function NetworkPage() {
             </div>
             <div className="network-workspace">
               <form
+                ref={form}
+                onInvalidCapture={(event) => revealField(event.target as HTMLElement)}
                 className="card network-settings"
                 id="public-games"
                 aria-busy={!!pending}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void action(
-                    'save',
-                    async () => {
-                      const data = await api<NetworkReport>('/api/network', {
-                        method: 'PUT',
-                        body: JSON.stringify(draft),
-                      });
-                      setReport(data);
-                      setDraft(data.configuration);
-                    },
-                    'Network settings saved. Router rules are being reconciled.',
-                  );
+                  void saveSettings();
                 }}
               >
                 <div className="network-section-title">
@@ -195,7 +214,7 @@ export default function NetworkPage() {
                   </span>
                   <div>
                     <h2>Public game access</h2>
-                    <p>Let your router handle the port forwarding.</p>
+                    <p>Optional: let friends join from outside your home network.</p>
                   </div>
                 </div>
                 <p className="field-hint">
@@ -215,42 +234,69 @@ export default function NetworkPage() {
                     onChange={(e) => update('upnpEnabled', e.target.checked)}
                   />
                 </label>
-                <div className={`network-router-note ${report.router.behindNat ? 'warn' : ''}`}>
-                  <Icon name={report.router.available ? 'check' : 'alert'} size={18} />
+                <div
+                  className={`network-router-note ${draft.upnpEnabled && report.router.behindNat ? 'warn' : ''}`}
+                >
+                  <Icon
+                    name={
+                      !draft.upnpEnabled ? 'shield' : report.router.available ? 'check' : 'alert'
+                    }
+                    size={18}
+                  />
                   <div>
                     <strong>
-                      {report.router.available ? 'UPnP router detected' : 'Router setup needed'}
+                      {!draft.upnpEnabled
+                        ? 'Port forwarding is off'
+                        : report.router.available
+                          ? 'UPnP router detected'
+                          : 'Router setup needed'}
                     </strong>
                     <p>
-                      {report.router.behindNat
-                        ? 'Your router has a private or shared WAN address. UPnP cannot open the upstream NAT. Use Tailscale for private game access or ask your ISP for a public IPv4 address.'
-                        : report.router.issue ||
-                          'Rules are created when an opted-in server starts, renewed while it runs, and removed when it stops.'}
+                      {!draft.upnpEnabled
+                        ? 'Players on your home network can use the local game address. Turn this on only when you want to share a game publicly.'
+                        : report.router.behindNat
+                          ? 'Your router has a private or shared WAN address. UPnP cannot open the upstream NAT. Use Tailscale for private game access or ask your ISP for a public IPv4 address.'
+                          : report.router.issue ||
+                            'Rules are created when an opted-in server starts, renewed while it runs, and removed when it stops.'}
                     </p>
                   </div>
                 </div>
-                <div className="network-fields">
-                  <label>
-                    Local host IP
-                    <input
-                      value={draft.lanHost}
-                      placeholder={report.lanHost || '192.168.1.20'}
-                      onChange={(e) => update('lanHost', e.target.value)}
-                    />
-                    <span>The game machine’s LAN address. Leave blank to use host discovery.</span>
-                  </label>
-                  <label>
-                    Public IP or hostname
-                    <input
-                      value={draft.publicHost}
-                      placeholder={report.publicIp || 'play.example.com'}
-                      onChange={(e) => update('publicHost', e.target.value)}
-                    />
-                    <span>
-                      Optional custom domain or fixed IP. Otherwise the public IP is detected.
-                    </span>
-                  </label>
-                </div>
+                <details
+                  className="network-advanced"
+                  open={!!report.configuration.lanHost || !!report.configuration.publicHost}
+                >
+                  <summary>
+                    Custom addresses <span className="field-hint">Optional</span>
+                  </summary>
+                  <p className="field-hint">
+                    Addresses are detected automatically. Only fill these in to use a fixed address
+                    or your own domain.
+                  </p>
+                  <div className="network-fields">
+                    <label>
+                      Local host IP
+                      <input
+                        value={draft.lanHost}
+                        placeholder={report.lanHost || '192.168.1.20'}
+                        onChange={(e) => update('lanHost', e.target.value)}
+                      />
+                      <span>
+                        The game machine’s LAN address. Leave blank to use host discovery.
+                      </span>
+                    </label>
+                    <label>
+                      Public IP or hostname
+                      <input
+                        value={draft.publicHost}
+                        placeholder={report.publicIp || 'play.example.com'}
+                        onChange={(e) => update('publicHost', e.target.value)}
+                      />
+                      <span>
+                        Optional custom domain or fixed IP. Otherwise the public IP is detected.
+                      </span>
+                    </label>
+                  </div>
+                </details>
                 <details className="network-advanced">
                   <summary>Advanced connection settings</summary>
                   <div className="network-fields">
@@ -302,9 +348,13 @@ export default function NetworkPage() {
                       Existing Tailscale dashboard URL
                       <input
                         value={draft.tailscaleUrl}
-                        placeholder="https://machine.tailnet.ts.net"
+                        placeholder="http://machine.tailnet.ts.net:3000"
                         onChange={(e) => update('tailscaleUrl', e.target.value)}
                       />
+                      <span>
+                        Paste the complete working address, including its port. Use HTTPS only after
+                        it has been configured.
+                      </span>
                     </label>
                     <label>
                       Host Tailscale game IP or hostname
@@ -321,10 +371,24 @@ export default function NetworkPage() {
                 </details>
                 <div className="network-form-footer">
                   <span>{dirty ? 'Unsaved changes' : 'Settings up to date'}</span>
-                  <button className="btn" disabled={!!pending || !dirty}>
-                    {pending === 'save' ? 'Saving…' : 'Save settings'}
-                    <Icon name="check" size={16} />
-                  </button>
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="btn secondary"
+                      disabled={!!pending || !dirty}
+                      onClick={() => {
+                        setDraft(report.configuration);
+                        setError('');
+                        setNotice('');
+                      }}
+                    >
+                      Discard changes
+                    </button>
+                    <button className="btn" disabled={!!pending || !dirty}>
+                      {pending === 'save' ? 'Saving…' : 'Save changes'}
+                      <Icon name="check" size={16} />
+                    </button>
+                  </div>
                 </div>
               </form>
               <section id="private-dashboard" className="card network-private">

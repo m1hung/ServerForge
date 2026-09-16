@@ -1,10 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { ProtectedLink as Link } from '@/components/UnsavedChanges';
 import { api } from '@/lib/api';
 import type { Server } from '@/lib/servers';
 import { Icon } from './Icon';
+import { useCurrentUser } from './Shell';
 
 type Mod = { name: string; enabled: boolean; size: number };
 type Mods = {
@@ -16,6 +17,9 @@ type Mods = {
 };
 
 export function ModsPanel({ server }: { server: Server }) {
+  const currentUser = useCurrentUser();
+  const canCreate = !!currentUser && ['owner', 'admin'].includes(currentUser.role);
+  const canOpenFiles = server.permissions?.includes('server.files') ?? true;
   const [data, setData] = useState<Mods | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -99,7 +103,9 @@ export function ModsPanel({ server }: { server: Server }) {
       <div className="mods-heading">
         <div>
           <div className="eyebrow">MAKE IT YOUR WORLD</div>
-          <h2 id="mods-title">Mods & plugins</h2>
+          <h2 id="mods-title">
+            {server.gameId === 'minecraft-bedrock' ? 'Add-ons' : 'Mods & plugins'}
+          </h2>
           <p className="muted">Manage the files that make this server yours.</p>
         </div>
         <button
@@ -130,15 +136,38 @@ export function ModsPanel({ server }: { server: Server }) {
         <p className="muted" role="status">
           {error ? 'Mod details are unavailable.' : 'Loading mods…'}
         </p>
+      ) : !data.directory && server.gameId === 'minecraft-bedrock' ? (
+        <div className="empty-state compact">
+          <Icon name="cube" size={26} />
+          <h3>Bedrock add-ons</h3>
+          <p>
+            Stop the server, then use Files to upload and unpack Bedrock behavior and resource
+            packs. Attach them to your world using its world_behavior_packs.json and
+            world_resource_packs.json files.
+          </p>
+          <p>Java mods, plugins and CurseForge Java server packs cannot run on Bedrock.</p>
+          {canOpenFiles ? (
+            <a className="btn secondary" href="#files">
+              Open files
+              <Icon name="arrow" size={14} />
+            </a>
+          ) : (
+            <p>Ask the server owner for file access to install add-ons.</p>
+          )}
+        </div>
       ) : !data.directory ? (
         <div className="mod-empty">
           <Icon name="shield" size={28} />
           <h3>This is a vanilla server</h3>
           <p>Deploy a mod-enabled edition of this game to use mods and plugins.</p>
-          <Link className="btn secondary" href="/deploy">
-            Deploy a server
-            <Icon name="arrow" size={14} />
-          </Link>
+          {canCreate ? (
+            <Link className="btn secondary" href="/deploy">
+              Deploy a server
+              <Icon name="arrow" size={14} />
+            </Link>
+          ) : (
+            <p>Ask your workspace owner to deploy a mod-enabled edition.</p>
+          )}
         </div>
       ) : (
         <>

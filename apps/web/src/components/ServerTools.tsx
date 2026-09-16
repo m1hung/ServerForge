@@ -9,6 +9,7 @@ import { displayName, type Server } from '@/lib/servers';
 import { permissionLabels } from '@/lib/permission-labels';
 import { scheduleTiming, scheduleCron, scheduleDescription } from '@/lib/schedule';
 import { Icon } from './Icon';
+import { useUnsavedChanges } from './UnsavedChanges';
 
 export type ServerTool =
   | 'files'
@@ -72,11 +73,15 @@ function ToolPanel({
   title,
   description,
   error,
+  loading = false,
+  onRetry,
   children,
 }: {
   title: string;
   description: string;
   error?: string;
+  loading?: boolean;
+  onRetry?: () => Promise<unknown>;
   children: ReactNode;
 }) {
   return (
@@ -86,8 +91,18 @@ function ToolPanel({
         <p className="muted">{description}</p>
       </div>
       {error && (
-        <p role="alert" className="error-banner">
-          {error}
+        <div role="alert" className="error-banner">
+          <span>{error}</span>
+          {onRetry && (
+            <button className="text-button" type="button" onClick={() => void onRetry()}>
+              Retry loading
+            </button>
+          )}
+        </div>
+      )}
+      {loading && (
+        <p className="muted" role="status">
+          Loading {title.toLowerCase()}…
         </p>
       )}
       {children}
@@ -187,7 +202,8 @@ function Backups({ server }: { server: Server }) {
   const action = useAction(refresh),
     [name, setName] = useState('');
   const busy = action.pending || data?.busy || server.busy;
-  const lastFailure = !busy && data?.lastOperation?.action.endsWith('.failed') ? data.lastOperation.message : '';
+  const lastFailure =
+    !busy && data?.lastOperation?.action.endsWith('.failed') ? data.lastOperation.message : '';
   const canRestore = ['server.power', 'server.files', 'server.settings'].every((p) =>
     permitted(server, p),
   );
@@ -196,6 +212,8 @@ function Backups({ server }: { server: Server }) {
       title="Backups & restore"
       description="A complete copy of your server files and saved panel configuration. Running servers briefly stop for a consistent backup, then resume."
       error={action.error || error || lastFailure}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       <form
         className="tool-form-inline"
@@ -220,7 +238,15 @@ function Backups({ server }: { server: Server }) {
           Back up now
         </button>
       </form>
-      <Notice message={busy ? action.message || 'A server operation is in progress…' : lastFailure ? '' : data?.lastOperation?.message || action.message} />
+      <Notice
+        message={
+          busy
+            ? action.message || 'A server operation is in progress…'
+            : lastFailure
+              ? ''
+              : data?.lastOperation?.message || action.message
+        }
+      />
       <div className="tool-list">
         {data?.backups.map((backup) => (
           <article className="tool-list-item" key={backup.uid}>
@@ -278,7 +304,6 @@ function Backups({ server }: { server: Server }) {
           <p>Create a backup before changing mods, updating, or importing a world.</p>
         </div>
       )}
-      {!data && !error && <p>Loading backups…</p>}
     </ToolPanel>
   );
 }
@@ -306,7 +331,32 @@ function Files({ server }: { server: Server }) {
     value: string;
   } | null>(null);
   const editable = ['offline', 'crashed'].includes(server.state) && !server.busy && !action.pending;
+  async function saveFile() {
+    if (!editor || !editable) return false;
+    return action.run(async () => {
+      const result = await api<{ revision: string }>(`${url}/content`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          path: editor.path,
+          content: editor.content,
+          revision: editor.revision,
+        }),
+      });
+      setEditor({ ...editor, original: editor.content, revision: result.revision });
+    }, 'File saved.');
+  }
+  const fileChanges = useUnsavedChanges({
+    label: `File: ${editor?.path ?? ''}`,
+    dirty: !!editor && editor.content !== editor.original,
+    busy: action.pending,
+    scope: `/servers/${server.uid}`,
+    save: saveFile,
+    discard: () => setEditor((current) => current && { ...current, content: current.original }),
+  });
   const child = (name: string) => `${folder === '/' ? '' : folder}/${name}`;
+  const visibleEntries = (data?.entries ?? [])
+    .filter((file) => file.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
   const navigate = (next: string) => {
     setFolder(next);
     setSearch('');
@@ -324,24 +374,17 @@ function Files({ server }: { server: Server }) {
     return (
       <ToolPanel
         title={editor.path.split('/').at(-1) || 'File editor'}
-        description="Panel-managed settings are reapplied on startup. Use Configuration for those values; edit mod and plugin settings here."
+        description="Panel-managed settings are reapplied on startup. Use Settings for those values; edit mod and plugin settings here."
         error={action.error}
       >
         <div className="tool-editor-header">
           <code>{editor.path}</code>
-          {editor.content !== editor.original ? (
-            <ConfirmButton
-              title="Discard file edits?"
-              description="Leave the editor without saving your changes."
-              onConfirm={() => setEditor(null)}
-            >
-              Back to files
-            </ConfirmButton>
-          ) : (
-            <button className="btn secondary" onClick={() => setEditor(null)}>
-              Back to files
-            </button>
-          )}
+          <button
+            className="btn secondary"
+            onClick={() => fileChanges.confirm(() => setEditor(null))}
+          >
+            Back to files
+          </button>
         </div>
         <textarea
           className="file-editor"
@@ -360,19 +403,7 @@ function Files({ server }: { server: Server }) {
           <button
             className="btn"
             disabled={!editable || editor.content === editor.original}
-            onClick={() =>
-              void action.run(async () => {
-                const result = await api<{ revision: string }>(`${url}/content`, {
-                  method: 'PUT',
-                  body: JSON.stringify({
-                    path: editor.path,
-                    content: editor.content,
-                    revision: editor.revision,
-                  }),
-                });
-                setEditor({ ...editor, original: editor.content, revision: result.revision });
-              }, 'File saved.')
-            }
+            onClick={() => void saveFile()}
           >
             Save file
           </button>
@@ -385,6 +416,8 @@ function Files({ server }: { server: Server }) {
       title="Files"
       description="Browse and download server files. Stop the server before uploading, extracting, renaming, or editing."
       error={action.error || error}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       <div className="tool-toolbar">
         <div className="row">
@@ -485,61 +518,64 @@ function Files({ server }: { server: Server }) {
         onChange={(e) => setSearch(e.target.value)}
       />
       <div className="tool-list">
-        {data?.entries
-          .filter((f) => f.name.toLowerCase().includes(search.toLowerCase()))
-          .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name))
-          .map((file) => (
-            <article className="tool-list-item file-row" key={file.name}>
+        {visibleEntries.map((file) => (
+          <article className="tool-list-item file-row" key={file.name}>
+            <button
+              className="file-name"
+              onClick={() =>
+                file.directory ? navigate(child(file.name)) : void openFile(file.name)
+              }
+            >
+              <Icon name={file.directory ? 'cube' : 'book'} size={18} />
+              <span>{file.name}</span>
+            </button>
+            <span className="file-meta">{file.directory ? 'Folder' : formatBytes(file.size)}</span>
+            <div className="row">
+              {!file.directory && (
+                <a
+                  className="text-button"
+                  href={`${apiBase()}${url}/download?path=${encodeURIComponent(child(file.name))}`}
+                >
+                  Download
+                </a>
+              )}
               <button
-                className="file-name"
+                className="text-button"
+                disabled={!editable}
                 onClick={() =>
-                  file.directory ? navigate(child(file.name)) : void openFile(file.name)
+                  setOperation({ type: 'rename', path: child(file.name), value: file.name })
                 }
               >
-                <Icon name={file.directory ? 'cube' : 'book'} size={18} />
-                <span>{file.name}</span>
+                Rename
               </button>
-              <span className="file-meta">
-                {file.directory ? 'Folder' : formatBytes(file.size)}
-              </span>
-              <div className="row">
-                {!file.directory && (
-                  <a
-                    className="text-button"
-                    href={`${apiBase()}${url}/download?path=${encodeURIComponent(child(file.name))}`}
-                  >
-                    Download
-                  </a>
-                )}
+              {file.name.toLowerCase().endsWith('.zip') && (
                 <button
                   className="text-button"
                   disabled={!editable}
                   onClick={() =>
-                    setOperation({ type: 'rename', path: child(file.name), value: file.name })
+                    setOperation({
+                      type: 'extract',
+                      path: child(file.name),
+                      value: file.name.slice(0, -4),
+                    })
                   }
                 >
-                  Rename
+                  Extract
                 </button>
-                {file.name.toLowerCase().endsWith('.zip') && (
-                  <button
-                    className="text-button"
-                    disabled={!editable}
-                    onClick={() =>
-                      setOperation({
-                        type: 'extract',
-                        path: child(file.name),
-                        value: file.name.slice(0, -4),
-                      })
-                    }
-                  >
-                    Extract
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
+              )}
+            </div>
+          </article>
+        ))}
       </div>
       {data && !data.entries.length && <p className="tool-empty">This folder is empty.</p>}
+      {data && data.entries.length > 0 && !visibleEntries.length && (
+        <div className="tool-empty" role="status">
+          <p>No files match “{search}” in this folder.</p>
+          <button className="btn secondary" onClick={() => setSearch('')}>
+            Clear filter
+          </button>
+        </div>
+      )}
     </ToolPanel>
   );
 }
@@ -567,6 +603,8 @@ function Updates({ server }: { server: Server }) {
       title="Updates & rollback"
       description="Prepare an isolated installation, review the file changes, then apply it with a recovery backup. Current worlds and configuration are preserved at apply time."
       error={action.error || error || data?.plan?.error}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       <div className="tool-callout">
         <strong>
@@ -791,6 +829,8 @@ function Diagnostics({ server }: { server: Server }) {
       title="Performance & recovery"
       description="Resource history is sampled every 30 seconds and retained for 7 days. CPU is shown in core equivalents; 1 core equals 100% combined CPU."
       error={action.error || error}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       <div className="tool-toolbar">
         <label>
@@ -923,6 +963,35 @@ function Schedules({ server }: { server: Server }) {
   });
   const [draft, setDraft] = useState<ScheduleInput | null>(null),
     [editing, setEditing] = useState<string | null>(null);
+  const [originalDraft, setOriginalDraft] = useState('');
+  const form = useRef<HTMLFormElement>(null);
+  async function saveSchedule() {
+    if (!draft || action.pending || !form.current?.checkValidity()) return false;
+    return action.run(async () => {
+      await api(editing ? `${url}/${editing}` : url, {
+        method: editing ? 'PUT' : 'POST',
+        body: JSON.stringify(draft),
+      });
+      setDraft(null);
+    }, 'Schedule saved.');
+  }
+  const scheduleChanges = useUnsavedChanges({
+    label: 'Schedule',
+    dirty: !!draft && JSON.stringify(draft) !== originalDraft,
+    busy: action.pending,
+    scope: `/servers/${server.uid}#schedules`,
+    save: saveSchedule,
+    discard: () => setDraft(null),
+  });
+  function editSchedule(item?: StoredSchedule) {
+    scheduleChanges.confirm(() => {
+      const next = item ?? empty();
+      setEditing(item?.uid ?? null);
+      setCustomTiming(false);
+      setOriginalDraft(JSON.stringify(next));
+      setDraft(next);
+    });
+  }
   const timing = scheduleTiming(draft?.cron || null);
   const frequency = customTiming ? 'custom' : timing.frequency;
   const changeAction = (index: number, next: ScheduleInput['actions'][number]) => {
@@ -934,7 +1003,9 @@ function Schedules({ server }: { server: Server }) {
     power: {
       type: 'power',
       action: 'restart',
-      warningSeconds: server.gameId === 'minecraft-java' || server.gameId === 'palworld' ? 30 : 0,
+      warningSeconds: ['minecraft-java', 'minecraft-bedrock', 'palworld'].includes(server.gameId)
+        ? 30
+        : 0,
     },
     command: { type: 'command', command: '' },
     update: { type: 'update', startAfter: false },
@@ -945,33 +1016,23 @@ function Schedules({ server }: { server: Server }) {
       title="Schedules & alerts"
       description="Automate backups and maintenance, or send Discord/webhook alerts when a server event occurs. Actions run in order, using the creator’s current permissions."
       error={action.error || error}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       <div className="tool-toolbar">
         <p className="muted">Server events are observed while the panel is running.</p>
-        <button
-          className="btn"
-          onClick={() => {
-            setEditing(null);
-            setCustomTiming(false);
-            setDraft(empty());
-          }}
-        >
+        <button className="btn" onClick={() => editSchedule()}>
           New schedule
         </button>
       </div>
       <Notice message={action.message} />
       {draft && (
         <form
+          ref={form}
           className="schedule-editor"
           onSubmit={(e) => {
             e.preventDefault();
-            void action.run(async () => {
-              await api(editing ? `${url}/${editing}` : url, {
-                method: editing ? 'PUT' : 'POST',
-                body: JSON.stringify(draft),
-              });
-              setDraft(null);
-            }, 'Schedule saved.');
+            void saveSchedule();
           }}
         >
           <div className="settings-field-grid">
@@ -1180,7 +1241,7 @@ function Schedules({ server }: { server: Server }) {
                     </select>
                   </label>
                   {item.action === 'restart' &&
-                    ['minecraft-java', 'palworld'].includes(server.gameId) && (
+                    ['minecraft-java', 'minecraft-bedrock', 'palworld'].includes(server.gameId) && (
                       <label>
                         Warn players (seconds)
                         <input
@@ -1296,7 +1357,11 @@ function Schedules({ server }: { server: Server }) {
           <div className="form-footer">
             <span>Only backups made by this schedule are pruned by its retention rule.</span>
             <div className="row">
-              <button className="btn secondary" type="button" onClick={() => setDraft(null)}>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => scheduleChanges.confirm(() => setDraft(null))}
+              >
                 Cancel
               </button>
               <button className="btn" disabled={action.pending}>
@@ -1328,14 +1393,7 @@ function Schedules({ server }: { server: Server }) {
               )}
             </div>
             <div className="row">
-              <button
-                className="btn secondary"
-                onClick={() => {
-                  setEditing(item.uid);
-                  setCustomTiming(false);
-                  setDraft(item);
-                }}
-              >
+              <button className="btn secondary" onClick={() => editSchedule(item)}>
                 Edit
               </button>
               <ConfirmButton
@@ -1411,6 +1469,8 @@ function Players({ server }: { server: Server }) {
       title="Players"
       description="Players observed joining and leaving while monitoring is connected. This may omit players already online when the panel started."
       error={action.error || error}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       {data?.supported ? (
         <>
@@ -1424,12 +1484,12 @@ function Players({ server }: { server: Server }) {
           </div>
           {!data.players.length && <p className="tool-empty">No players observed online.</p>}
         </>
-      ) : (
+      ) : data ? (
         <p className="tool-callout">
           This game does not expose player join and leave events to the panel.
         </p>
-      )}
-      {server.gameId === 'minecraft-java' ? (
+      ) : null}
+      {['minecraft-java', 'minecraft-bedrock'].includes(server.gameId) ? (
         <form
           className="tool-form-inline"
           onSubmit={(e) => {
@@ -1444,11 +1504,11 @@ function Players({ server }: { server: Server }) {
           }}
         >
           <label>
-            Player username
+            {server.gameId === 'minecraft-bedrock' ? 'Player gamertag' : 'Player username'}
             <input
               required
-              pattern="[a-zA-Z0-9_]{1,16}"
-              maxLength={16}
+              pattern={server.gameId === 'minecraft-bedrock' ? undefined : '[a-zA-Z0-9_]{1,16}'}
+              maxLength={server.gameId === 'minecraft-bedrock' ? 32 : 16}
               value={player}
               onChange={(e) => setPlayer(e.target.value)}
             />
@@ -1459,8 +1519,8 @@ function Players({ server }: { server: Server }) {
               <option value="whitelist-add">Add to allowlist</option>
               <option value="whitelist-remove">Remove from allowlist</option>
               <option value="kick">Kick</option>
-              <option value="ban">Ban</option>
-              <option value="pardon">Unban</option>
+              {server.gameId === 'minecraft-java' && <option value="ban">Ban</option>}
+              {server.gameId === 'minecraft-java' && <option value="pardon">Unban</option>}
               <option value="op">Make operator</option>
               <option value="deop">Remove operator</option>
             </select>
@@ -1503,24 +1563,40 @@ function Access({ server }: { server: Server }) {
     action = useAction(refresh);
   const [username, setUsername] = useState(''),
     [grants, setGrants] = useState<string[]>(['server.view']);
+  const form = useRef<HTMLFormElement>(null);
+  function discardAccess() {
+    setUsername('');
+    setGrants(['server.view']);
+  }
+  async function saveAccess() {
+    if (action.pending || !data || !form.current?.checkValidity()) return false;
+    return action.run(async () => {
+      await api(url, { method: 'PUT', body: JSON.stringify({ username, permissions: grants }) });
+      discardAccess();
+    }, 'Server access saved.');
+  }
+  useUnsavedChanges({
+    label: 'Shared access',
+    dirty: !!username || grants.length !== 1 || grants[0] !== 'server.view',
+    busy: action.pending,
+    scope: `/servers/${server.uid}#access`,
+    save: saveAccess,
+    discard: discardAccess,
+  });
   return (
     <ToolPanel
       title="Shared access"
       description="Give an existing panel account access to this server. Grant only the controls that person needs; the owner keeps full access."
       error={action.error || error}
+      loading={!data && !error}
+      onRetry={error ? refresh : undefined}
     >
       <form
+        ref={form}
         className="access-editor"
         onSubmit={(e) => {
           e.preventDefault();
-          void action.run(async () => {
-            await api(url, {
-              method: 'PUT',
-              body: JSON.stringify({ username, permissions: grants }),
-            });
-            setUsername('');
-            setGrants(['server.view']);
-          }, 'Server access saved.');
+          void saveAccess();
         }}
       >
         <label>
@@ -1559,11 +1635,16 @@ function Access({ server }: { server: Server }) {
           Files, backups, console, and settings can expose sensitive server data. Shared access
           permission lets this person manage other memberships.
         </p>
-        <button className="btn" disabled={action.pending}>
+        <button className="btn" disabled={action.pending || !data}>
           Save access
         </button>
       </form>
       <Notice message={action.message} />
+      {data && !data.members.length && (
+        <p className="tool-empty">
+          No additional accounts have shared access. Add an existing workspace account above.
+        </p>
+      )}
       <div className="tool-list">
         {data?.members.map((member) => (
           <article className="tool-list-item" key={member.username}>

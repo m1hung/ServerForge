@@ -2,17 +2,18 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
 import { BrandProvider } from '@/components/BrandProvider';
+import { PreferencesProvider } from '@/components/Preferences';
+import { preferencesKey } from '@/lib/preferences';
+import { accentVariables, normalizeAccent } from '@/lib/theme';
+import { UnsavedChangesProvider } from '@/components/UnsavedChanges';
 
 export const dynamic = 'force-dynamic';
 function branding() {
-  const accent = /^#[a-f0-9]{6}$/i.test(process.env.BRAND_ACCENT || '') ? process.env.BRAND_ACCENT! : '#f97316';
-  const channels = [1, 3, 5].map((offset) => parseInt(accent.slice(offset, offset + 2), 16) / 255).map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
-  const luminance = channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
+  const accent = normalizeAccent(process.env.BRAND_ACCENT) ?? '#f97316';
   return {
     name: process.env.BRAND_NAME || 'ServerForge',
     tagline: process.env.BRAND_TAGLINE || 'Launch a game server in minutes, not hours.',
     accent,
-    accentText: luminance > 0.179 ? '#000000' : '#ffffff',
   };
 }
 export function generateMetadata(): Metadata {
@@ -21,17 +22,37 @@ export function generateMetadata(): Metadata {
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const brand = branding();
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      style={accentVariables(brand.accent) as React.CSSProperties}
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `try { document.documentElement.dataset.theme = localStorage.getItem('serverforge-theme') === 'dark' ? 'dark' : 'light'; } catch {}`,
+            __html: `(() => {
+              let theme = 'system', preferences = {};
+              try { theme = localStorage.getItem('serverforge-theme') || 'system'; } catch {}
+              try { preferences = JSON.parse(localStorage.getItem('${preferencesKey}') || '{}') || {}; } catch {}
+              const root = document.documentElement;
+              root.dataset.theme = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+              root.dataset.density = preferences.density === 'compact' ? 'compact' : 'comfortable';
+              root.dataset.motion = preferences.reducedMotion === true ? 'reduce' : 'system';
+              const accent = typeof preferences.accentColor === 'string' && /^#[a-f0-9]{6}$/i.test(preferences.accentColor) ? preferences.accentColor : '${brand.accent}';
+              const variables = (${accentVariables.toString()})(accent);
+              for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
+            })();`,
           }}
         />
       </head>
-      <body style={{ '--accent': branding().accent, '--accent-text': branding().accentText } as React.CSSProperties}>
-        <BrandProvider value={branding()}>{children}</BrandProvider>
+      <body>
+        <BrandProvider value={brand}>
+          <PreferencesProvider>
+            <UnsavedChangesProvider>{children}</UnsavedChangesProvider>
+          </PreferencesProvider>
+        </BrandProvider>
       </body>
     </html>
   );
