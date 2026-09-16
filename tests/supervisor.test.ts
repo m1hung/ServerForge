@@ -17,7 +17,9 @@ const state = vi.hoisted(() => ({
   managed: [] as any[],
   installLogs: [] as any[],
 }));
-vi.mock('../apps/api/src/services/platform.js', () => ({ selectGamePlatform: async () => 'linux/amd64' }));
+vi.mock('../apps/api/src/services/platform.js', () => ({
+  selectGamePlatform: async () => 'linux/amd64',
+}));
 vi.mock('@serverforge/db', () => ({
   uid: () => 'id',
   serializeBigInts: (v: unknown) => v,
@@ -109,6 +111,7 @@ vi.mock('../apps/api/src/lib/server-files.js', async (original) => ({
   prepareServerOwnership: async () => undefined,
 }));
 import { startSupervisor } from '../apps/api/src/workers/supervisor.js';
+import { containerName } from '../apps/api/src/lib/container-name.js';
 import { serverEvents } from '../apps/api/src/services/server-events.js';
 import { isServerBusy } from '../apps/api/src/services/server-lock.js';
 import { clearObservations } from '../apps/api/src/services/telemetry.js';
@@ -157,7 +160,7 @@ beforeEach(async () => {
   state.managed = [
     {
       id: 'old',
-      name: `${brand.resourcePrefix}-test`,
+      name: containerName(state.server),
       dataPath: state.server.dataPath,
       labels: { [`${brand.labelNamespace}/server`]: 'test' },
     },
@@ -237,7 +240,7 @@ it('recovers an interrupted installation and reattaches an owned running contain
   state.managed = [
     {
       id: 'recovered',
-      name: `${brand.resourcePrefix}-test`,
+      name: containerName(state.server),
       state: 'running',
       dataPath: state.server.dataPath,
       labels: { [`${brand.labelNamespace}/server`]: 'test' },

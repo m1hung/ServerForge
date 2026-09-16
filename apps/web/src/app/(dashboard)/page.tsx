@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { ProtectedLink as Link } from '@/components/UnsavedChanges';
-import { Icon } from '@/components/Icon';
+import { Icon, type IconName } from '@/components/Icon';
 import { PageTitle } from '@/components/PageTitle';
 import { CopyButton } from '@/components/CopyButton';
+import { SecurityDialog } from '@/components/SecurityDialog';
 import { usePreferences } from '@/components/Preferences';
 import type { Preferences } from '@/lib/preferences';
 import { api } from '@/lib/api';
@@ -32,6 +34,11 @@ export default function HomePage() {
   const { preferences, update: updatePreferences } = usePreferences();
   const [mobile, setMobile] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const router = useRouter();
+  const [menu, setMenu] = useState<{ server: Server; x: number; y: number } | null>(null);
+  const [deleting, setDeleting] = useState<Server | null>(null);
+  const [actionError, setActionError] = useState('');
+  const [totp, setTotp] = useState(false);
   const view =
     preferences.serverView === 'auto' ? (mobile ? 'grid' : 'list') : preferences.serverView;
 
@@ -66,6 +73,165 @@ export default function HomePage() {
       media.removeEventListener('change', resize);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    void api<{ user: { totpEnabledAt: string | null } }>('/api/account')
+      .then(({ user }) => setTotp(!!user.totpEnabledAt))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (event: KeyboardEvent) => event.key === 'Escape' && close();
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', key);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menu]);
+
+  function openMenu(server: Server) {
+    return (event: MouseEvent) => {
+      event.preventDefault();
+      setMenu({ server, x: event.clientX, y: event.clientY });
+    };
+  }
+
+  async function power(server: Server, action: 'start' | 'stop' | 'restart') {
+    setActionError('');
+    try {
+      await api(`/api/servers/${server.uid}/power`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : `Could not ${action} ${server.name}.`);
+    }
+  }
+
+  function contextMenu({ server, x, y }: { server: Server; x: number; y: number }) {
+    const allowed = (permission: string) =>
+      !server.permissions || server.permissions.includes(permission);
+    const stopped = ['offline', 'crashed', 'install_failed', 'error'].includes(server.state);
+    const running = server.state === 'running';
+    const favorite = preferences.favorites.includes(server.uid);
+    const address = joinAddress(server);
+    const open = (section: string) => router.push(`/servers/${server.uid}#${section}`);
+    type Item = {
+      label: string;
+      icon: IconName;
+      run: () => void;
+      show?: boolean;
+      disabled?: boolean;
+      danger?: boolean;
+    };
+    const items = (
+      [
+        {
+          label: 'Start',
+          icon: 'play',
+          run: () => void power(server, 'start'),
+          show: allowed('server.power'),
+          disabled: !stopped || server.busy,
+        },
+        {
+          label: 'Stop',
+          icon: 'stop',
+          run: () => void power(server, 'stop'),
+          show: allowed('server.power'),
+          disabled: !running || server.busy,
+        },
+        {
+          label: 'Restart',
+          icon: 'refresh',
+          run: () => void power(server, 'restart'),
+          show: allowed('server.power'),
+          disabled: !running || server.busy,
+        },
+        {
+          label: 'Settings',
+          icon: 'settings',
+          run: () => open('configuration'),
+          show: allowed('server.settings'),
+        },
+        {
+          label: 'Backups & restore',
+          icon: 'download',
+          run: () => open('backups'),
+          show: allowed('server.backups'),
+        },
+        { label: 'Files', icon: 'list', run: () => open('files'), show: allowed('server.files') },
+        {
+          label: 'Console',
+          icon: 'terminal',
+          run: () => open('overview'),
+          show: allowed('server.console'),
+        },
+        {
+          label: 'Copy address',
+          icon: 'copy',
+          run: () => void navigator.clipboard?.writeText(address!),
+          show: !!address,
+        },
+        {
+          label: favorite ? 'Remove from favorites' : 'Add to favorites',
+          icon: 'star',
+          run: () =>
+            updatePreferences({
+              favorites: favorite
+                ? preferences.favorites.filter((id) => id !== server.uid)
+                : [server.uid, ...preferences.favorites],
+            }),
+        },
+        {
+          label: 'Delete server…',
+          icon: 'close',
+          run: () => setDeleting(server),
+          show: allowed('server.delete'),
+          disabled: !stopped || server.busy,
+          danger: true,
+        },
+      ] satisfies Item[]
+    ).filter((item) => item.show !== false);
+    return (
+      <div
+        className="context-menu"
+        role="menu"
+        aria-label={`${server.name} actions`}
+        style={{
+          left: Math.min(x, window.innerWidth - 220),
+          top: Math.min(y, window.innerHeight - 44 * items.length - 24),
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {items.map((item, index) => (
+          <Fragment key={item.label}>
+            {item.danger && <hr />}
+            <button
+              role="menuitem"
+              autoFocus={index === 0}
+              className={item.danger ? 'danger' : undefined}
+              disabled={item.disabled}
+              onClick={() => {
+                setMenu(null);
+                item.run();
+              }}
+            >
+              <Icon name={item.icon} size={15} />
+              {item.label}
+            </button>
+          </Fragment>
+        ))}
+      </div>
+    );
+  }
 
   const items = servers ?? [];
   const running = items.filter((server) => server.state === 'running').length;
@@ -217,6 +383,12 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+        {actionError && (
+          <div className="error-banner" role="alert">
+            <Icon name="alert" size={18} />
+            <div>{actionError}</div>
+          </div>
+        )}
         {error && (
           <div className="error-banner" role="alert">
             <Icon name="alert" size={18} />
@@ -389,7 +561,7 @@ export default function HomePage() {
                 </thead>
                 <tbody>
                   {filtered.map((server) => (
-                    <tr key={server.uid}>
+                    <tr key={server.uid} onContextMenu={openMenu(server)}>
                       <td>
                         <div className="server-name-cell">
                           {favoriteButton(server)}
@@ -458,7 +630,11 @@ export default function HomePage() {
           ) : (
             <div className="server-card-grid">
               {filtered.map((server) => (
-                <article className="server-grid-card" key={server.uid}>
+                <article
+                  className="server-grid-card"
+                  key={server.uid}
+                  onContextMenu={openMenu(server)}
+                >
                   <div className="section-heading">
                     <span className={`game-icon game-${server.gameId}`}>
                       <Icon name="cube" size={23} />
@@ -609,6 +785,23 @@ export default function HomePage() {
             </section>
           )}
         </div>
+      )}
+      {menu && contextMenu(menu)}
+      {deleting && (
+        <SecurityDialog
+          title={`Delete ${deleting.name}`}
+          description="This permanently removes the server, its world and game files, and every backup made from it. Enter your password to confirm."
+          requireCode={totp}
+          onClose={() => setDeleting(null)}
+          onConfirm={async (proof) => {
+            await api(`/api/servers/${deleting.uid}`, {
+              method: 'DELETE',
+              body: JSON.stringify(proof),
+            });
+            setActionError('');
+            await refresh();
+          }}
+        />
       )}
     </>
   );

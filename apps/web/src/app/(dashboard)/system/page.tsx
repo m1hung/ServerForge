@@ -7,6 +7,7 @@ import { CopyButton } from '@/components/CopyButton';
 import { SecurityDialog } from '@/components/SecurityDialog';
 import { useCurrentUser } from '@/components/Shell';
 import { formatBytes } from '@serverforge/core/format';
+import type { NodeCapacity } from '@serverforge/core';
 
 type Status = {
   measuredAt: string;
@@ -48,6 +49,7 @@ const checkNames: Record<string, string> = {
 export default function SystemPage() {
   const currentUser = useCurrentUser();
   const [status, setStatus] = useState<Status | null>(null);
+  const [capacity, setCapacity] = useState<NodeCapacity | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [account, setAccount] = useState<{ totpEnabledAt: string | null } | null>(null);
@@ -58,6 +60,11 @@ export default function SystemPage() {
     try {
       setStatus(await api<Status>('/api/system/status'));
       setError('');
+      setCapacity(
+        await api<{ nodes: { capacity: NodeCapacity | null; transport: string }[] }>('/api/nodes')
+          .then(({ nodes }) => nodes.find((node) => node.transport === 'docker')?.capacity ?? null)
+          .catch(() => null),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'System status is unavailable.');
     } finally {
@@ -109,6 +116,7 @@ export default function SystemPage() {
       <div className="settings-page">
         <nav className="section-links" aria-label="System sections">
           <a href="#host-health">Host health</a>
+          <a href="#resources">Resource allocation</a>
           <a href="#operations">Needs attention</a>
           <a href="#recovery">Recovery & backups</a>
         </nav>
@@ -179,6 +187,92 @@ export default function SystemPage() {
                 <span className="status-pill danger">Low disk space</span>
               )}
             </div>
+          ))}
+        </section>
+        <section className="card stack" id="resources">
+          <div className="section-heading">
+            <h2>Resource allocation</h2>
+            {capacity && (
+              <span
+                className={`status-pill ${capacity.memory.reservedMib > capacity.memory.totalMib - capacity.memory.headroomMib || capacity.cpu.overcommitted ? 'warning' : 'success'}`}
+              >
+                {capacity.memory.reservedMib >
+                capacity.memory.totalMib - capacity.memory.headroomMib
+                  ? 'Memory overcommitted'
+                  : capacity.cpu.overcommitted
+                    ? 'CPU overcommitted'
+                    : 'Within budget'}
+              </span>
+            )}
+          </div>
+          <p className="muted">
+            What Docker gives this host and how much of it your saved game allocations already
+            claim. Offline games still count. Change Docker Desktop’s memory and CPU settings to
+            grow the pool.
+          </p>
+          {!capacity ? (
+            <p className="empty-note">
+              {status ? 'Resource allocation is unavailable.' : 'Waiting for a system check.'}
+            </p>
+          ) : (
+            <div className="health-checks">
+              <div className="settings-item">
+                <div>
+                  <strong>Docker memory</strong>
+                  <p className="muted">{formatBytes(capacity.memory.totalMib * 1024 ** 2)} total</p>
+                </div>
+              </div>
+              <div className="settings-item">
+                <div>
+                  <strong>Panel &amp; host headroom</strong>
+                  <p className="muted">
+                    {formatBytes(capacity.memory.headroomMib * 1024 ** 2)} reserved
+                  </p>
+                </div>
+              </div>
+              <div className="settings-item">
+                <div>
+                  <strong>Allocated to games</strong>
+                  <p className="muted">
+                    {formatBytes(capacity.memory.reservedMib * 1024 ** 2)} of{' '}
+                    {formatBytes(
+                      (capacity.memory.totalMib - capacity.memory.headroomMib) * 1024 ** 2,
+                    )}{' '}
+                    usable
+                  </p>
+                </div>
+              </div>
+              <div className="settings-item">
+                <div>
+                  <strong>Available for new games</strong>
+                  <p className="muted">{formatBytes(capacity.memory.availableMib * 1024 ** 2)}</p>
+                </div>
+              </div>
+              <div className="settings-item">
+                <div>
+                  <strong>CPU cores</strong>
+                  <p className="muted">
+                    {capacity.cpu.reservedCores} of {capacity.cpu.totalCores} allocated
+                  </p>
+                </div>
+              </div>
+              {capacity.disk && (
+                <div className="settings-item">
+                  <div>
+                    <strong>Game storage</strong>
+                    <p className="muted">
+                      {formatBytes(capacity.disk.freeBytes)} free of{' '}
+                      {formatBytes(capacity.disk.totalBytes)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {capacity?.warnings.map((warning) => (
+            <p className="summary-notice warning" key={warning}>
+              {warning}
+            </p>
           ))}
         </section>
         <section className="card stack" id="operations">

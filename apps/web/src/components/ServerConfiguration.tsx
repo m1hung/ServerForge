@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { SecurityDialog } from './SecurityDialog';
 import type {
   SettingsSchema,
   SettingValues,
@@ -48,6 +50,17 @@ export function ServerConfiguration({
   const [reload, setReload] = useState(0);
   const allowed = server.canConfigure !== false;
   const busy = !['running', 'offline', 'crashed', 'install_failed'].includes(server.state);
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+  const [totp, setTotp] = useState(false);
+  const canDelete = server.permissions?.includes('server.delete') ?? true;
+  const stopped = ['offline', 'crashed', 'install_failed', 'error'].includes(server.state);
+  useEffect(() => {
+    if (!canDelete) return;
+    void api<{ user: { totpEnabledAt: string | null } }>('/api/account')
+      .then(({ user }) => setTotp(!!user.totpEnabledAt))
+      .catch(() => undefined);
+  }, [canDelete]);
   const form = useRef<HTMLFormElement>(null);
   const dirty =
     !!data &&
@@ -137,191 +150,231 @@ export function ServerConfiguration({
       </div>
     );
   return (
-    <form
-      ref={form}
-      className="card configuration-panel"
-      onInvalidCapture={(event) => revealField(event.target as HTMLElement)}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-      onChange={(event) => {
-        if ((event.target as HTMLInputElement).name !== 'settings-visibility') {
-          setNotice('');
-        }
-      }}
-    >
-      <div className="section-heading">
-        <div>
-          <div className="eyebrow">YOUR SERVER, YOUR SETTINGS</div>
-          <h2>Server settings</h2>
-        </div>
-        <Icon name="settings" />
-      </div>
-      <p className="muted">
-        Changes apply on the next start or restart. Saving keeps the current game session running.
-      </p>
-      {data?.appliedAllocation?.warnings.map((warning) => (
-        <p className="summary-notice warning" role="status" key={warning}>
-          {warning}
-        </p>
-      ))}
-      {busy && (
-        <p className="summary-notice" role="status">
-          Wait for the current server operation to finish before saving.
-        </p>
-      )}
-      {error && (
-        <div className="error-banner" role="alert">
-          {error}
-          {!data && (
-            <button className="text-button" type="button" onClick={() => setReload(reload + 1)}>
-              Retry
-            </button>
-          )}
-        </div>
-      )}
-      {notice && (
-        <div className="mod-notice" role="status">
-          <Icon name="check" size={17} />
-          {notice}
-        </div>
-      )}
-      {!data ? (
-        <p className="muted">{error ? 'Settings unavailable.' : 'Loading settings…'}</p>
-      ) : (
-        <>
-          <fieldset disabled={saving || loading} className="configuration-inputs">
-            <section className="form-section">
-              <div className="form-section-heading">
-                <h3>Server details</h3>
-              </div>
-              <div className="settings-field-grid">
-                <label>
-                  Panel name
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    required
-                    minLength={2}
-                    maxLength={48}
-                  />
-                </label>
-                <label>
-                  Description
-                  <textarea
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    maxLength={500}
-                    rows={2}
-                  />
-                </label>
-              </div>
-            </section>
-            <section className="form-section">
-              <div className="form-section-heading">
-                <h3>Resources</h3>
-              </div>
-              <HardwareFields value={limits} onChange={setLimits} capacity={data.capacity} />
-              <details className="settings-details settings-disclosure">
-                <summary>Compare saved and running limits</summary>
-                <div className="table-scroll">
-                  <table className="allocation-table">
-                    <caption style={{ textAlign: 'left', marginBottom: 8 }}>
-                      Saved limits and active limits
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left' }}>Resource</th>
-                        <th>Saved</th>
-                        <th>Applied now</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <th style={{ textAlign: 'left' }}>Memory</th>
-                        <td style={{ textAlign: 'center' }}>
-                          {data.server.memoryMib ? `${data.server.memoryMib} MiB` : 'Unlimited'}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {data.appliedAllocation
-                            ? data.appliedAllocation.memoryMib
-                              ? `${data.appliedAllocation.memoryMib} MiB`
-                              : 'Unlimited'
-                            : 'Unavailable / offline'}
-                        </td>
-                      </tr>
-                      <tr>
-                        <th style={{ textAlign: 'left' }}>CPU</th>
-                        <td style={{ textAlign: 'center' }}>
-                          {data.server.cpuCores || 'Unlimited'}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {data.appliedAllocation
-                            ? data.appliedAllocation.cpuCores || 'Unlimited'
-                            : '—'}
-                        </td>
-                      </tr>
-                      <tr>
-                        <th style={{ textAlign: 'left' }}>Additional swap</th>
-                        <td style={{ textAlign: 'center' }}>
-                          {data.server.swapMib == null
-                            ? 'Docker default'
-                            : `${data.server.swapMib} MiB`}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {data.appliedAllocation
-                            ? data.appliedAllocation.swapMib === -1
-                              ? 'Unlimited'
-                              : data.appliedAllocation.swapMib == null
-                                ? 'Docker default'
-                                : `${data.appliedAllocation.swapMib} MiB`
-                            : '—'}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </section>
-            <section className="form-section">
-              <div className="form-section-heading">
-                <h3>Game options</h3>
-              </div>
-              <GameSettingsFields
-                schema={data.schema}
-                values={values}
-                configuredSecrets={data.configuredSecrets}
-                onChange={(next) => {
-                  setValues(next);
-                  setNotice('');
-                }}
-              />
-            </section>
-          </fieldset>
-          <div className="form-footer">
-            <span>
-              {dirty
-                ? 'You have unsaved changes.'
-                : 'Changes are saved. Game rules and resources apply on the next start.'}
-            </span>
-            <div className="row">
-              <button
-                className="btn secondary"
-                type="button"
-                disabled={!dirty || saving || loading}
-                onClick={discard}
-              >
-                Discard changes
-              </button>
-              <button className="btn" type="submit" disabled={saving || loading || busy || !dirty}>
-                <Icon name="check" size={16} />
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
-            </div>
+    <>
+      <form
+        ref={form}
+        className="card configuration-panel"
+        onInvalidCapture={(event) => revealField(event.target as HTMLElement)}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+        onChange={(event) => {
+          if ((event.target as HTMLInputElement).name !== 'settings-visibility') {
+            setNotice('');
+          }
+        }}
+      >
+        <div className="section-heading">
+          <div>
+            <div className="eyebrow">YOUR SERVER, YOUR SETTINGS</div>
+            <h2>Server settings</h2>
           </div>
-        </>
+          <Icon name="settings" />
+        </div>
+        <p className="muted">
+          Changes apply on the next start or restart. Saving keeps the current game session running.
+        </p>
+        {data?.appliedAllocation?.warnings.map((warning) => (
+          <p className="summary-notice warning" role="status" key={warning}>
+            {warning}
+          </p>
+        ))}
+        {busy && (
+          <p className="summary-notice" role="status">
+            Wait for the current server operation to finish before saving.
+          </p>
+        )}
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+            {!data && (
+              <button className="text-button" type="button" onClick={() => setReload(reload + 1)}>
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+        {notice && (
+          <div className="mod-notice" role="status">
+            <Icon name="check" size={17} />
+            {notice}
+          </div>
+        )}
+        {!data ? (
+          <p className="muted">{error ? 'Settings unavailable.' : 'Loading settings…'}</p>
+        ) : (
+          <>
+            <fieldset disabled={saving || loading} className="configuration-inputs">
+              <section className="form-section">
+                <div className="form-section-heading">
+                  <h3>Server details</h3>
+                </div>
+                <div className="settings-field-grid">
+                  <label>
+                    Panel name
+                    <input
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                      minLength={2}
+                      maxLength={48}
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <textarea
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      maxLength={500}
+                      rows={2}
+                    />
+                  </label>
+                </div>
+              </section>
+              <section className="form-section">
+                <div className="form-section-heading">
+                  <h3>Resources</h3>
+                </div>
+                <HardwareFields value={limits} onChange={setLimits} capacity={data.capacity} />
+                <details className="settings-details settings-disclosure">
+                  <summary>Compare saved and running limits</summary>
+                  <div className="table-scroll">
+                    <table className="allocation-table">
+                      <caption style={{ textAlign: 'left', marginBottom: 8 }}>
+                        Saved limits and active limits
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>Resource</th>
+                          <th>Saved</th>
+                          <th>Applied now</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>Memory</th>
+                          <td style={{ textAlign: 'center' }}>
+                            {data.server.memoryMib ? `${data.server.memoryMib} MiB` : 'Unlimited'}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {data.appliedAllocation
+                              ? data.appliedAllocation.memoryMib
+                                ? `${data.appliedAllocation.memoryMib} MiB`
+                                : 'Unlimited'
+                              : 'Unavailable / offline'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>CPU</th>
+                          <td style={{ textAlign: 'center' }}>
+                            {data.server.cpuCores || 'Unlimited'}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {data.appliedAllocation
+                              ? data.appliedAllocation.cpuCores || 'Unlimited'
+                              : '—'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>Additional swap</th>
+                          <td style={{ textAlign: 'center' }}>
+                            {data.server.swapMib == null
+                              ? 'Docker default'
+                              : `${data.server.swapMib} MiB`}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {data.appliedAllocation
+                              ? data.appliedAllocation.swapMib === -1
+                                ? 'Unlimited'
+                                : data.appliedAllocation.swapMib == null
+                                  ? 'Docker default'
+                                  : `${data.appliedAllocation.swapMib} MiB`
+                              : '—'}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </section>
+              <section className="form-section">
+                <div className="form-section-heading">
+                  <h3>Game options</h3>
+                </div>
+                <GameSettingsFields
+                  schema={data.schema}
+                  values={values}
+                  configuredSecrets={data.configuredSecrets}
+                  onChange={(next) => {
+                    setValues(next);
+                    setNotice('');
+                  }}
+                />
+              </section>
+              {canDelete && (
+                <section className="form-section">
+                  <div className="form-section-heading">
+                    <h3>Delete this server</h3>
+                  </div>
+                  <p className="muted">
+                    Permanently removes the server, its world and game files, and every backup made
+                    from it. {stopped ? '' : 'Stop the server first.'}
+                  </p>
+                  <button
+                    className="btn danger"
+                    type="button"
+                    disabled={!stopped || server.busy}
+                    onClick={() => setDeleting(true)}
+                  >
+                    Delete server…
+                  </button>
+                </section>
+              )}
+            </fieldset>
+            <div className="form-footer">
+              <span>
+                {dirty
+                  ? 'You have unsaved changes.'
+                  : 'Changes are saved. Game rules and resources apply on the next start.'}
+              </span>
+              <div className="row">
+                <button
+                  className="btn secondary"
+                  type="button"
+                  disabled={!dirty || saving || loading}
+                  onClick={discard}
+                >
+                  Discard changes
+                </button>
+                <button
+                  className="btn"
+                  type="submit"
+                  disabled={saving || loading || busy || !dirty}
+                >
+                  <Icon name="check" size={16} />
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </form>
+      {deleting && (
+        <SecurityDialog
+          title={`Delete ${server.name}`}
+          description="This permanently removes the server, its world and game files, and every backup made from it. Enter your password to confirm."
+          requireCode={totp}
+          onClose={() => setDeleting(false)}
+          onConfirm={async (proof) => {
+            await api(`/api/servers/${server.uid}`, {
+              method: 'DELETE',
+              body: JSON.stringify(proof),
+            });
+            router.push('/');
+          }}
+        />
       )}
-    </form>
+    </>
   );
 }

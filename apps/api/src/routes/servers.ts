@@ -38,8 +38,10 @@ import {
 import { getAdapter, preparePalworldLauncher, type ServerContext } from '@serverforge/adapters';
 import { prisma, uid, serializeBigInts, type ServerWithAccess } from '@serverforge/db';
 import { requireUser, requireAdmin, type AuthUser } from '../plugins/auth.js';
+import { audit, proofSchema, withAccountProof } from '../services/account-security.js';
 import { config, runningInContainer } from '../lib/config.js';
 import { hostDataPath, localDataPath } from '../lib/storage-paths.js';
+import { containerName } from '../lib/container-name.js';
 import { allocateServerPorts } from '../services/port-allocation.js';
 import { mapPorts } from '../services/ports.js';
 import { installToolsFor } from '../services/install-tools.js';
@@ -93,9 +95,7 @@ export async function loadServer(
   return server;
 }
 
-export function containerName(serverUid: string) {
-  return `${brand.resourcePrefix}-${serverUid}`;
-}
+export { containerName };
 
 export function contextOf(server: Awaited<ReturnType<typeof loadServer>>): ServerContext {
   return {
@@ -211,16 +211,34 @@ async function updateConfiguration(serverUid: string, user: AuthUser, body: Upda
 export async function serverRoutes(app: FastifyInstance) {
   app.get('/servers', async (request) => {
     const user = requireUser(request);
-    if (user.scopes && !user.scopes.includes('*') && !user.scopes.includes('server.view')) return { servers: [] };
+    if (user.scopes && !user.scopes.includes('*') && !user.scopes.includes('server.view'))
+      return { servers: [] };
     const servers = await prisma.server.findMany({
       where:
         user.role === 'user'
           ? { OR: [{ ownerId: user.id }, { subusers: { some: { userId: user.id } } }] }
           : {},
-      include: { allocations: true, node: true, owner: true, subusers: { include: { roles: true } } },
+      include: {
+        allocations: true,
+        node: true,
+        owner: true,
+        subusers: { include: { roles: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return { servers: servers.filter((server) => canAccessServer(accessInput(user, server), 'server.view')).map(publicServer) };
+    return {
+      servers: servers
+        .filter((server) => canAccessServer(accessInput(user, server), 'server.view'))
+        .map((server) =>
+          publicServer({
+            ...server,
+            permissions: effectiveServerPermissions(accessInput(user, server)).filter(
+              (permission) =>
+                !user.scopes || user.scopes.includes('*') || user.scopes.includes(permission),
+            ),
+          }),
+        ),
+    };
   });
 
   app.post('/servers', async (request, reply) => {
@@ -278,7 +296,10 @@ export async function serverRoutes(app: FastifyInstance) {
       ? await prisma.node.findUnique({ where: { id: body.nodeId } })
       : await prisma.node.findFirst({ where: { transport: 'docker' } });
     if (!node) throw badRequest('No machine is available to run this server.');
-    const environment = { ...(body.runtimePlatform ? { SF_RUNTIME_PLATFORM: body.runtimePlatform } : {}), SF_ALLOW_EXPERIMENTAL: String(body.allowExperimental) };
+    const environment = {
+      ...(body.runtimePlatform ? { SF_RUNTIME_PLATFORM: body.runtimePlatform } : {}),
+      SF_ALLOW_EXPERIMENTAL: String(body.allowExperimental),
+    };
     const selectedPlatform = await selectGamePlatform(body.gameId, environment);
     await requireFreeSpace(config.dataRoot);
 
@@ -338,7 +359,13 @@ export async function serverRoutes(app: FastifyInstance) {
   app.get('/servers/:uid/installation', async (request) => {
     const user = requireUser(request);
     const server = await loadServer((request.params as { uid: string }).uid, user);
-    return { installation: publicInstallation(await latestInstallation(server.id)), canManage: canAccessServer(accessInput(user, server), 'server.settings') && (!user.scopes || user.scopes.includes('*') || user.scopes.includes('server.settings')), canRemove: server.ownerId === user.id || user.role === 'owner' };
+    return {
+      installation: publicInstallation(await latestInstallation(server.id)),
+      canManage:
+        canAccessServer(accessInput(user, server), 'server.settings') &&
+        (!user.scopes || user.scopes.includes('*') || user.scopes.includes('server.settings')),
+      canRemove: server.ownerId === user.id || user.role === 'owner',
+    };
   });
   app.post('/servers/:uid/installation/retry', async (request, reply) => {
     const server = await loadServer(
@@ -374,6 +401,47 @@ export async function serverRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.delete('/servers/:uid', async (request) => {
+    const user = requireUser(request);
+    const proof = proofSchema.parse(request.body ?? {});
+    return withServerLock((request.params as { uid: string }).uid, async () => {
+      const server = await loadServer(
+        (request.params as { uid: string }).uid,
+        user,
+        'server.delete',
+      );
+      if (
+        !['offline', 'crashed', 'install_failed', 'error'].includes(server.state) ||
+        (server.containerId &&
+          (await runtime.status(server.containerId).catch(() => null))?.running)
+      )
+        throw conflict('Stop the server before deleting it.');
+      // Verify the password before anything irreversible happens.
+      await withAccountProof(request, proof, (tx) =>
+        audit(tx, request, 'server.deleted', 'server', server.uid, {
+          name: server.name,
+          gameId: server.gameId,
+        }),
+      );
+      await prisma.server.update({ where: { id: server.id }, data: { state: 'deleting' } });
+      if (server.containerId)
+        await runtime.remove(server.containerId, { force: true }).catch(() => undefined);
+      await Promise.all(
+        [
+          localDataPath(server.dataPath),
+          path.join(config.dataRoot, '.operations', server.uid),
+          path.join(config.backupRoot, server.uid),
+        ].map((target) => fs.rm(target, { recursive: true, force: true })),
+      );
+      await prisma.server.delete({ where: { id: server.id } });
+      if (server.publicAccess) {
+        const { requestPortReconciliation } = await import('../services/upnp.js');
+        requestPortReconciliation();
+      }
+      return { ok: true };
+    });
+  });
+
   app.get('/servers/:uid', async (request) => {
     const user = requireUser(request);
     const { uid: serverUid } = request.params as { uid: string };
@@ -393,7 +461,7 @@ export async function serverRoutes(app: FastifyInstance) {
           canRead: canReadConsole,
           acceptsCommands: glossary?.acceptsCommands ?? true,
           note: glossary?.note,
-          commands: canReadConsole ? glossary?.commands ?? [] : [],
+          commands: canReadConsole ? (glossary?.commands ?? []) : [],
         },
       }),
     };
@@ -421,7 +489,9 @@ export async function serverRoutes(app: FastifyInstance) {
       configuredSecrets,
       server: publicServer(server),
       capacity: await nodeCapacity(server.node, server.id).catch(() => null),
-      appliedAllocation: server.containerId ? await runtime.appliedAllocation(server.containerId) : null,
+      appliedAllocation: server.containerId
+        ? await runtime.appliedAllocation(server.containerId)
+        : null,
     };
   });
 
@@ -467,7 +537,7 @@ export async function serverRoutes(app: FastifyInstance) {
       } else {
         if (!['running', 'starting'].includes(server.state))
           throw conflict('The server is not running.');
-        await runtime.kill(server.containerId ?? containerName(server.uid));
+        await runtime.kill(server.containerId ?? containerName(server));
         await prisma.server.update({ where: { id: server.id }, data: { state: 'offline' } });
       }
       const updated = await prisma.server.findUniqueOrThrow({ where: { id: server.id } });
@@ -574,7 +644,9 @@ export async function startServer(id: string, automatic = false) {
   }
   if (server.gameId === 'valheim') {
     if (String((server.settings as SettingValues).Password || '').length < 5)
-      throw badRequest('Valheim requires a join password of at least five characters. Set it in Configuration before starting.');
+      throw badRequest(
+        'Valheim requires a join password of at least five characters. Set it in Configuration before starting.',
+      );
     const game = server.allocations.find((row) => row.purpose === 'game');
     const query = server.allocations.find((row) => row.purpose === 'query');
     if (!game || !query || query.port !== game.port + 1 || query.ip !== game.ip)
@@ -583,23 +655,28 @@ export async function startServer(id: string, automatic = false) {
       );
   }
   const plan = adapter.startup(contextOf(server));
-  const platform = await selectGamePlatform(server.gameId, server.environment as Record<string, string>);
+  const platform = await selectGamePlatform(
+    server.gameId,
+    server.environment as Record<string, string>,
+  );
   await runtime.ensureImage(plan.image, () => undefined, platform);
-  const name = containerName(server.uid);
-  const existing = await runtime.status(name);
-  if (existing.exists) {
-    const owned = (await runtime.listManaged()).find(
-      (container) =>
-        container.name === name &&
-        container.labels[`${brand.labelNamespace}/server`] === server.uid &&
-        container.dataPath === hostDataPath(server.dataPath),
-    );
-    if (!owned || existing.running)
-      throw conflict(
-        'A container with this server’s name already exists or is running. Check its state before starting another.',
-      );
-    await runtime.remove(name);
+  const name = containerName(server);
+  // Clear this server's previous container (its name may differ after a rename)
+  // and refuse to reuse a name held by anything the panel does not own.
+  const managed = await runtime.listManaged();
+  const taken = conflict(
+    'A container with this server’s name already exists or is running. Check its state before starting another.',
+  );
+  for (const container of managed) {
+    const owned =
+      container.labels[`${brand.labelNamespace}/server`] === server.uid &&
+      container.dataPath === hostDataPath(server.dataPath);
+    if (owned && !(await runtime.status(container.id)).running) await runtime.remove(container.id);
+    else if (owned || container.name === name) throw taken;
   }
+  // Anything unmanaged squatting on the name is invisible to listManaged.
+  if (!managed.some((container) => container.name === name) && (await runtime.status(name)).exists)
+    throw taken;
   // Settings saved in the panel are materialised only after the old process stops.
   if (server.gameId === 'palworld' && !server.startupOverride)
     await preparePalworldLauncher(installToolsFor(server.dataPath));
@@ -651,7 +728,10 @@ export async function startServer(id: string, automatic = false) {
 }
 
 export async function stopServer(id: string, options: { forceAfterTimeout?: boolean } = {}) {
-  const server = await prisma.server.findUniqueOrThrow({ where: { id }, include: { allocations: true } });
+  const server = await prisma.server.findUniqueOrThrow({
+    where: { id },
+    include: { allocations: true },
+  });
   if (!['running', 'starting', 'offline', 'crashed'].includes(server.state))
     throw conflict('Wait for the current operation before stopping.');
   const adapter = getAdapter(server.gameId);
@@ -673,14 +753,18 @@ export async function stopServer(id: string, options: { forceAfterTimeout?: bool
     try {
       if (server.gameId === 'palworld' && (await runtime.status(server.containerId)).running)
         await stopPalworld({ ...server, containerId: server.containerId }, runtime);
-      else await runtime.stop(server.containerId, {
-        stopCommand: plan.stopCommand,
-        timeoutSeconds: plan.stopTimeoutSeconds,
-        forceAfterTimeout: options.forceAfterTimeout,
-      });
+      else
+        await runtime.stop(server.containerId, {
+          stopCommand: plan.stopCommand,
+          timeoutSeconds: plan.stopTimeoutSeconds,
+          forceAfterTimeout: options.forceAfterTimeout,
+        });
     } catch (error) {
       const status = await runtime.status(server.containerId).catch(() => null);
-      await prisma.server.update({ where: { id }, data: { state: status?.running ? 'running' : status ? 'offline' : server.state } });
+      await prisma.server.update({
+        where: { id },
+        data: { state: status?.running ? 'running' : status ? 'offline' : server.state },
+      });
       throw error;
     }
   }
@@ -701,7 +785,7 @@ export async function sendServerCommand(
   const plan = adapter.startup(contextOf(server));
   const target = resolveRconTarget({
     plan,
-    containerName: containerName(server.uid),
+    containerName: containerName(server),
     allocations: server.allocations,
     settings: server.settings as Record<string, unknown>,
     inContainer: runningInContainer(),

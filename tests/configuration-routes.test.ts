@@ -54,6 +54,7 @@ vi.mock('../apps/api/src/runtime/docker.js', () => ({
     create = state.create;
     start = state.start;
     status = state.status;
+    listManaged = async () => [];
     ensureImage = async () => undefined;
   },
 }));
